@@ -1274,6 +1274,18 @@
         return;
       }
 
+      // [L] / [M] / [N]: Toggle Command Bar Session Message Log
+      if (e.code === 'KeyL' || e.code === 'KeyM' || e.code === 'KeyN') {
+        const tag = document.activeElement && document.activeElement.tagName;
+        if (tag !== 'INPUT' && tag !== 'TEXTAREA' && tag !== 'SELECT') {
+          if (!uiState.invoiceModalOpen && !uiState.terminalModalOpen && window.DSDMessages && typeof window.DSDMessages.toggle === 'function') {
+            window.DSDMessages.toggle();
+          }
+          e.preventDefault();
+          return;
+        }
+      }
+
       // When scanner HUD is open, handle keypad keys
       if (uiState.scannerModalOpen) {
         // [Enter] / [NumpadEnter]: ENT Confirm / Create
@@ -1601,8 +1613,12 @@
     }
 
     let alertTimeout = null;
-    function showAlert(msg) {
+    function showAlert(msg, priority) {
       SoundSystem.playErrorBuzzer();
+      if (window.DSDMessages && typeof window.DSDMessages.push === 'function') {
+        window.DSDMessages.push(msg, priority);
+        return;
+      }
       alertBanner.textContent = msg;
       alertBanner.style.display = 'block';
       if (alertTimeout) clearTimeout(alertTimeout);
@@ -1612,7 +1628,12 @@
     }
 
     let notifyTimeout = null;
-    function showNotification(msg) {
+    function showNotification(msg, durationOrPriority, explicitPriority) {
+      if (window.DSDMessages && typeof window.DSDMessages.push === 'function') {
+        const prio = explicitPriority || (typeof durationOrPriority === 'string' ? durationOrPriority : undefined);
+        window.DSDMessages.push(msg, prio);
+        return;
+      }
       notifyBanner.textContent = msg;
       notifyBanner.style.display = 'block';
       if (notifyTimeout) clearTimeout(notifyTimeout);
@@ -3459,7 +3480,7 @@
         return;
       }
 
-      if (tileType === 'W') {
+      if (tileType === 'W' || tileType === 'H') {
         showAlert('🚫 NO STAGING ZONE: Pallets cannot be staged on red grid tiles or walls!');
         return;
       }
@@ -3911,7 +3932,7 @@
         if (whDone >= whRows.length && dsdDone >= dsdRows.length) {
           SoundSystem.playSuccessChime();
           closeTerminal();
-          showAlert(`🏆 SHIFT RECEIVING COMPLETE!\n\nWarehouse Trucks: ${whDone}/${whRows.length} auto-posted.\nDSD Deliveries: ${dsdDone}/${dsdRows.length} signed.\n\nUse File Cabinet / End Shift to inspect full ledger!`);
+          showNotification(`🏆 SHIFT RECEIVING COMPLETE!\n\nWarehouse Trucks: ${whDone}/${whRows.length} auto-posted.\nDSD Deliveries: ${dsdDone}/${dsdRows.length} signed.\n\nUse File Cabinet / End Shift to inspect full ledger!`, 'low');
         } else {
           SoundSystem.playErrorBuzzer();
           showAlert(`⚠️ SHIFT RECEIVING IN PROGRESS\n\nWarehouse Trucks Completed: ${whDone}/${whRows.length}\nDSD Side-Door / Vendor Trucks Completed: ${dsdDone}/${dsdRows.length}\n\nClear waiting bays & finish scheduled arrivals before shift end.`);
@@ -3973,7 +3994,7 @@
       if (newX + r > maxWorldX) {
         const atSideDoorZ = Math.abs(newZ - sideRollupDoor.worldZ) < (sideRollupDoor.width / 2);
         if (atSideDoorZ && sideRollupDoor.isOpen) {
-          showNotification('Ã¢Å¡Â Ã¯Â¸Â VENDORS ONLY: Receiving staff must remain on the dock.');
+          showNotification('⚠️ VENDORS ONLY: Receiving staff must remain on the dock.');
         }
         return true;
       }
@@ -4155,7 +4176,7 @@
           }
 
           let color = '#838a95';
-          if (type === 'W') color = '#dc2626';
+          if (type === 'W' || type === 'H') color = '#dc2626';
           else if (type === 'Y') color = '#786414';
           else if (type === 'F') color = '#0284c7';
           else if (type === 'C') color = '#7dd3fc';
@@ -4358,6 +4379,11 @@
       return beaconColor || '#22c55e';
     }
 
+    const sdQueueTxtEl = document.getElementById('dlp-sd-queue-txt');
+    const whDriverTagEl = document.getElementById('dlp-wh-driver-tag');
+    let lastSdQueueCount = -1;
+    let lastSdHasWh = null;
+
     function renderDoorLightsPanel() {
       for (let i = 0; i < 4; i++) {
         const dd = dockDoors[i];
@@ -4373,6 +4399,22 @@
       if (doorLightEls[4] && lastDoorLightColors[4] !== sdColor) {
         lastDoorLightColors[4] = sdColor;
         doorLightEls[4].style.backgroundColor = sdColor;
+      }
+
+      if (sdQueueTxtEl || whDriverTagEl) {
+        const waiting = (typeof DeliverySystem !== 'undefined' && DeliverySystem && typeof DeliverySystem.getWaitingOutsideSessions === 'function')
+          ? DeliverySystem.getWaitingOutsideSessions()
+          : [];
+        const count = waiting.length;
+        const hasWh = waiting.some((s) => s && s.delivery && s.delivery.type === 'warehouse');
+        if (sdQueueTxtEl && lastSdQueueCount !== count) {
+          lastSdQueueCount = count;
+          sdQueueTxtEl.textContent = `SD Queue: ${count}`;
+        }
+        if (whDriverTagEl && lastSdHasWh !== hasWh) {
+          lastSdHasWh = hasWh;
+          whDriverTagEl.classList.toggle('active', hasWh);
+        }
       }
     }
 
@@ -4537,6 +4579,12 @@
 
       if (window.ShiftClock) window.ShiftClock.init();
       if (window.ShiftStats) window.ShiftStats.resetDailyStats();
+      if (window.DSDMessages && typeof window.DSDMessages.clearSession === 'function') {
+        window.DSDMessages.clearSession();
+      }
+      if (typeof togglePendingDeliveriesPanel === 'function') {
+        togglePendingDeliveriesPanel(true);
+      }
 
       dockDoors.forEach((dd) => {
         dd.isOpen = false;
@@ -4650,6 +4698,12 @@
       if (uiState.invoiceModalOpen) closeInvoice();
       if (uiState.terminalModalOpen) closeTerminal();
       if (uiState.doorQueueModalOpen) closeDoorQueueModal(true);
+      if (window.DSDMessages && typeof window.DSDMessages.clearSession === 'function') {
+        window.DSDMessages.clearSession();
+      }
+      if (typeof togglePendingDeliveriesPanel === 'function') {
+        togglePendingDeliveriesPanel(true);
+      }
 
       player.hitchedPallet = null;
       if (hitchStatusCard) hitchStatusCard.style.display = 'none';
@@ -4744,6 +4798,7 @@
         playDoorAlarm: () => SoundSystem.playDoorWarningAlarm(),
         playSuccessChime: () => SoundSystem.playSuccessChime(),
         playButtonClick: () => SoundSystem.playButtonClick(),
+        onHudUpdate: renderDoorLightsPanel,
         onNewGame: () => {
           if (campaignStarted) {
             resetAllForFreshCampaign();

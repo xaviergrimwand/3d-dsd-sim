@@ -1,7 +1,7 @@
 (function (global) {
   'use strict';
 
-  // FACILITY BLUEPRINT GRID (11 COLS x 22 ROWS)
+  // FACILITY BLUEPRINT GRID (11 COLS x 24 ROWS)
   // ==========================================
   const DOCK_LAYOUT = [
     "TTWTTWTTWTT", // Row 0  (Truck trailers 1-4)
@@ -25,11 +25,13 @@
     "FFFFWCCCCWW", // Row 18 (Freezer & Cooler interior)
     "FFFFWCCCCWW", // Row 19
     "FFFFWCCCCWW", // Row 20
-    "FFFFWCCCCWW"  // Row 21 (Expanded Freezer & Cooler back row)
+    "FFFFWCCCCWW", // Row 21 (Expanded Freezer & Cooler back row)
+    "HHHHHHHHHHH", // Row 22 (Extended Employee Hallway - turns West, 2 tiles wide to Freezer West wall)
+    "HHHHHHHHHHH"  // Row 23 (Extended Employee Hallway - South outer row)
   ];
 
   const COLS = 11;
-  const ROWS = 22;
+  const ROWS = 24;
   const TILE_SIZE = 2.4;
 
   const ORIGIN_X = -(COLS * TILE_SIZE) / 2;
@@ -230,7 +232,7 @@
       return bGroup;
     }
 
-    const isHallwayTile = (c, r) => (c === 10 && r >= 17 && r <= 21);
+    const isHallwayTile = (c, r) => (c === 10 && r >= 17 && r <= 21) || (DOCK_LAYOUT[r] && DOCK_LAYOUT[r].charAt(c) === 'H');
 
     for (let r = 0; r < ROWS; r++) {
       // Rows 0..9 belong to dynamic outdoor trailer bays (rendered per-bay via dd.trailerGroup only when docked)
@@ -2270,12 +2272,42 @@
     coldRoofDeck.position.set(0, COLD_CEILING_H + 0.12, southDividingZ + coldRoofDepth / 2);
     scene.add(coldRoofDeck);
 
-    // 2B. Wrap embossed insulated cold-room wall panels onto the remaining 3 interior walls of Freezer & Cooler
+    // 2B. Wrap embossed insulated cold-room wall panels onto the remaining interior walls of Freezer & Cooler
+    // Keep Freezer & Cooler back wall at Row 21 end (Z = ORIGIN_Z + 22 * TILE_SIZE = 28.8m) so Rows 22-23 form the West-turning hallway!
     const coldRoomInnerZ = ORIGIN_Z + 18 * TILE_SIZE; // 19.20m
-    const coldRoomBackZ = ORIGIN_Z + totalD - outerWallThickness / 2; // 26.15m
-    const coldSideLen = coldRoomBackZ - coldRoomInnerZ; // 6.95m
-    const coldSideMidZ = coldRoomInnerZ + coldSideLen / 2; // 22.675m
+    const coldBackWallZ = ORIGIN_Z + 22 * TILE_SIZE;  // 28.80m
+    const coldRoomBackZ = coldBackWallZ - outerWallThickness / 2; // 28.55m
+    const coldSideLen = coldRoomBackZ - coldRoomInnerZ;
+    const coldSideMidZ = coldRoomInnerZ + coldSideLen / 2;
     const coldDoorRevealZ = coldRoomInnerZ - 0.60; // 18.60m
+
+    const hallMinX = ORIGIN_X + 10 * TILE_SIZE;  // 10.8m (outer red column)
+    const hallMaxX = innerEastWallX;             // 12.95m (inner face of East wall)
+    const hallWestX = ORIGIN_X + outerWallThickness / 2; // -12.95m (in line with Freezer West wall)
+    const hallClearW = hallMaxX - hallMinX;      // 2.15m
+    const hallCenterX = (hallMinX + hallMaxX) / 2; // 11.875m
+    const hallEndZ = ORIGIN_Z + totalD - outerWallThickness / 2; // 33.35m (Row 23 inner South wall)
+    const hallNorthZ = coldBackWallZ + outerWallThickness / 2;   // 29.05m (Row 22 inner North wall)
+    const hallWestCenterZ = (hallNorthZ + hallEndZ) / 2;         // 31.20m
+
+    // Dividing Back Wall separating Freezer/Cooler (Cols 0..9, Row 21) from West-turning Hallway (Rows 22..23)
+    const coldBackDivW = hallMinX - ORIGIN_X; // 24.0m
+    const coldBackDivWall = new THREE.Mesh(
+      new THREE.BoxGeometry(coldBackDivW, COLD_CEILING_H, outerWallThickness),
+      matWallDock
+    );
+    coldBackDivWall.position.set(ORIGIN_X + coldBackDivW / 2, COLD_CEILING_H / 2, coldBackWallZ);
+    applyWorldWallUVs(coldBackDivWall);
+    scene.add(coldBackDivWall);
+
+    solidWalls.push({
+      minX: ORIGIN_X,
+      maxX: hallMinX,
+      minZ: coldBackWallZ - outerWallThickness / 2,
+      maxZ: coldBackWallZ + outerWallThickness / 2,
+      isColdBackDivWall: true
+    });
+
     const coldWallSpecs = [
       // Freezer (cols 0-3, X: -12.95 to -3.60, doorway at col 2: -8.40 to -6.00)
       { x: ORIGIN_X + outerWallThickness / 2 + 0.015, z: coldSideMidZ, w: coldSideLen, ry: Math.PI / 2 },
@@ -2284,13 +2316,15 @@
       { x: -4.80, z: coldRoomInnerZ + 0.015, w: 2.40, ry: 0 },
       { x: ORIGIN_X + 2 * TILE_SIZE + 0.015, z: coldDoorRevealZ, w: 1.20, ry: Math.PI / 2 },
       { x: ORIGIN_X + 3 * TILE_SIZE - 0.015, z: coldDoorRevealZ, w: 1.20, ry: -Math.PI / 2 },
+      { x: (ORIGIN_X + outerWallThickness / 2 + ORIGIN_X + 4 * TILE_SIZE) / 2, z: coldRoomBackZ - 0.015, w: 4 * TILE_SIZE - outerWallThickness / 2, ry: Math.PI },
       // Cooler (cols 5-8, X: -1.20 to +8.40, doorway at col 6: +1.20 to +3.60)
       { x: ORIGIN_X + 5 * TILE_SIZE + 0.015, z: coldSideMidZ, w: coldSideLen, ry: Math.PI / 2 },
       { x: ORIGIN_X + 9 * TILE_SIZE - 0.015, z: coldSideMidZ, w: coldSideLen, ry: -Math.PI / 2 },
       { x: 0.00, z: coldRoomInnerZ + 0.015, w: 2.40, ry: 0 },
       { x: 6.00, z: coldRoomInnerZ + 0.015, w: 4.80, ry: 0 },
       { x: ORIGIN_X + 6 * TILE_SIZE + 0.015, z: coldDoorRevealZ, w: 1.20, ry: Math.PI / 2 },
-      { x: ORIGIN_X + 7 * TILE_SIZE - 0.015, z: coldDoorRevealZ, w: 1.20, ry: -Math.PI / 2 }
+      { x: ORIGIN_X + 7 * TILE_SIZE - 0.015, z: coldDoorRevealZ, w: 1.20, ry: -Math.PI / 2 },
+      { x: ORIGIN_X + 7 * TILE_SIZE, z: coldRoomBackZ - 0.015, w: 4 * TILE_SIZE, ry: Math.PI }
     ];
     const coldWallMatCache = {};
     coldWallSpecs.forEach((spec) => {
@@ -2312,19 +2346,13 @@
     });
 
     // 3. Lower floor hazard kickrail along South wall base (ending at Col 10 hallway opening)
-    const hallMinX = ORIGIN_X + 10 * TILE_SIZE;  // 10.8m (outer red column)
-    const hallMaxX = innerEastWallX;             // 12.95m (inner face of East wall)
-    const hallClearW = hallMaxX - hallMinX;      // 2.15m
-    const hallCenterX = (hallMinX + hallMaxX) / 2; // 11.875m
-    const hallEndZ = ORIGIN_Z + totalD - outerWallThickness / 2; // 23.75m
-
     const westRailStart = -totalW / 2 + 0.1;
     const westRailW = hallMinX - westRailStart;
     const southHazardRailWest = new THREE.Mesh(new THREE.BoxGeometry(westRailW, 0.16, 0.1), matHazardRail);
     southHazardRailWest.position.set(westRailStart + westRailW / 2, 0.08, southDividingZ - 0.15);
     scene.add(southHazardRailWest);
 
-    // 3B. SOUTH HALLWAY (Col 10 outer column, Rows 16-19: 4.2m ceiling cutting beneath South bulkhead to Lockers & Timeclock)
+    // 3B. L-SHAPED EMPLOYEE HALLWAY (Col 10 Rows 17-23, turning West across Rows 22-23 to Freezer West Wall)
     // Hallway Entrance Portal Trim
     const hallPortalBeam = new THREE.Mesh(
       new THREE.BoxGeometry(hallClearW + 0.04, 0.12, 0.46),
@@ -2342,7 +2370,7 @@
       scene.add(hallJamb);
     });
 
-    // East Wall Base Hazard Kickrail inside Hallway (rows 16-19, Z: 14.4m to 23.75m)
+    // East Wall Base Hazard Kickrail inside Hallway (rows 17-23, Z: 16.8m to 33.35m)
     const hallEastLen = hallEndZ - southDividingZ;
     const hallEastKickrail = new THREE.Mesh(
       new THREE.BoxGeometry(0.02, 0.16, hallEastLen),
@@ -2351,25 +2379,52 @@
     hallEastKickrail.position.set(hallMaxX - 0.01, 0.08, southDividingZ + hallEastLen / 2);
     scene.add(hallEastKickrail);
 
-    // South End Wall Concrete Finish & Base Kickrail inside Hallway
+    // Full South Wall Concrete Finish & Base Kickrail across West-turning Hallway (X: -12.95m to +12.95m)
+    const hallFullW = hallMaxX - hallWestX;
     const hallSouthPanel = new THREE.Mesh(
-      new THREE.BoxGeometry(hallClearW, COLD_CEILING_H, 0.05),
+      new THREE.BoxGeometry(hallFullW, COLD_CEILING_H, 0.05),
       matWallDock
     );
-    hallSouthPanel.position.set(hallCenterX, COLD_CEILING_H / 2, hallEndZ - 0.02);
+    hallSouthPanel.position.set((hallWestX + hallMaxX) / 2, COLD_CEILING_H / 2, hallEndZ - 0.02);
     applyWorldWallUVs(hallSouthPanel);
     scene.add(hallSouthPanel);
 
     const hallSouthKickrail = new THREE.Mesh(
-      new THREE.BoxGeometry(hallClearW - 0.04, 0.16, 0.04),
+      new THREE.BoxGeometry(hallFullW - 0.04, 0.16, 0.04),
       matHazardRail
     );
-    hallSouthKickrail.position.set(hallCenterX, 0.08, hallEndZ - 0.05);
+    hallSouthKickrail.position.set((hallWestX + hallMaxX) / 2, 0.08, hallEndZ - 0.05);
     scene.add(hallSouthKickrail);
 
-    // Overhead Fluorescent Strip Fixtures & Lighting in the 4.2m Hallway
+    // North Wall Base Hazard Kickrail along West-running Hallway (Cols 0..9, Z = 29.07m)
+    const hallNorthW = hallMinX - hallWestX;
+    const hallNorthKickrail = new THREE.Mesh(
+      new THREE.BoxGeometry(hallNorthW, 0.16, 0.04),
+      matHazardRail
+    );
+    hallNorthKickrail.position.set((hallWestX + hallMinX) / 2, 0.08, hallNorthZ + 0.02);
+    scene.add(hallNorthKickrail);
+
+    // West End Wall Concrete Finish & Kickrail (in line with West side of Freezer, X = -12.95m)
+    const hallWestDepth = hallEndZ - hallNorthZ;
+    const hallWestPanel = new THREE.Mesh(
+      new THREE.BoxGeometry(0.05, COLD_CEILING_H, hallWestDepth),
+      matWallDock
+    );
+    hallWestPanel.position.set(hallWestX + 0.02, COLD_CEILING_H / 2, hallWestCenterZ);
+    applyWorldWallUVs(hallWestPanel);
+    scene.add(hallWestPanel);
+
+    const hallWestKickrail = new THREE.Mesh(
+      new THREE.BoxGeometry(0.04, 0.16, hallWestDepth - 0.04),
+      matHazardRail
+    );
+    hallWestKickrail.position.set(hallWestX + 0.05, 0.08, hallWestCenterZ);
+    scene.add(hallWestKickrail);
+
+    // Overhead Fluorescent Strip Fixtures & Lighting in both N-S and E-W Hallway legs
     const matHallLamp = new THREE.MeshBasicMaterial({ color: 0xfffaed });
-    [southDividingZ + 2.2, (southDividingZ + hallEndZ) / 2, hallEndZ - 2.2].forEach((lz) => {
+    [southDividingZ + 2.4, southDividingZ + 6.4, southDividingZ + 10.4, hallEndZ - 2.2].forEach((lz) => {
       const hood = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.07, 1.35), matSteelFrame);
       hood.position.set(hallCenterX, COLD_CEILING_H - 0.04, lz);
       scene.add(hood);
@@ -2380,9 +2435,25 @@
         scene.add(tube);
       });
     });
+    [7.2, 1.2, -4.8, -10.2].forEach((lx) => {
+      const hood = new THREE.Mesh(new THREE.BoxGeometry(1.35, 0.07, 0.28), matSteelFrame);
+      hood.position.set(lx, COLD_CEILING_H - 0.04, hallWestCenterZ);
+      scene.add(hood);
+      [-0.07, 0.07].forEach((lzOff) => {
+        const tube = new THREE.Mesh(new THREE.CylinderGeometry(0.016, 0.016, 1.25, 10), matHallLamp);
+        tube.rotation.z = Math.PI / 2;
+        tube.position.set(lx, COLD_CEILING_H - 0.08, hallWestCenterZ + lzOff);
+        scene.add(tube);
+      });
+    });
     const hallwayPointLight = new THREE.PointLight(0xffedd5, 0.95, 16, 1.4);
-    hallwayPointLight.position.set(hallCenterX, 3.6, (southDividingZ + hallEndZ) / 2 + 0.8);
+    hallwayPointLight.position.set(hallCenterX, 3.6, southDividingZ + 6.4);
     scene.add(hallwayPointLight);
+    [2.0, -8.0].forEach((lpx) => {
+      const westHallLight = new THREE.PointLight(0xffedd5, 0.90, 16, 1.4);
+      westHallLight.position.set(lpx, 3.6, hallWestCenterZ);
+      scene.add(westHallLight);
+    });
 
     // Bank of 3 Industrial Steel Employee Lockers at South End (facing North)
     const lockerGroup = new THREE.Group();

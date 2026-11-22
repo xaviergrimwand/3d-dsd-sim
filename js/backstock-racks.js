@@ -2215,6 +2215,7 @@
       .filter((c) => c && c.mesh && c.mesh.visible && c !== state.heldCase)
       .map((c) => c.mesh),
     getUnlabeledBackstockCount: () => state.cases.filter((c) => c && !c.labeled && !isSupplyCase(c)).length,
+    getUnslottedOverstockCount: () => state.cases.filter((c) => c && !c.placedOnRack && !isSupplyCase(c)).length,
     getSupplyStockMap: getSupplyStockMap,
     getUnplacedSupplyCasesCount: getUnplacedSupplyCasesCount,
     applyDailySupplyUsage: applyDailySupplyUsage,

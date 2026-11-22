@@ -6,27 +6,29 @@
   <title>3D DSD Receiving Simulator</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
-  <script src="./js/dsd-catalog.js?v=20261122a"></script>
-  <script src="./js/shift-clock.js?v=20261122a"></script>
-  <script src="./js/shift-stats.js?v=20261122a"></script>
-  <script src="./js/dsd-receipts.js?v=20261122a"></script>
-  <script src="./js/warehouse-trucks.js?v=20261122a"></script>
-  <script src="./js/backstock-racks.js?v=20261122a"></script>
-  <script src="./js/claims-totes.js?v=20261122a"></script>
-  <script src="./js/sound-system.js?v=20261122a"></script>
-  <script src="./js/warehouse-textures.js?v=20261122a"></script>
-  <script src="./js/warehouse-world.js?v=20261122a"></script>
-  <script src="./js/warehouse-models.js?v=20261122a"></script>
-  <script src="./js/delivery-system.js?v=20261122a"></script>
-  <script src="./js/save-system.js?v=20261122a"></script>
-  <script src="./js/menu-ui.js?v=20261122a"></script>
-  <script src="./game.js?v=20261122a"></script>
-  <script src="./js/dock-runtime.js?v=20261122a"></script>
-  <link rel="stylesheet" href="./css/styles.css?v=20261122a">
+  <script src="./js/dsd-catalog.js?v=20261122b"></script>
+  <script src="./js/shift-clock.js?v=20261122b"></script>
+  <script src="./js/shift-stats.js?v=20261122b"></script>
+  <script src="./js/hud-messages.js?v=20261122d"></script>
+  <script src="./js/dsd-receipts.js?v=20261122b"></script>
+  <script src="./js/warehouse-trucks.js?v=20261122b"></script>
+  <script src="./js/backstock-racks.js?v=20261122b"></script>
+  <script src="./js/claims-totes.js?v=20261122b"></script>
+  <script src="./js/sound-system.js?v=20261122b"></script>
+  <script src="./js/warehouse-textures.js?v=20261122b"></script>
+  <script src="./js/warehouse-world.js?v=20261122b"></script>
+  <script src="./js/warehouse-models.js?v=20261122b"></script>
+  <script src="./js/delivery-system.js?v=20261122b"></script>
+  <script src="./js/save-system.js?v=20261122b"></script>
+  <script src="./js/menu-ui.js?v=20261122b"></script>
+  <script src="./game.js?v=20261122c"></script>
+  <script src="./js/dock-runtime.js?v=20261122d"></script>
+  <link rel="stylesheet" href="./css/styles.css?v=20261122d">
 </head>
 
 <body>
   <div id="game-container" class="main-menu-open">
+    <div id="command-ribbon-bg" aria-hidden="true"></div>
     <div id="reticle"></div>
 
     <div id="box-hover-pill"
@@ -45,29 +47,38 @@
       </div>
       <div id="hud-top-right-row">
         <div class="hud-card" id="door-lights-panel" aria-label="Live door beacon lights">
-          <div class="dlp-item">
-            <span class="dlp-label">D1</span>
-            <span class="dlp-light" id="door-light-1"></span>
+          <div class="dlp-lights-row">
+            <div class="dlp-item">
+              <span class="dlp-label">D1</span>
+              <span class="dlp-light" id="door-light-1"></span>
+            </div>
+            <div class="dlp-item">
+              <span class="dlp-label">D2</span>
+              <span class="dlp-light" id="door-light-2"></span>
+            </div>
+            <div class="dlp-item">
+              <span class="dlp-label">D3</span>
+              <span class="dlp-light" id="door-light-3"></span>
+            </div>
+            <div class="dlp-item">
+              <span class="dlp-label">D4</span>
+              <span class="dlp-light" id="door-light-4"></span>
+            </div>
+            <div class="dlp-item">
+              <span class="dlp-label">SD</span>
+              <span class="dlp-light" id="door-light-sd"></span>
+            </div>
           </div>
-          <div class="dlp-item">
-            <span class="dlp-label">D2</span>
-            <span class="dlp-light" id="door-light-2"></span>
-          </div>
-          <div class="dlp-item">
-            <span class="dlp-label">D3</span>
-            <span class="dlp-light" id="door-light-3"></span>
-          </div>
-          <div class="dlp-item">
-            <span class="dlp-label">D4</span>
-            <span class="dlp-light" id="door-light-4"></span>
-          </div>
-          <div class="dlp-item">
-            <span class="dlp-label">SD</span>
-            <span class="dlp-light" id="door-light-sd"></span>
+          <div class="dlp-sd-queue-row">
+            <span id="dlp-sd-queue-txt">SD Queue: 0</span>
+            <span id="dlp-wh-driver-tag" class="crt-dir-tag crt-dir-tag-vendor dlp-wh-tag">WH DRIVER</span>
           </div>
         </div>
         <button id="end-shift-btn" type="button">END SHIFT</button>
-        <button id="pause-menu-btn" type="button" title="System &amp; Pause Menu [ESC]" aria-label="Pause Menu">⏸ MENU</button>
+        <button id="pause-menu-btn" type="button" title="System &amp; Pause Menu [ESC]" aria-label="System Menu">
+          <span>SYSTEM</span>
+          <span>MENU</span>
+        </button>
       </div>
     </div>
 
@@ -102,31 +113,59 @@
         </div>
       </div>
 
-      <div class="hud-card" id="hud-stats-tracker" aria-label="Shift Stats and Points Tracker">
-        <div class="hst-top-tier" title="Total Shift Points">
-          <span class="hst-pts-lbl">Points</span>
-          <span class="hst-pts-val" id="hud-shift-score" style="color: #22c55e;">0</span>
+      <div class="hud-card" id="hud-remaining-tracker" tabindex="0" aria-label="Remaining Work and Points Tracker" aria-expanded="false" aria-controls="hud-remaining-legend">
+        <div class="rem-hdr">
+          <span class="rem-title">REMAINING WORK</span>
+          <span class="rem-hdr-badges">
+            <span class="rem-pts-pill" title="Total Shift Points">PTS <span id="hud-shift-score" style="color: #22c55e;">0</span></span>
+            <span class="rem-total-pill" id="hud-rem-pill" title="Total Remaining Work Items"><span id="hud-rem-total">0</span> <span class="rem-pill-lbl" id="hud-rem-pill-lbl">LEFT</span></span>
+          </span>
         </div>
-        <div class="hst-bottom-tier">
-          <div class="hst-cell" title="Night Drops Completed">
-            <span class="hst-lbl">ND</span>
-            <span class="hst-val" id="hud-stat-nd">0</span>
+        <div class="rem-table" role="grid" aria-label="Remaining work categories">
+          <div class="rem-cell rem-cat-sd" role="gridcell" data-legend="Side-Door Vendors" aria-label="Unprocessed Side-Door Vendors" title="Unprocessed Side-Door Vendors">
+            <span class="rem-ico" aria-hidden="true"><svg viewBox="0 0 16 16" fill="currentColor"><path d="M2 2.5h2.4l1.1 7.8h7.5v1.5H4.9l-.3-1.8H4.5L3.3 4H2V2.5zm4.5 1.5h4.2v2.4H6.5V4zm.3 3h5.4v2.3H6.8V7z"/><circle cx="5.2" cy="13.5" r="1.7"/></svg></span>
+            <span class="rem-v" id="hud-rem-sd" data-count="0">✓</span>
           </div>
-          <div class="hst-cell" title="Side-Door Vendors Completed">
-            <span class="hst-lbl">SD</span>
-            <span class="hst-val" id="hud-stat-sd">0</span>
+          <div class="rem-cell rem-cat-vt" role="gridcell" data-legend="Vendor Trucks" aria-label="Unprocessed Truck Vendors" title="Unprocessed Truck Vendors">
+            <span class="rem-ico" aria-hidden="true"><svg viewBox="0 0 16 16" fill="currentColor"><path d="M1 3.5h8.8V11H1V3.5zm9.6 2h2.5l1.9 2.2V11h-4.4V5.5z"/><circle cx="4" cy="12.5" r="1.6"/><circle cx="12.2" cy="12.5" r="1.6"/></svg></span>
+            <span class="rem-v" id="hud-rem-vt" data-count="0">✓</span>
           </div>
-          <div class="hst-cell" title="Vendor Trucks Completed">
-            <span class="hst-lbl">VT</span>
-            <span class="hst-val" id="hud-stat-vt">0</span>
+          <div class="rem-cell rem-cat-wh" role="gridcell" data-legend="Warehouse Trucks" aria-label="Unprocessed Warehouse Trucks" title="Unprocessed Warehouse Trucks">
+            <span class="rem-ico" aria-hidden="true"><svg viewBox="0 0 22 16" fill="currentColor"><path d="M0.5 2h13.3v9H0.5V2zm14.3 2.2h3.9l2.6 2.8V11h-6.5V4.2zm-1.1 5.3h1.3v1.2h-1.3V9.5z"/><circle cx="3.3" cy="12.7" r="1.55"/><circle cx="7.1" cy="12.7" r="1.55"/><circle cx="18" cy="12.7" r="1.55"/></svg></span>
+            <span class="rem-v" id="hud-rem-wh" data-count="0">✓</span>
           </div>
-          <div class="hst-cell" title="Warehouse Trucks Completed">
-            <span class="hst-lbl">WH</span>
-            <span class="hst-val" id="hud-stat-wh">0</span>
+          <div class="rem-cell rem-cat-ts" role="gridcell" data-legend="Home Office Tasks" aria-label="Remaining Home Office Tasks" title="Remaining Home Office Tasks">
+            <span class="rem-ico" aria-hidden="true"><svg viewBox="0 0 16 16" fill="currentColor"><path d="M5.5 1.2h5v1.6h2.2V14.5H3.3V2.8h2.2V1.2zm1 1.1v1h3v-1h-3zM5 6.1v1.4h6V6.1H5zm0 2.7v1.4h6V8.8H5zm0 2.7v1.4h4.2v-1.4H5z"/></svg></span>
+            <span class="rem-v" id="hud-rem-ts" data-count="0">✓</span>
           </div>
-          <div class="hst-cell" title="Home Office Tasks Completed">
-            <span class="hst-lbl">TS</span>
-            <span class="hst-val" id="hud-stat-ts">0</span>
+          <div class="rem-cell rem-cat-cl" role="gridcell" data-legend="Claims Items Left" aria-label="Remaining Claims Items" title="Remaining Claims Items">
+            <span class="rem-ico" aria-hidden="true"><svg viewBox="0 0 16 16" fill="currentColor"><path d="M1.5 3h13v1.6h-13V3zm1.1 2.3h10.8l-1 8.9H3.6l-1-8.9zM7.2 6.6v3.7h1.6V6.6H7.2zm0 4.6v1.5h1.6v-1.5H7.2z"/></svg></span>
+            <span class="rem-v" id="hud-rem-cl" data-count="0">✓</span>
+          </div>
+          <div class="rem-cell rem-cat-os" role="gridcell" data-legend="Unslotted Overstock" aria-label="Unslotted Overstock Cases" title="Unslotted Overstock Cases">
+            <span class="rem-ico" aria-hidden="true"><svg viewBox="0 0 16 16" fill="currentColor"><path d="M5.2 2h5.6v4.6H5.2V2zM1.6 7.4h5.8V12H1.6V7.4zm7 0h5.8V12H8.6V7.4zM1 12.8h14v1.5H1v-1.5z"/></svg></span>
+            <span class="rem-v" id="hud-rem-os" data-count="0">✓</span>
+          </div>
+          <div class="rem-cell rem-cat-inv" role="gridcell" data-legend="Backroom Inventory" aria-label="Backroom Inventory Completed (Y/N)" title="Backroom Inventory Completed (Y/N)">
+            <span class="rem-ico" aria-hidden="true"><svg viewBox="0 0 16 16" fill="currentColor"><path d="M1.5 1.5h1.6v13H1.5v-13zm11.4 0h1.6v13h-1.6v-13zM3 5.5h10v1.4H3V5.5zm0 5.5h10v1.4H3V11zM4.2 2.4h3v2.5h-3V2.4zm4.2 0h3.4v2.5H8.4V2.4zM4.2 7.8h3.5v2.6H4.2V7.8zm4.4 0h3.2v2.6H8.6V7.8z"/></svg></span>
+            <span class="rem-v" id="hud-rem-inv" data-count="1">N</span>
+          </div>
+          <div class="rem-cell rem-cat-file" role="gridcell" data-legend="Paperwork Filed" aria-label="Paperwork Filed (Y/N)" title="Paperwork Filed (Y/N)">
+            <span class="rem-ico" aria-hidden="true"><svg viewBox="0 0 16 16" fill="currentColor"><path d="M1.5 2.5h5.2l1.3 1.5h6.5v9.5h-13V2.5zm1.5 3v6.5h10V5.5H3zm2.2 1.8h5.6v1.2H5.2V7.3zm0 2.2h4v1.2h-4V9.5z"/></svg></span>
+            <span class="rem-v" id="hud-rem-file" data-count="1">N</span>
+          </div>
+        </div>
+        <div id="hud-remaining-legend" role="tooltip" aria-hidden="true">
+          <div class="rem-leg-hdr">
+            <span>REMAINING WORK GUIDE</span>
+            <span class="rem-leg-tip">GREEN = COMPLETE</span>
+          </div>
+          <div class="rem-leg-grid" id="hud-rem-legend-grid"></div>
+          <div class="rem-leg-key">
+            <span><b>[#]</b> Remaining</span>
+            <span><b class="ok">[✓]</b> Done</span>
+            <span><b>[N/</b><b class="ok">Y</b><b>]</b> Inv &amp; File</span>
+            <span><b class="pts">[PTS]</b> Score</span>
           </div>
         </div>
       </div>
@@ -134,16 +173,39 @@
 
     <!-- Minimap Container -->
     <div id="minimap-container">
-      <canvas id="minimap-canvas" width="110" height="220"></canvas>
+      <canvas id="minimap-canvas" width="110" height="240"></canvas>
     </div>
 
     <button id="lock-hint" title="Toggle pointer lock">Click to lock mouse</button>
 
+    <!-- Command Bar Session Message Center -->
+    <div id="hud-msg-center" aria-label="Session Message Log">
+      <div id="hud-msg-bar" title="Click or press [L] / [M] to toggle Message Log">
+        <span>MESSAGE LOG <span id="hud-msg-badge">(0)</span></span>
+        <span id="hud-msg-preview">Ready — session alerts &amp; updates</span>
+        <span id="hud-msg-unread-dot" class="n-badge-dot" style="display:none;"></span>
+        <span id="hud-msg-chevron">▼</span>
+      </div>
+      <div id="hud-msg-drawer">
+        <div id="hud-msg-filters">
+          <button type="button" class="hud-msg-filter-btn active" data-filter="all">ALL</button>
+          <button type="button" class="hud-msg-filter-btn" data-filter="critical">ALERTS</button>
+          <button type="button" class="hud-msg-filter-btn" data-filter="high">WARNINGS</button>
+          <button type="button" class="hud-msg-filter-btn" data-filter="status">INFO</button>
+          <button type="button" class="hud-msg-filter-btn" data-filter="low">TASKS</button>
+        </div>
+        <div id="hud-msg-list"></div>
+      </div>
+      <div id="hud-msg-live-stack"></div>
+    </div>
+
     <!-- Live Pending Deliveries Dispatch Panel -->
-    <div id="pending-deliveries-panel">
-      <div class="pd-header">
-        <span>PENDING DELIVERIES</span>
-        <button id="pending-toggle-btn" type="button" title="Collapse or expand schedule [P]">[&ndash;]</button>
+    <div id="pending-deliveries-panel" class="collapsed">
+      <div class="pd-header" title="Collapse or expand schedule [P]">
+        <span class="pd-title-txt">PENDING DELIVERIES (0)</span>
+        <span class="pd-bar-summary">No pending deliveries</span>
+        <span class="pd-alert-dot"></span>
+        <button id="pending-toggle-btn" type="button" aria-label="Toggle Pending Deliveries">▼</button>
       </div>
       <div id="pending-deliveries-list"></div>
     </div>
@@ -713,7 +775,7 @@
       <div class="phase2-modal-card filing-folder-shell">
         <div class="phase2-modal-hdr">
           <h3>📁 DAILY FILING FOLDER — PAPER INVOICES &amp; STORE COPY PRINTOUTS</h3>
-          <button id="filing-close-btn" class="nd-close-btn" type="button">[X] CLOSE</button>
+          <button id="filing-close-btn" class="nd-close-btn" type="button">CLOSE</button>
         </div>
         <div id="filing-status-bar">Checking filing status...</div>
         <div class="filing-columns">
@@ -739,7 +801,7 @@
       <div class="phase2-modal-card">
         <div class="phase2-modal-hdr">
           <h3>🗄️ RECEIVING FILE CABINET ARCHIVE (32 DAYS)</h3>
-          <button id="archive-close-btn" class="nd-close-btn" type="button">[X] CLOSE</button>
+          <button id="archive-close-btn" class="nd-close-btn" type="button">CLOSE</button>
         </div>
         <div class="archive-body">
           <div id="archive-sidebar"></div>

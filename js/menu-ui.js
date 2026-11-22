@@ -116,7 +116,7 @@
       dom.infoModal.classList.toggle('active', infoOpen);
     }
     if (dom.hudPauseBtn) {
-      dom.hudPauseBtn.style.display = mainOpen ? 'none' : 'inline-flex';
+      dom.hudPauseBtn.style.display = mainOpen ? 'none' : 'flex';
     }
     if (dom.mainLoadBadge && global.SaveSystem && typeof global.SaveSystem.hasAnySave === 'function') {
       const hasSave = global.SaveSystem.hasAnySave();

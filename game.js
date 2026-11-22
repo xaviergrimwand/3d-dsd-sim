@@ -22,6 +22,7 @@
       getUnfinishedWork: null,
       onNewGame: null,
       onMenuStateChange: null,
+      onHudUpdate: null,
       onResetShift: []
     },
     dom: {}
@@ -46,6 +47,20 @@
       statVt: document.getElementById('hud-stat-vt'),
       statWh: document.getElementById('hud-stat-wh'),
       statTs: document.getElementById('hud-stat-ts'),
+      remPill: document.getElementById('hud-rem-pill'),
+      remPillLbl: document.getElementById('hud-rem-pill-lbl'),
+      remTotal: document.getElementById('hud-rem-total'),
+      remSd: document.getElementById('hud-rem-sd'),
+      remVt: document.getElementById('hud-rem-vt'),
+      remWh: document.getElementById('hud-rem-wh'),
+      remTs: document.getElementById('hud-rem-ts'),
+      remCl: document.getElementById('hud-rem-cl'),
+      remOs: document.getElementById('hud-rem-os'),
+      remInv: document.getElementById('hud-rem-inv'),
+      remFile: document.getElementById('hud-rem-file'),
+      remTracker: document.getElementById('hud-remaining-tracker'),
+      remLegend: document.getElementById('hud-remaining-legend'),
+      remLegendGrid: document.getElementById('hud-rem-legend-grid'),
       scoreValue: document.getElementById('hud-shift-score'),
       endShiftBtn: document.getElementById('end-shift-btn'),
       summaryModal: document.getElementById('shift-summary-modal'),
@@ -62,6 +77,24 @@
       summaryWarnings: document.getElementById('summary-unfinished-list'),
       nextShiftBtn: document.getElementById('btn-next-shift')
     };
+  }
+
+  function updateRemainingCell(valEl, count, isFlag) {
+    if (!valEl) return;
+    let done = false;
+    let remaining = 0;
+    if (isFlag) {
+      done = Boolean(count);
+      remaining = done ? 0 : 1;
+      valEl.textContent = done ? 'Y' : 'N';
+    } else {
+      remaining = Math.max(0, Number(count) || 0);
+      done = remaining === 0;
+      valEl.textContent = done ? '✓' : String(remaining);
+    }
+    valEl.dataset.count = String(remaining);
+    const cell = valEl.closest ? valEl.closest('.rem-cell') : valEl.parentElement;
+    if (cell) cell.classList.toggle('is-done', done);
   }
 
   function updateHud() {
@@ -110,9 +143,56 @@
       d.scoreValue.textContent = (score < 0 ? '-' : '') + Math.abs(score);
       d.scoreValue.style.color = score < 0 ? '#ef4444' : '#22c55e';
     }
+    if (d.remTotal || d.remSd || d.remVt || d.remWh || d.remTs || d.remCl || d.remOs || d.remInv || d.remFile) {
+      const rows = (global.WarehouseTrucks && typeof global.WarehouseTrucks.getScheduleRows === 'function')
+        ? global.WarehouseTrucks.getScheduleRows()
+        : [];
+      let remSd = 0;
+      let remVt = 0;
+      let remWh = 0;
+      for (let i = 0; i < rows.length; i++) {
+        const r = rows[i];
+        if (!r || r.completed || r.refused) continue;
+        if (r.type === 'sidedoor') remSd += 1;
+        else if (r.type === 'vendor_truck') remVt += 1;
+        else if (r.type === 'warehouse') remWh += 1;
+      }
+      const remTs = (global.DSDReceipts && typeof global.DSDReceipts.getPendingHomeOfficeTaskCount === 'function')
+        ? global.DSDReceipts.getPendingHomeOfficeTaskCount()
+        : 0;
+      const remCl = (global.ClaimsTotes && typeof global.ClaimsTotes.getRemainingClaimsCount === 'function')
+        ? global.ClaimsTotes.getRemainingClaimsCount()
+        : 0;
+      const remOs = (global.BackstockRacks && typeof global.BackstockRacks.getUnslottedOverstockCount === 'function')
+        ? global.BackstockRacks.getUnslottedOverstockCount()
+        : 0;
+      const invDone = Boolean(st.backstockInventoried);
+      const fileDone = Boolean(st.filingDone);
+      const remTotal = remSd + remVt + remWh + remTs + remCl + remOs + (invDone ? 0 : 1) + (fileDone ? 0 : 1);
+      updateRemainingCell(d.remSd, remSd, false);
+      updateRemainingCell(d.remVt, remVt, false);
+      updateRemainingCell(d.remWh, remWh, false);
+      updateRemainingCell(d.remTs, remTs, false);
+      updateRemainingCell(d.remCl, remCl, false);
+      updateRemainingCell(d.remOs, remOs, false);
+      updateRemainingCell(d.remInv, invDone, true);
+      updateRemainingCell(d.remFile, fileDone, true);
+      if (d.remTotal) {
+        d.remTotal.textContent = String(remTotal);
+      }
+      if (d.remPill) {
+        d.remPill.classList.toggle('is-all-clear', remTotal === 0);
+      }
+      if (d.remPillLbl) {
+        d.remPillLbl.textContent = remTotal === 0 ? '✓ CLEAR' : 'LEFT';
+      }
+    }
     if (d.endShiftBtn) {
       // Matches 2D game: END DAY button unlocks starting at 12:00 PM
       d.endShiftBtn.style.display = (snap.afterNoon && !snap.shiftEnded) ? 'inline-block' : 'none';
+    }
+    if (typeof state.hooks.onHudUpdate === 'function') {
+      state.hooks.onHudUpdate(snap, st, score);
     }
   }
 
@@ -235,7 +315,97 @@
     return String(doorKey || 'Dock Door');
   }
 
+  function setRemainingLegendOpen(open) {
+    const tracker = state.dom.remTracker;
+    const legend = state.dom.remLegend;
+    if (!tracker || !legend) return;
+    const isOpen = Boolean(open);
+    tracker.classList.toggle('legend-open', isOpen);
+    tracker.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
+    legend.setAttribute('aria-hidden', isOpen ? 'false' : 'true');
+  }
+
+  function bindRemainingLegend() {
+    const tracker = state.dom.remTracker;
+    const legend = state.dom.remLegend;
+    const grid = state.dom.remLegendGrid;
+    if (!tracker || !legend || tracker.dataset.legendBound === '1') return;
+    tracker.dataset.legendBound = '1';
+
+    if (grid && grid.children.length === 0) {
+      tracker.querySelectorAll('.rem-table .rem-cell').forEach((cell) => {
+        const catCls = Array.from(cell.classList).find((c) => c.indexOf('rem-cat-') === 0) || '';
+        const ico = cell.querySelector('.rem-ico svg');
+        const label = cell.getAttribute('data-legend') || cell.getAttribute('aria-label') || '';
+        const item = document.createElement('div');
+        item.className = 'rem-leg-item ' + catCls;
+        const icoSpan = document.createElement('span');
+        icoSpan.className = 'rem-ico';
+        if (ico) icoSpan.appendChild(ico.cloneNode(true));
+        const txtSpan = document.createElement('span');
+        txtSpan.className = 'rem-leg-txt';
+        txtSpan.textContent = label;
+        item.appendChild(icoSpan);
+        item.appendChild(txtSpan);
+        grid.appendChild(item);
+      });
+    }
+
+    let lastTouchMs = 0;
+    function isTouchOnlyMode() {
+      if (Date.now() - lastTouchMs < 900) return true;
+      if (global.matchMedia && global.matchMedia('(pointer: coarse)').matches && !global.matchMedia('(any-pointer: fine)').matches) {
+        return true;
+      }
+      return false;
+    }
+
+    tracker.addEventListener('touchstart', () => {
+      lastTouchMs = Date.now();
+    }, { passive: true });
+
+    // PC: open on mouseover, close when pointer leaves tracker + legend
+    tracker.addEventListener('mouseenter', () => {
+      if (isTouchOnlyMode()) return;
+      setRemainingLegendOpen(true);
+    });
+    tracker.addEventListener('mouseleave', () => {
+      if (isTouchOnlyMode()) return;
+      setRemainingLegendOpen(false);
+    });
+
+    // Android / Touch: tap toggles open and claims focus; tapping outside or losing focus closes
+    tracker.addEventListener('click', (e) => {
+      if (e && e.target && e.target.closest && e.target.closest('#hud-remaining-legend')) return;
+      if (!isTouchOnlyMode()) return;
+      e.stopPropagation();
+      const next = !tracker.classList.contains('legend-open');
+      setRemainingLegendOpen(next);
+      if (next && typeof tracker.focus === 'function') {
+        try { tracker.focus({ preventScroll: true }); } catch (_) { tracker.focus(); }
+      }
+    });
+
+    tracker.addEventListener('focusout', (e) => {
+      if (e && e.relatedTarget && tracker.contains(e.relatedTarget)) return;
+      setRemainingLegendOpen(false);
+    });
+    document.addEventListener('pointerdown', (e) => {
+      if (!tracker.classList.contains('legend-open')) return;
+      if (!e || !e.target || !tracker.contains(e.target)) {
+        setRemainingLegendOpen(false);
+      }
+    }, true);
+    global.addEventListener('blur', () => setRemainingLegendOpen(false));
+    global.addEventListener('keydown', (e) => {
+      if (e.code === 'Escape' && tracker.classList.contains('legend-open')) {
+        setRemainingLegendOpen(false);
+      }
+    });
+  }
+
   function bindEvents() {
+    bindRemainingLegend();
     if (state.dom.endShiftBtn) {
       state.dom.endShiftBtn.addEventListener('click', () => endShift('manual'));
     }
@@ -271,6 +441,7 @@
   }
 
   function syncClockPauseFlag() {
+    if (isModalOpen()) setRemainingLegendOpen(false);
     if (global.ShiftClock && typeof global.ShiftClock.setSystemPaused === 'function') {
       global.ShiftClock.setSystemPaused(isSystemPaused());
     }
@@ -295,6 +466,7 @@
       if (hooks.getUnfinishedWork) state.hooks.getUnfinishedWork = hooks.getUnfinishedWork;
       if (typeof hooks.onNewGame === 'function') state.hooks.onNewGame = hooks.onNewGame;
       if (typeof hooks.onMenuStateChange === 'function') state.hooks.onMenuStateChange = hooks.onMenuStateChange;
+      if (typeof hooks.onHudUpdate === 'function') state.hooks.onHudUpdate = hooks.onHudUpdate;
       if (typeof hooks.onResetShift === 'function') state.hooks.onResetShift.push(hooks.onResetShift);
     }
 
