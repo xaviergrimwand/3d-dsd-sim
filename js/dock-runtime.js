@@ -94,6 +94,7 @@
     const mobileBtnDock = document.getElementById('mobile-btn-dock');
     const btnTouchAction = document.getElementById('btn-touch-action');
     const btnTouchDoor = document.getElementById('btn-touch-door');
+    const btnTouchCaseScan = document.getElementById('btn-touch-case-scan');
     const btnTouchScan = document.getElementById('btn-touch-scan');
 
     let isTouchDevice = ('ontouchstart' in window) ||
@@ -1084,15 +1085,73 @@
       }
     }
 
+    function triggerScanVisualFeedback() {
+      if (SoundSystem && typeof SoundSystem.playScanBeep === 'function') {
+        SoundSystem.playScanBeep();
+      }
+      scannerDevice.classList.add('scanning');
+      scannerLcd.classList.add('scan-flash');
+      if (scanPulseTimeout) clearTimeout(scanPulseTimeout);
+      scanPulseTimeout = setTimeout(() => {
+        scannerDevice.classList.remove('scanning');
+        scannerLcd.classList.remove('scan-flash');
+      }, 240);
+    }
+
+    function canTriggerContextScanAction() {
+      if (
+        isCarryingBackstockCase() ||
+        isHoldingClaimsItem() ||
+        isHoldingRecallTote() ||
+        isArrangingRecallItem() ||
+        player.hasElectricJack ||
+        player.hitchedPallet ||
+        uiState.bolModalOpen ||
+        uiState.invoiceModalOpen ||
+        uiState.overageDeliveryId ||
+        isBlockingModalOpen()
+      ) {
+        return false;
+      }
+      return true;
+    }
+
     function handleScannerKeyAction(action, val) {
       if (action === 'pwr') {
         flashKeyButton('pwr');
         toggleScanner();
         return;
       }
+      let openedFreshForScan = false;
+      let preScannedOnOpen = false;
+      let hoveredBoxBeforeOpen = null;
       if (action === 'scan') {
+        if (!canTriggerContextScanAction()) return;
         flashKeyButton('scan');
-        if (!player.scannerActive) openScanner();
+        if (uiState.hoveredPhysicalBox) {
+          hoveredBoxBeforeOpen = uiState.hoveredPhysicalBox;
+          if (hoveredBoxBeforeOpen.deliveryId) {
+            DeliverySystem.focusDelivery(hoveredBoxBeforeOpen.deliveryId);
+          }
+        }
+        if (!player.scannerActive) {
+          openedFreshForScan = true;
+          const openScreen = resolveScannerOpenContext();
+          const hasPreClaims = Boolean(openScreen === 'damage' && (() => {
+            const ct = getHoveredClaimsScannerTarget();
+            return ct && ct.item && !ct.item.claimed;
+          })());
+          const hasPreSupply = Boolean(
+            openScreen === 'supply' &&
+            uiState.hoveredBackstockCase &&
+            window.BackstockRacks &&
+            typeof window.BackstockRacks.isSupplyCase === 'function' &&
+            window.BackstockRacks.isSupplyCase(uiState.hoveredBackstockCase) &&
+            !(window.DSDReceipts && typeof window.DSDReceipts.isSupplyOrderSubmittedToday === 'function' && window.DSDReceipts.isSupplyOrderSubmittedToday())
+          );
+          preScannedOnOpen = hasPreClaims || hasPreSupply;
+          openScanner();
+        }
       } else if (action === 'enter') {
         flashKeyButton('enter');
       } else if (action === 'num') {
@@ -1104,20 +1163,22 @@
         flashKeyButton('arrow' + String(val || '').toLowerCase());
       }
 
-      const mappedAction = action === 'clr' ? 'clear' : (action === 'nav' ? String(val || '').toLowerCase() : action);
-      if (window.DSDReceipts && window.DSDReceipts.handleScannerKey(mappedAction, val)) {
-        if (action === 'scan') {
-          if (SoundSystem && typeof SoundSystem.playScanBeep === 'function') {
-            SoundSystem.playScanBeep();
-          }
-          scannerDevice.classList.add('scanning');
-          scannerLcd.classList.add('scan-flash');
-          if (scanPulseTimeout) clearTimeout(scanPulseTimeout);
-          scanPulseTimeout = setTimeout(() => {
-            scannerDevice.classList.remove('scanning');
-            scannerLcd.classList.remove('scan-flash');
-          }, 240);
+      if (action === 'scan' && openedFreshForScan && preScannedOnOpen) {
+        return;
+      }
+      if (action === 'scan' && hoveredBoxBeforeOpen && window.DSDReceipts && typeof window.DSDReceipts.scanSpecificBox === 'function') {
+        const res = window.DSDReceipts.scanSpecificBox(hoveredBoxBeforeOpen);
+        const targetDeliv = DeliverySystem.activeDelivery;
+        if (targetDeliv) syncDeliveryBoxesVisuals(targetDeliv);
+        if (res && res.ok && (res.loaded || res.scanned)) {
+          triggerScanVisualFeedback();
         }
+        return;
+      }
+
+      const mappedAction = action === 'clr' ? 'clear' : (action === 'nav' ? String(val || '').toLowerCase() : action);
+      if (window.DSDReceipts) {
+        window.DSDReceipts.handleScannerKey(mappedAction, val);
       }
     }
 
@@ -1258,11 +1319,14 @@
       }
 
       // Scanner Dedicated PC Keybinds
-      // [R]: Barcode scan shortcut (scans or opens & scans)
+      // [R]: Barcode scan shortcut (scans hovered/eligible case or opens scanner)
       if (e.code === 'KeyR') {
-        handleScannerKeyAction('scan');
-        e.preventDefault();
-        return;
+        const tag = document.activeElement && document.activeElement.tagName;
+        if (tag !== 'INPUT' && tag !== 'TEXTAREA' && tag !== 'SELECT') {
+          handleScannerKeyAction('scan');
+          e.preventDefault();
+          return;
+        }
       }
 
       // [P]: Toggle Pending Deliveries panel
@@ -1286,47 +1350,71 @@
         }
       }
 
-      // When scanner HUD is open, handle keypad keys
-      if (uiState.scannerModalOpen) {
+      // When scanner HUD is open, handle keypad keys (no literal F1-F8 keys; uses nav/edit cluster + numpad symbols)
+      if (uiState.scannerModalOpen && !e.ctrlKey && !e.altKey && !e.metaKey) {
         // [Enter] / [NumpadEnter]: ENT Confirm / Create
         if (e.code === 'Enter' || e.code === 'NumpadEnter') {
           handleScannerKeyAction('enter');
           e.preventDefault();
           return;
         }
-        // [Backspace] / [Delete]: CLR Clear
-        if (e.code === 'Backspace' || e.code === 'Delete') {
+        // [Backspace]: CLR / BKSP Clear
+        if (e.code === 'Backspace') {
           handleScannerKeyAction('clr');
           e.preventDefault();
           return;
         }
-        // [-] / [NumpadSubtract]: - Sub / List Up
+        // [Home]: F1 Home Screen
+        if (e.code === 'Home') {
+          handleScannerKeyAction('home');
+          e.preventDefault();
+          return;
+        }
+        // [-] / [NumpadSubtract]: - Sub / Credit Sign
         if (e.key === '-' || e.code === 'Minus' || e.code === 'NumpadSubtract') {
           handleScannerKeyAction('minus');
           e.preventDefault();
           return;
         }
-        // [*] / [NumpadMultiply]: * Total / Back
+        // [*] / [NumpadMultiply]: F2 Totals & Costs
         if (e.key === '*' || e.code === 'NumpadMultiply') {
           handleScannerKeyAction('star');
           e.preventDefault();
           return;
         }
-        // [/] / [NumpadDivide]: / List / Resume (F4)
+        // [ArrowLeft]: F3 Universal Back / Cancel
+        if (e.code === 'ArrowLeft') {
+          handleScannerKeyAction('back');
+          e.preventDefault();
+          return;
+        }
+        // [/] / [NumpadDivide]: F4 Item List / Cart / Audit List
         if (e.key === '/' || e.code === 'Slash' || e.code === 'NumpadDivide') {
           handleScannerKeyAction('slash');
           e.preventDefault();
           return;
         }
-        // [F5] / [+] / [NumpadAdd] / [End]: F5 FINAL
-        if (e.code === 'F5' || e.key === '+' || e.code === 'NumpadAdd' || e.code === 'End') {
+        // [End] / [+] / [NumpadAdd]: F5 Finalize / Submit
+        if (e.code === 'End' || e.key === '+' || e.code === 'NumpadAdd') {
           handleScannerKeyAction('plus');
           e.preventDefault();
           return;
         }
-        // [F6]: Print label / Print finalized receipt
-        if (e.code === 'F6') {
+        // [Insert]: F6 Print Label / Print Receipt
+        if (e.code === 'Insert') {
           handleScannerKeyAction('print');
+          e.preventDefault();
+          return;
+        }
+        // [ArrowRight]: F7 Resume Initial Receipt
+        if (e.code === 'ArrowRight') {
+          handleScannerKeyAction('f7');
+          e.preventDefault();
+          return;
+        }
+        // [Delete]: F8 Edit Expected Totals
+        if (e.code === 'Delete') {
+          handleScannerKeyAction('f8');
           e.preventDefault();
           return;
         }
@@ -1337,8 +1425,8 @@
           e.preventDefault();
           return;
         }
-        // Arrow keys for scanner navigation (WASD remains available for walking!)
-        if (e.code === 'ArrowUp' || e.code === 'ArrowDown' || e.code === 'ArrowLeft' || e.code === 'ArrowRight') {
+        // Up/Down arrow keys for scanner list/field navigation (WASD remains available for walking)
+        if (e.code === 'ArrowUp' || e.code === 'ArrowDown') {
           handleScannerKeyAction('nav', e.code.replace('Arrow', '').toLowerCase());
           e.preventDefault();
           return;
@@ -1605,6 +1693,12 @@
         handleInteractE();
       });
     }
+    if (btnTouchCaseScan) {
+      btnTouchCaseScan.addEventListener('click', (e) => {
+        e.stopPropagation();
+        handleScannerKeyAction('scan');
+      });
+    }
     if (btnTouchScan) {
       btnTouchScan.addEventListener('click', (e) => {
         e.stopPropagation();
@@ -1810,8 +1904,8 @@
         }
       }
 
-      // Raycast over Individual Delivery Boxes (only when NOT carrying a backstock case, operating the jack, or targeting an inventory/supply shelf case)
-      if (!carryingBackstock && !player.hasElectricJack && !holdingClaimsItem && !holdingRecallTote && !arrangingRecallItem && !uiState.hoveredInventoryCase && !uiState.hoveredSupplyCase && !isBlockingModalOpen() && (!(isPointerLocked || usingTouchAim) || uiState.scannerModalOpen || uiState.invoiceModalOpen || uiState.overageDeliveryId)) {
+      // Raycast over Individual Delivery Boxes (only when NOT carrying a backstock case, operating/hitching the jack, or targeting a backstock/label/inventory/supply shelf case)
+      if (!carryingBackstock && !player.hasElectricJack && !player.hitchedPallet && !holdingClaimsItem && !holdingRecallTote && !arrangingRecallItem && !uiState.hoveredLabelCase && !uiState.hoveredInventoryCase && !uiState.hoveredSupplyCase && !isBlockingModalOpen()) {
         const boxMeshes = getActiveDeliveryBoxMeshes();
         if (boxMeshes.length > 0) {
           interactRaycaster.setFromCamera(aimNDC, camera);
@@ -2722,65 +2816,136 @@
         }
       }
 
-      // Context-sensitive tactile pill buttons: bottom=Scanner [F], middle=Use [E], top=Jack [Space]
+      // Action button stack: Scanner [F] on all devices; context action buttons (Use / Jack / Scan) on touch devices only
       if (mobileBtnDock) {
         if (isBlockingModalOpen()) {
           mobileBtnDock.style.display = 'none';
         } else {
           mobileBtnDock.style.display = 'flex';
           let useLabel = '';
-          if (carryingBackstock) {
-            if (uiState.hoveredBackstockTarget) useLabel = 'Place';
-          } else if (arrangingRecallItem) {
-            if (uiState.hoveredRecallArrangeSpot) useLabel = 'Place';
-          } else if (holdingRecallTote) {
-            if (uiState.hoveredRecallItem) useLabel = 'Collect';
-            else if (uiState.hoveredRecallBottomDock) useLabel = 'Set Tote';
-            else if (uiState.hoveredClaimsReceptacle) useLabel = 'Dump Tote';
-          } else if (holdingClaimsItem) {
-            if (uiState.hoveredClaimsReceptacle) useLabel = 'Place';
-          } else if (focusedInteractible) {
-            if (focusedInteractible.type === 'dock_button' || focusedInteractible.type === 'side_door_button') {
-              useLabel = 'Door';
-            } else if (focusedInteractible.type === 'terminal') {
-              useLabel = 'Terminal';
-            } else if (focusedInteractible.type === 'driver') {
-              useLabel = 'Driver';
-            } else if (
-              ['desk_papers', 'filing_folder', 'file_cabinet', 'printer', 'trash_can'].includes(focusedInteractible.type)
-            ) {
-              useLabel = 'Inspect';
-            }
-          }
-          if (!useLabel && !carryingBackstock && !holdingClaimsItem && !holdingRecallTote && !arrangingRecallItem) {
-            if (!player.hasElectricJack && uiState.hoveredBackstockCase) {
-              useLabel = 'Pick Up';
-            } else if (uiState.hoveredClaimsTote && !uiState.hoveredClaimsTote.isRed) {
-              useLabel = uiState.hoveredClaimsTote.isOpen ? 'Close Tote' : 'Open Tote';
-            } else if (!player.hasElectricJack && uiState.hoveredClaimsItem && uiState.hoveredClaimsItem.scannerConfirmed) {
-              useLabel = 'Take Item';
-            } else if (!player.hasElectricJack && uiState.hoveredRecallItem) {
-              useLabel = 'Move Item';
-            } else if (!player.hasElectricJack && uiState.hoveredRecallTote) {
-              useLabel = 'Take Tote';
-            }
-          }
-
           let jackLabel = '';
-          if (player.hitchedPallet) {
-            jackLabel = 'Drop Pallet';
-          } else if (player.hasElectricJack) {
-            jackLabel = (focusedInteractible && focusedInteractible.type === 'pallet') ? 'Hitch Pallet' : 'Park Jack';
-          } else if (
-            !carryingBackstock &&
-            !holdingClaimsItem &&
-            !holdingRecallTote &&
-            !arrangingRecallItem &&
-            !uiState.scannerModalOpen &&
-            focusedInteractible &&
-            focusedInteractible.type === 'electric_jack'
-          ) {
-            jackLabel = 'Take Jack';
+          let caseScanLabel = '';
+
+          if (isTouchDevice) {
+            if (carryingBackstock) {
+              if (uiState.hoveredBackstockTarget) useLabel = 'Place';
+            } else if (arrangingRecallItem) {
+              if (uiState.hoveredRecallArrangeSpot) useLabel = 'Place';
+            } else if (holdingRecallTote) {
+              if (uiState.hoveredRecallItem) useLabel = 'Collect';
+              else if (uiState.hoveredRecallBottomDock) useLabel = 'Set Tote';
+              else if (uiState.hoveredClaimsReceptacle) useLabel = 'Dump Tote';
+            } else if (holdingClaimsItem) {
+              if (uiState.hoveredClaimsReceptacle) useLabel = 'Place';
+            } else if (focusedInteractible) {
+              if (focusedInteractible.type === 'dock_button' || focusedInteractible.type === 'side_door_button') {
+                useLabel = 'Door';
+              } else if (focusedInteractible.type === 'terminal') {
+                useLabel = 'Terminal';
+              } else if (focusedInteractible.type === 'driver') {
+                useLabel = 'Driver';
+              } else if (
+                ['desk_papers', 'filing_folder', 'file_cabinet', 'printer', 'trash_can'].includes(focusedInteractible.type)
+              ) {
+                useLabel = 'Inspect';
+              }
+            }
+            if (!useLabel && !carryingBackstock && !holdingClaimsItem && !holdingRecallTote && !arrangingRecallItem) {
+              if (!player.hasElectricJack && uiState.hoveredBackstockCase) {
+                useLabel = 'Pick Up';
+              } else if (uiState.hoveredClaimsTote && !uiState.hoveredClaimsTote.isRed) {
+                useLabel = uiState.hoveredClaimsTote.isOpen ? 'Close Tote' : 'Open Tote';
+              } else if (!player.hasElectricJack && uiState.hoveredClaimsItem && uiState.hoveredClaimsItem.scannerConfirmed) {
+                useLabel = 'Take Item';
+              } else if (!player.hasElectricJack && uiState.hoveredRecallItem) {
+                useLabel = 'Move Item';
+              } else if (!player.hasElectricJack && uiState.hoveredRecallTote) {
+                useLabel = 'Take Tote';
+              }
+            }
+
+            if (player.hitchedPallet) {
+              jackLabel = 'Drop Pallet';
+            } else if (player.hasElectricJack) {
+              jackLabel = (focusedInteractible && focusedInteractible.type === 'pallet') ? 'Hitch Pallet' : 'Park Jack';
+            } else if (
+              !carryingBackstock &&
+              !holdingClaimsItem &&
+              !holdingRecallTote &&
+              !arrangingRecallItem &&
+              !uiState.scannerModalOpen &&
+              focusedInteractible &&
+              focusedInteractible.type === 'electric_jack'
+            ) {
+              jackLabel = 'Take Jack';
+            }
+
+            if (canTriggerContextScanAction()) {
+              const dr = window.DSDReceipts;
+              const racks = window.BackstockRacks;
+              const scr = (dr && typeof dr.getScannerScreen === 'function') ? dr.getScannerScreen() : 'home';
+              const supplyDone = Boolean(dr && typeof dr.isSupplyOrderSubmittedToday === 'function' && dr.isSupplyOrderSubmittedToday());
+              const invDone = Boolean(dr && typeof dr.isInventoryAuditFinalized === 'function' && dr.isInventoryAuditFinalized());
+
+              if (uiState.hoveredPhysicalBox) {
+                const hb = uiState.hoveredPhysicalBox;
+                if (!hb.notScannable && !hb.overageFlagged) {
+                  if (uiState.scannerModalOpen) {
+                    if (['scanning', 'list', 'totals'].includes(scr)) caseScanLabel = 'Scan Box';
+                  } else {
+                    const sess = (hb.deliveryId && DeliverySystem.getSessionForDelivery)
+                      ? DeliverySystem.getSessionForDelivery(hb.deliveryId)
+                      : null;
+                    const targetDeliv = (sess && sess.delivery) || DeliverySystem.activeDelivery;
+                    if (targetDeliv && targetDeliv.receiptCreated && !targetDeliv.completed) {
+                      caseScanLabel = 'Scan Box';
+                    }
+                  }
+                }
+              } else if (uiState.hoveredLabelCase) {
+                const lc = uiState.hoveredLabelCase;
+                const isSup = Boolean(String(lc.deptNo || '') === '60' || String(lc.vendorNo || '') === '601' || lc.targetRackId === 'claims_steel');
+                if (!lc.labeled && !lc.notScannable && !isSup) caseScanLabel = 'Scan Case';
+              } else if (uiState.hoveredInventoryCase) {
+                const ic = uiState.hoveredInventoryCase;
+                const isPlaced = Boolean(ic.placedOnRack && ic.rackSlot);
+                const isEligible = isPlaced && racks && typeof racks.isInventoryEligibleRack === 'function' && racks.isInventoryEligibleRack(ic.rackSlot.rackId);
+                if (isEligible && !(ic.notScannable && !ic.labeled) && !invDone) caseScanLabel = 'Scan Case';
+              } else if (uiState.hoveredSupplyCase) {
+                const scBox = uiState.hoveredSupplyCase;
+                const isSup = Boolean(racks && typeof racks.isSupplyCase === 'function' && racks.isSupplyCase(scBox));
+                if (isSup && !supplyDone) caseScanLabel = 'Scan SKU';
+              } else if (uiState.hoveredClaimsItem) {
+                if (!uiState.hoveredClaimsItem.claimed && !uiState.hoveredClaimsItem.scannerConfirmed) caseScanLabel = 'Scan Claim';
+              } else if (!uiState.scannerModalOpen && uiState.hoveredBackstockCase) {
+                const bc = uiState.hoveredBackstockCase;
+                const isSup = Boolean(racks && typeof racks.isSupplyCase === 'function' && racks.isSupplyCase(bc));
+                if (isSup) {
+                  if (!supplyDone) caseScanLabel = 'Scan SKU';
+                } else if (bc.placedOnRack && bc.rackSlot) {
+                  const isEligible = racks && typeof racks.isInventoryEligibleRack === 'function' && racks.isInventoryEligibleRack(bc.rackSlot.rackId);
+                  if (isEligible && !(bc.notScannable && !bc.labeled) && !invDone) caseScanLabel = 'Scan Case';
+                } else if (!bc.labeled && !bc.notScannable) {
+                  caseScanLabel = 'Scan Case';
+                }
+              } else if (uiState.scannerModalOpen) {
+                if (scr === 'scanning') {
+                  const ad = DeliverySystem.activeDelivery;
+                  const phys = (ad && Array.isArray(ad.physicalBoxes)) ? ad.physicalBoxes : [];
+                  const cred = (ad && Array.isArray(ad.creditBoxes)) ? ad.creditBoxes : [];
+                  const hasNonPlu = phys.concat(cred).some((b) => b && !b.scanned && !b.overageFlagged && !b.notScannable);
+                  if (hasNonPlu) caseScanLabel = 'Scan Box';
+                } else if (scr === 'label-cases') {
+                  caseScanLabel = 'Scan Case';
+                } else if (scr === 'inventory' && !invDone) {
+                  caseScanLabel = 'Scan Case';
+                } else if ((scr === 'supply' || scr === 'supply-cart') && !supplyDone) {
+                  caseScanLabel = 'Scan SKU';
+                } else if (scr === 'damage') {
+                  caseScanLabel = 'Scan Claim';
+                }
+              }
+            }
           }
 
           let scanLabel = '';
@@ -2794,19 +2959,7 @@
             uiState.bolModalOpen
           );
           if (!scanBlocked) {
-            if (uiState.scannerModalOpen) {
-              scanLabel = 'Close Scan';
-            } else if (uiState.hoveredClaimsItem && !uiState.hoveredClaimsItem.scannerConfirmed) {
-              scanLabel = 'Scan Claim';
-            } else if (uiState.hoveredPhysicalBox) {
-              scanLabel = 'Scan Box';
-            } else if (uiState.hoveredClaimsTote && uiState.hoveredClaimsTote.isOpen) {
-              scanLabel = 'Scan Claim';
-            } else if (uiState.hoveredBackstockCase) {
-              scanLabel = 'Scan Case';
-            } else {
-              scanLabel = 'Scanner';
-            }
+            scanLabel = uiState.scannerModalOpen ? 'Close Scan' : 'Scanner';
           }
 
           if (btnTouchDoor) {
@@ -2816,6 +2969,10 @@
           if (btnTouchAction) {
             btnTouchAction.style.display = jackLabel ? 'inline-flex' : 'none';
             if (jackLabel) btnTouchAction.textContent = jackLabel;
+          }
+          if (btnTouchCaseScan) {
+            btnTouchCaseScan.style.display = caseScanLabel ? 'inline-flex' : 'none';
+            if (caseScanLabel) btnTouchCaseScan.textContent = caseScanLabel;
           }
           if (btnTouchScan) {
             btnTouchScan.style.display = scanLabel ? 'inline-flex' : 'none';
@@ -2932,16 +3089,10 @@
           if (window.ShiftClock) window.ShiftClock.stopDoorTimer('dock' + dd.id);
           if (bayHasTruckWaiting) {
             // Flashing Yellow: Truck waiting outside
-            dd.redLens.material.color.setHex(0x450a0a);
-            dd.amberLens.material.color.setHex(flashOn ? 0xf59e0b : 0x451a03);
-            dd.greenLens.material.color.setHex(0x052e16);
-            dd.beaconColor = flashOn ? '#f59e0b' : '#334155';
+            setBeaconSignals(dd, 'amber', flashOn, flashOn ? '#f59e0b' : '#334155');
           } else {
             // Steady Green: Closed & empty
-            dd.redLens.material.color.setHex(0x450a0a);
-            dd.amberLens.material.color.setHex(0x451a03);
-            dd.greenLens.material.color.setHex(0x22c55e);
-            dd.beaconColor = '#22c55e';
+            setBeaconSignals(dd, 'green', true, '#22c55e');
           }
         } else {
           // DOOR IS OPEN:
@@ -2949,10 +3100,7 @@
             // Steady Yellow: Trailer, truck, driver, or active delivery is on this dock
             if (window.ShiftClock) window.ShiftClock.stopDoorTimer('dock' + dd.id);
             dd.timeOpen = 0;
-            dd.redLens.material.color.setHex(0x450a0a);
-            dd.amberLens.material.color.setHex(0xf59e0b);
-            dd.greenLens.material.color.setHex(0x052e16);
-            dd.beaconColor = '#f59e0b';
+            setBeaconSignals(dd, 'amber', true, '#f59e0b');
           } else {
             // Red warning ONLY when dock door is completely empty (no trailer, truck, driver, or delivery)
             if (window.ShiftClock) window.ShiftClock.startDoorTimer('dock' + dd.id);
@@ -2963,16 +3111,10 @@
             const isWarned5 = doorTimer ? (doorTimer.active && doorTimer.warned5) : (dd.timeOpen >= 20);
             if (isWarned5) {
               // Flashing Red: Empty dock door open 5+ in-game mins (first warning level, before 10-min penalty)
-              dd.redLens.material.color.setHex(flashOn ? 0xef4444 : 0x450a0a);
-              dd.amberLens.material.color.setHex(0x451a03);
-              dd.greenLens.material.color.setHex(0x052e16);
-              dd.beaconColor = flashOn ? '#ef4444' : '#334155';
+              setBeaconSignals(dd, 'red', flashOn, flashOn ? '#ef4444' : '#334155');
             } else {
               // Steady Red: Empty dock door open (< 5 in-game mins)
-              dd.redLens.material.color.setHex(0xef4444);
-              dd.amberLens.material.color.setHex(0x451a03);
-              dd.greenLens.material.color.setHex(0x052e16);
-              dd.beaconColor = '#ef4444';
+              setBeaconSignals(dd, 'red', true, '#ef4444');
             }
           }
         }
@@ -3031,16 +3173,10 @@
         if (window.ShiftClock) window.ShiftClock.stopDoorTimer('side');
         if (sideHasVendorWaiting || sideHasDriverWaitingExit) {
           // Flashing Yellow: Vendor waiting outside!
-          sideRollupDoor.redLens.material.color.setHex(0x450a0a);
-          sideRollupDoor.amberLens.material.color.setHex(flashSideOn ? 0xf59e0b : 0x451a03);
-          sideRollupDoor.greenLens.material.color.setHex(0x052e16);
-          sideRollupDoor.beaconColor = flashSideOn ? '#f59e0b' : '#334155';
+          setBeaconSignals(sideRollupDoor, 'amber', flashSideOn, flashSideOn ? '#f59e0b' : '#334155');
         } else {
           // Steady Green: Closed & empty
-          sideRollupDoor.redLens.material.color.setHex(0x450a0a);
-          sideRollupDoor.amberLens.material.color.setHex(0x451a03);
-          sideRollupDoor.greenLens.material.color.setHex(0x22c55e);
-          sideRollupDoor.beaconColor = '#22c55e';
+          setBeaconSignals(sideRollupDoor, 'green', true, '#22c55e');
         }
       } else {
         // SIDE DOOR OPEN:
@@ -3054,10 +3190,7 @@
         if (sideHasDriverPresent || sideHasVendorWaiting) {
           // Steady Yellow: Vendor on dock / apron
           sideRollupDoor.timeOpen = 0;
-          sideRollupDoor.redLens.material.color.setHex(0x450a0a);
-          sideRollupDoor.amberLens.material.color.setHex(0xf59e0b);
-          sideRollupDoor.greenLens.material.color.setHex(0x052e16);
-          sideRollupDoor.beaconColor = '#f59e0b';
+          setBeaconSignals(sideRollupDoor, 'amber', true, '#f59e0b');
         } else {
           // Open with nobody there!
           sideRollupDoor.timeOpen = (sideRollupDoor.timeOpen || 0) + dt;
@@ -3067,19 +3200,63 @@
           const isSideWarned5 = sideTimer ? (sideTimer.active && sideTimer.warned5) : (sideRollupDoor.timeOpen >= 20);
           if (isSideWarned5) {
             // Flashing Red: Open 5+ in-game mins unattended (first warning level, before 10-min penalty)
-            sideRollupDoor.redLens.material.color.setHex(flashSideOn ? 0xef4444 : 0x450a0a);
-            sideRollupDoor.amberLens.material.color.setHex(0x451a03);
-            sideRollupDoor.greenLens.material.color.setHex(0x052e16);
-            sideRollupDoor.beaconColor = flashSideOn ? '#ef4444' : '#334155';
+            setBeaconSignals(sideRollupDoor, 'red', flashSideOn, flashSideOn ? '#ef4444' : '#334155');
           } else {
             // Steady Red: Open with nobody there (< 5 in-game mins)
-            sideRollupDoor.redLens.material.color.setHex(0xef4444);
-            sideRollupDoor.amberLens.material.color.setHex(0x451a03);
-            sideRollupDoor.greenLens.material.color.setHex(0x052e16);
-            sideRollupDoor.beaconColor = '#ef4444';
+            setBeaconSignals(sideRollupDoor, 'red', true, '#ef4444');
           }
         }
       }
+
+      function applyLensLitState(lens, halo, lit, litHex, dimHex) {
+        if (lens && lens.material) {
+          if (lens.material.color) lens.material.color.setHex(lit ? litHex : dimHex);
+          if (lens.material.emissive && typeof lens.material.emissive.setHex === 'function') {
+            lens.material.emissive.setHex(lit ? litHex : 0x000000);
+          }
+          lens.material.emissiveIntensity = lit ? 1.65 : 0;
+        }
+        if (halo) halo.visible = Boolean(lit);
+      }
+
+      function setBeaconSignals(doorObj, activeChannel, isLit, beaconHex) {
+        if (!doorObj) return;
+        const bc = doorObj.beaconCtrl;
+        applyLensLitState(doorObj.redLens, bc && bc.redHalo, isLit && activeChannel === 'red', 0xef4444, 0x450a0a);
+        applyLensLitState(doorObj.amberLens, bc && bc.amberHalo, isLit && activeChannel === 'amber', 0xf59e0b, 0x451a03);
+        applyLensLitState(doorObj.greenLens, bc && bc.greenHalo, isLit && activeChannel === 'green', 0x22c55e, 0x052e16);
+        doorObj.beaconColor = beaconHex;
+      }
+
+      function syncDoorStationVisual(ctrl, beaconHex) {
+        if (!ctrl) return;
+        if (ctrl.pilotMat) {
+          const c = beaconHex || '#22c55e';
+          if (ctrl.lastPilotColor !== c) {
+            ctrl.lastPilotColor = c;
+            const num = parseInt(c.replace('#', ''), 16);
+            if (!Number.isNaN(num)) {
+              ctrl.pilotMat.color.setHex(num);
+              if (ctrl.pilotMat.emissive && typeof ctrl.pilotMat.emissive.setHex === 'function') {
+                ctrl.pilotMat.emissive.setHex(num);
+              }
+            }
+          }
+        }
+        if (ctrl.pressAnim > 0) {
+          ctrl.pressAnim = Math.max(0, ctrl.pressAnim - dt * 5.5);
+        }
+        const travel = ctrl.pressAnim > 0 ? (-0.011 * Math.sin(ctrl.pressAnim * Math.PI * 0.5)) : 0;
+        if (ctrl.openBtnGroup) {
+          ctrl.openBtnGroup.position.z = (ctrl.pressTarget === 'open') ? travel : 0;
+        }
+        if (ctrl.closeBtnGroup) {
+          ctrl.closeBtnGroup.position.z = (ctrl.pressTarget === 'close') ? travel : 0;
+        }
+      }
+
+      dockDoors.forEach((dd) => syncDoorStationVisual(dd.stationCtrl, dd.beaconColor));
+      syncDoorStationVisual(sideRollupDoor.stationCtrl, sideRollupDoor.beaconColor);
 
       // Animate Double Swinging Black Impact Doors for Freezer & Cooler
       coldDoors.forEach(cd => {
@@ -4962,7 +5139,31 @@
         isScannerNearDelivery: () => isNearActiveDelivery(),
         isScannerFocusedOnDelivery: () => isScannerFocusedOnDelivery(),
         getHoveredBox: () => uiState.hoveredPhysicalBox,
-        getHoveredLabelCase: () => uiState.hoveredLabelCase,
+        getHoveredLabelCase: () => {
+          if (uiState.hoveredLabelCase) return uiState.hoveredLabelCase;
+          const bc = uiState.hoveredBackstockCase;
+          if (!bc || bc.placedOnRack || bc.labeled) return null;
+          if (String(bc.deptNo || '') === '60' || String(bc.vendorNo || '') === '601' || bc.targetRackId === 'claims_steel') return null;
+          return bc;
+        },
+        getHoveredInventoryCase: () => {
+          if (uiState.hoveredInventoryCase) return uiState.hoveredInventoryCase;
+          const bc = uiState.hoveredBackstockCase;
+          return (bc && bc.placedOnRack) ? bc : null;
+        },
+        getHoveredSupplyCase: () => {
+          if (uiState.hoveredSupplyCase) return uiState.hoveredSupplyCase;
+          const bc = uiState.hoveredBackstockCase;
+          if (bc && window.BackstockRacks && typeof window.BackstockRacks.isSupplyCase === 'function' && window.BackstockRacks.isSupplyCase(bc)) {
+            return bc;
+          }
+          return null;
+        },
+        getHoveredClaimsItem: () => uiState.hoveredClaimsItem,
+        focusDeliveryById: (id) => {
+          if (id) DeliverySystem.focusDelivery(id);
+        },
+        onBarcodeScanned: triggerScanVisualFeedback,
         isPalletTarget: () => false,
         onDeliveryRefused: (d) => {
           DeliverySystem.handleDeliveryRefused(d);

@@ -6,24 +6,24 @@
   <title>3D DSD Receiving Simulator</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
-  <script src="./js/dsd-catalog.js?v=20261122b"></script>
-  <script src="./js/shift-clock.js?v=20261122b"></script>
-  <script src="./js/shift-stats.js?v=20261122b"></script>
-  <script src="./js/hud-messages.js?v=20261122d"></script>
-  <script src="./js/dsd-receipts.js?v=20261122b"></script>
-  <script src="./js/warehouse-trucks.js?v=20261122b"></script>
-  <script src="./js/backstock-racks.js?v=20261122b"></script>
-  <script src="./js/claims-totes.js?v=20261122b"></script>
-  <script src="./js/sound-system.js?v=20261122b"></script>
-  <script src="./js/warehouse-textures.js?v=20261122b"></script>
-  <script src="./js/warehouse-world.js?v=20261122b"></script>
-  <script src="./js/warehouse-models.js?v=20261122b"></script>
-  <script src="./js/delivery-system.js?v=20261122b"></script>
-  <script src="./js/save-system.js?v=20261122b"></script>
-  <script src="./js/menu-ui.js?v=20261122b"></script>
-  <script src="./game.js?v=20261122c"></script>
-  <script src="./js/dock-runtime.js?v=20261122d"></script>
-  <link rel="stylesheet" href="./css/styles.css?v=20261122d">
+  <script src="./js/dsd-catalog.js?v=20261122i"></script>
+  <script src="./js/shift-clock.js?v=20261122i"></script>
+  <script src="./js/shift-stats.js?v=20261122i"></script>
+  <script src="./js/hud-messages.js?v=20261122i"></script>
+  <script src="./js/dsd-receipts.js?v=20261122i"></script>
+  <script src="./js/warehouse-trucks.js?v=20261122i"></script>
+  <script src="./js/backstock-racks.js?v=20261122i"></script>
+  <script src="./js/claims-totes.js?v=20261122i"></script>
+  <script src="./js/sound-system.js?v=20261122i"></script>
+  <script src="./js/warehouse-textures.js?v=20261122i"></script>
+  <script src="./js/warehouse-world.js?v=20261122i"></script>
+  <script src="./js/warehouse-models.js?v=20261122i"></script>
+  <script src="./js/delivery-system.js?v=20261122i"></script>
+  <script src="./js/save-system.js?v=20261122i"></script>
+  <script src="./js/menu-ui.js?v=20261122i"></script>
+  <script src="./game.js?v=20261122i"></script>
+  <script src="./js/dock-runtime.js?v=20261122j"></script>
+  <link rel="stylesheet" href="./css/styles.css?v=20261122j">
 </head>
 
 <body>
@@ -273,29 +273,23 @@
           <div class="scanner-keypad-bezel">
             <!-- Primary Action Keys: ENT, Up/Down Nav, PWR (Scan trigger is under the grip) -->
             <div class="keypad-action-row">
-              <button class="scanner-btn btn-ent" id="key-ent" data-key="enter" title="Enter / Confirm [Enter]">
-                <span>ENT</span>
-                <span class="pc-kb-hint">⏎</span>
-              </button>
+              <button class="scanner-btn btn-ent" id="key-ent" data-key="enter" title="Enter / Confirm [Enter]">ENT</button>
               <button class="scanner-btn nav-btn" id="key-nav-u" data-key="arrowup"
                 title="Up / Scroll Up [▲]">▲</button>
               <button class="scanner-btn nav-btn" id="key-nav-d" data-key="arrowdown"
                 title="Down / Scroll Down [▼]">▼</button>
-              <button class="scanner-btn btn-pwr" id="key-pwr" data-key="pwr" title="Holster / Power Off [F]">
-                <span>PWR</span>
-                <span class="pc-kb-hint">[F]</span>
-              </button>
+              <button class="scanner-btn btn-pwr" id="key-pwr" data-key="pwr" title="Holster / Power Off [F]">PWR</button>
             </div>
 
-            <!-- Dedicated 1990s Function Key Rows (F1-F6) -->
+            <!-- Dedicated 1990s Function Key Rows (F1-F4) -->
             <div class="keypad-fn-row">
-              <button class="scanner-btn fn-btn key-fn" id="key-f1" data-key="home" title="F1: Home Screen">
+              <button class="scanner-btn fn-btn key-fn" id="key-f1" data-key="home" title="F1: Home Screen [Home]">
                 <span class="fn-key-code">F1</span>
               </button>
               <button class="scanner-btn fn-btn key-fn" id="key-f2" data-key="star" title="F2: Totals &amp; Costs [*]">
                 <span class="fn-key-code">F2</span>
               </button>
-              <button class="scanner-btn fn-btn key-fn" id="key-f3" data-key="back" title="F3: Universal Back">
+              <button class="scanner-btn fn-btn key-fn" id="key-f3" data-key="back" title="F3: Universal Back [←]">
                 <span class="fn-key-code">F3</span>
               </button>
               <button class="scanner-btn fn-btn key-fn" id="key-f4" data-key="slash" title="F4: Item List [/]">
@@ -306,16 +300,16 @@
             <!-- F5-F8 Row -->
             <div class="keypad-nav-row">
               <button class="scanner-btn fn-btn key-fn" id="key-f5" data-key="plus"
-                title="F5: Finalize Receipt [+ or End]">
+                title="F5: Finalize Receipt [End or +]">
                 <span class="fn-key-code">F5</span>
               </button>
-              <button class="scanner-btn fn-btn key-fn" id="key-f6" data-key="print" title="F6: Print">
+              <button class="scanner-btn fn-btn key-fn" id="key-f6" data-key="print" title="F6: Print [Ins]">
                 <span class="fn-key-code">F6</span>
               </button>
-              <button class="scanner-btn fn-btn key-fn" id="key-f7" data-key="f7" title="F7: Resume Initial Receipt">
+              <button class="scanner-btn fn-btn key-fn" id="key-f7" data-key="f7" title="F7: Resume Initial Receipt [→]">
                 <span class="fn-key-code">F7</span>
               </button>
-              <button class="scanner-btn fn-btn key-fn" id="key-f8" data-key="f8" title="F8: Edit Expected Totals">
+              <button class="scanner-btn fn-btn key-fn" id="key-f8" data-key="f8" title="F8: Edit Expected Totals [Del]">
                 <span class="fn-key-code">F8</span>
               </button>
             </div>
@@ -752,6 +746,7 @@
       <div id="mobile-btn-dock">
         <button id="btn-touch-action" class="touch-btn touch-btn-jack" type="button">Jack</button>
         <button id="btn-touch-door" class="touch-btn touch-btn-use" type="button">Use</button>
+        <button id="btn-touch-case-scan" class="touch-btn touch-btn-scan" type="button" title="Scan Case [R]">Scan</button>
         <button id="btn-touch-scan" class="touch-btn touch-btn-scanner" type="button">Scanner</button>
       </div>
       <div id="touch-look-zone"></div>

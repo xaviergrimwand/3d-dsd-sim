@@ -2416,10 +2416,32 @@ tr.inv-short-pickable:hover {
     inset 0 1px 0 rgba(255, 255, 255, 0.32);
 }
 
+#btn-touch-action,
+#btn-touch-door,
+#btn-touch-case-scan {
+  display: none;
+}
+
 .touch-btn-use:active {
   box-shadow:
     0 2px 0 #082f49,
     0 3px 8px rgba(2, 132, 199, 0.3);
+}
+
+.touch-btn-scan {
+  background: linear-gradient(180deg, #10b981 0%, #059669 58%, #047857 100%);
+  border-color: rgba(110, 231, 183, 0.78);
+  color: #ecfdf5;
+  box-shadow:
+    0 5px 0 #064e3b,
+    0 8px 16px rgba(16, 185, 129, 0.38),
+    inset 0 1px 0 rgba(255, 255, 255, 0.35);
+}
+
+.touch-btn-scan:active {
+  box-shadow:
+    0 2px 0 #064e3b,
+    0 3px 8px rgba(16, 185, 129, 0.3);
 }
 
 .touch-btn-jack {

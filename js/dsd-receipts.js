@@ -2430,6 +2430,23 @@
       return handleDamageScannerKey(action, val);
     }
 
+    // Pressing Scan [R] / Scan button while aiming directly at a 3D delivery box works from Home/Create/List/Totals too
+    if (action === 'scan' && ['home', 'create', 'list', 'totals'].includes(sc.screen)) {
+      const hoveredBox = typeof state.hooks.getHoveredBox === 'function' ? state.hooks.getHoveredBox() : null;
+      if (hoveredBox) {
+        if (hoveredBox.deliveryId && typeof state.hooks.focusDeliveryById === 'function') {
+          state.hooks.focusDeliveryById(hoveredBox.deliveryId);
+        }
+        const res = scanSpecificBox(hoveredBox);
+        if (res && res.ok && (res.loaded || res.scanned) && typeof state.hooks.onBarcodeScanned === 'function') {
+          state.hooks.onBarcodeScanned();
+        }
+        const curD = getActiveDeliveryEnriched() || d;
+        if (curD && typeof state.hooks.onReceiptUpdated === 'function') state.hooks.onReceiptUpdated(curD);
+        return true;
+      }
+    }
+
     // Screen 0: Handheld Terminal Home Menu ("1-4 or Up/Dn + ENT")
     if (sc.screen === 'home') {
       const openHomeOption = (idx) => {
@@ -2873,11 +2890,24 @@
       } else if (action === 'down' || action === 'right') {
         cycleScanField(1);
       } else if (action === 'scan') {
-        if (!d) {
+        const hoveredBox = typeof state.hooks.getHoveredBox === 'function' ? state.hooks.getHoveredBox() : null;
+        if (hoveredBox) {
+          if (hoveredBox.deliveryId && typeof state.hooks.focusDeliveryById === 'function') {
+            state.hooks.focusDeliveryById(hoveredBox.deliveryId);
+          }
+          const res = scanSpecificBox(hoveredBox);
+          if (res && res.ok && (res.loaded || res.scanned) && typeof state.hooks.onBarcodeScanned === 'function') {
+            state.hooks.onBarcodeScanned();
+          }
+          if (d && typeof state.hooks.onReceiptUpdated === 'function') state.hooks.onReceiptUpdated(d);
+          return true;
+        }
+        const scanDeliv = getActiveDeliveryEnriched() || d;
+        if (!scanDeliv) {
           playBeep();
           setScannerMessage('', 'info');
         } else {
-          performPhysicalBoxScan(d);
+          performPhysicalBoxScan(scanDeliv);
         }
       } else if (action === 'enter') {
         if (sc.activeField === 'productCode') {
@@ -3021,14 +3051,19 @@
       notify('🚩 Case is flagged as OVERAGE (excess — unflag to scan).', 2800);
       return;
     }
-    const nextBox = explicitBox || (hovered && !hovered.scanned && !hovered.overageFlagged
+    const nextBox = explicitBox || (hovered && !hovered.overageFlagged
       ? hovered
-      : autoPool.find((b) => !b.scanned && !b.overageFlagged));
+      : autoPool.find((b) => !b.scanned && !b.overageFlagged && !b.notScannable));
 
     // Do not reveal or track whether all shipment cases have been scanned
     if (!nextBox) {
-      playBeep();
-      setScannerMessage('', 'info');
+      if (!explicitBox && autoPool.some((b) => !b.scanned && !b.overageFlagged && b.notScannable)) {
+        playError();
+        setScannerMessage('PLU ONLY: KEY CODE', 'err');
+      } else {
+        playBeep();
+        setScannerMessage('', 'info');
+      }
       return;
     }
 
@@ -3062,7 +3097,9 @@
     if (nextBox.isCredit) {
       sc.negativeMode = true;
     }
-    if (!explicitBox) {
+    if (!explicitBox && typeof state.hooks.onBarcodeScanned === 'function') {
+      state.hooks.onBarcodeScanned();
+    } else if (!explicitBox) {
       playBeep();
     }
     setScannerMessage('', 'info');
@@ -3316,6 +3353,16 @@
       setScannerMessage('', 'info');
       playBeep();
     } else if (action === 'scan') {
+      const hovered = typeof state.hooks.getHoveredLabelCase === 'function'
+        ? state.hooks.getHoveredLabelCase()
+        : null;
+      if (hovered) {
+        const res = scanBackstockCaseForLabel(hovered);
+        if (res && res.ok && res.loaded && typeof state.hooks.onBarcodeScanned === 'function') {
+          state.hooks.onBarcodeScanned();
+        }
+        return true;
+      }
       playBeep();
       setScannerMessage('CLICK CASE/TYPE PLU', 'info');
     } else if (action === 'enter') {
@@ -3775,6 +3822,16 @@
       setScannerMessage('', 'info');
       playBeep();
     } else if (action === 'scan') {
+      const hovered = typeof state.hooks.getHoveredSupplyCase === 'function'
+        ? state.hooks.getHoveredSupplyCase()
+        : null;
+      if (hovered) {
+        const res = scanSupplyBox(hovered);
+        if (res && res.ok && res.loaded && typeof state.hooks.onBarcodeScanned === 'function') {
+          state.hooks.onBarcodeScanned();
+        }
+        return true;
+      }
       playBeep();
       setScannerMessage('CLICK DEPT 60 BOX', 'info');
     } else if (action === 'enter') {
@@ -4027,8 +4084,24 @@
       setScannerMessage('', 'info');
       playBeep();
     } else if (action === 'scan') {
-      playBeep();
-      setScannerMessage('CLICK ITEM IN TOTE', 'info');
+      const hovered = typeof state.hooks.getHoveredClaimsItem === 'function'
+        ? state.hooks.getHoveredClaimsItem()
+        : null;
+      if (hovered) {
+        if (hovered.scannerConfirmed || hovered.claimed) {
+          playBeep();
+          setScannerMessage('ALREADY CONFIRMED', 'warn');
+        } else {
+          const res = scanClaimsItem(hovered);
+          if (res && res.ok && res.loaded && typeof state.hooks.onBarcodeScanned === 'function') {
+            state.hooks.onBarcodeScanned();
+          }
+          return true;
+        }
+      } else {
+        playBeep();
+        setScannerMessage('CLICK ITEM IN TOTE', 'info');
+      }
     } else {
       playBeep();
     }
@@ -4208,8 +4281,24 @@
       setScannerMessage('', 'info');
       playBeep();
     } else if (action === 'scan') {
-      playBeep();
-      setScannerMessage('CLICK SHELF CASE', 'info');
+      const hovered = typeof state.hooks.getHoveredInventoryCase === 'function'
+        ? state.hooks.getHoveredInventoryCase()
+        : null;
+      if (hovered) {
+        if (hovered.notScannable && !hovered.labeled) {
+          playError();
+          setScannerMessage('PLU: TYPE CODE + ENT', 'warn');
+        } else {
+          const res = scanBackstockCase(hovered);
+          if (res && res.ok && res.loaded && typeof state.hooks.onBarcodeScanned === 'function') {
+            state.hooks.onBarcodeScanned();
+          }
+          return true;
+        }
+      } else {
+        playBeep();
+        setScannerMessage('CLICK SHELF CASE', 'info');
+      }
     } else if (action === 'enter') {
       if (inv.activeField === 'productCode') {
         if (!inv.productCode) {
@@ -9814,6 +9903,12 @@
     scanBackstockCaseForLabel,
     scanBackstockCase,
     isScannerInventoryMode,
+    isInventoryAuditFinalized() {
+      return Boolean(state.scanner && state.scanner.inventory && state.scanner.inventory.finalized);
+    },
+    getScannerScreen() {
+      return (state.scanner && state.scanner.screen) ? state.scanner.screen : 'home';
+    },
     getBackstockInventorySummary,
     isScannerSupplyMode,
     isSupplyOrderSubmittedToday,

@@ -96,7 +96,12 @@
       createKgsCapTexture,
       createDriverBadgeTexture,
       createDriverFaceTexture,
-      createCartTexture
+      createCartTexture,
+      createDoorEnclosureTexture,
+      createDoorControlFaceplateTexture,
+      createBeaconFaceplateTexture,
+      createBeaconLensTexture,
+      createBeaconGlowTexture
     } = global.WarehouseTextures;
     const showAlert = hooks.showAlert || (() => { });
     const showNotification = hooks.showNotification || (() => { });
@@ -408,12 +413,7 @@
     applyWorldWallUVs(rightJamb);
     scene.add(rightJamb);
 
-    // 3. Continuous Horizontal Hazard Stripe Structural Beam across all bays
-    const hazardRail = new THREE.Mesh(new THREE.BoxGeometry(totalW - 0.2, 0.32, 0.14), matHazardRail);
-    hazardRail.position.set(0, doorHeight + 0.22, doorZ + 0.22);
-    scene.add(hazardRail);
-
-    // Lower Floor Hazard Kickrail along dock threshold
+    // 3. Lower Floor Hazard Kickrail along dock threshold
     const floorHazardRail = new THREE.Mesh(new THREE.BoxGeometry(totalW - 0.2, 0.16, 0.1), matHazardRail);
     floorHazardRail.position.set(0, 0.08, doorZ + 0.2);
     scene.add(floorHazardRail);
@@ -441,6 +441,326 @@
 
     // Global interactibles registry for raycaster focus & CRT green glow mask
     const interactibles = [];
+
+    // Shared NEMA 4X Door Control Station Builder (Wall Backplate, Cast Enclosure, Gasket, Hinges, Latch, Shrouded Pushbuttons, Pilot Jewel, Lockout Switch)
+    const doorEnclosureTex = createDoorEnclosureTexture ? createDoorEnclosureTexture() : null;
+    const matCtrlEnclosure = new THREE.MeshStandardMaterial(
+      doorEnclosureTex
+        ? { map: doorEnclosureTex, roughness: 0.46, metalness: 0.24 }
+        : { color: 0xeab308, roughness: 0.46, metalness: 0.24 }
+    );
+    const matCtrlChrome = new THREE.MeshStandardMaterial({ color: 0xcbd5e1, roughness: 0.22, metalness: 0.88 });
+    const matCtrlBolt = new THREE.MeshStandardMaterial({ color: 0x94a3b8, roughness: 0.32, metalness: 0.82 });
+    const matCtrlShroud = new THREE.MeshStandardMaterial({ color: 0x1e293b, roughness: 0.45, metalness: 0.55 });
+    const matCtrlOpenCap = new THREE.MeshStandardMaterial({
+      color: 0x22c55e,
+      emissive: 0x15803d,
+      emissiveIntensity: 0.42,
+      roughness: 0.24,
+      metalness: 0.12
+    });
+    const matCtrlCloseCap = new THREE.MeshStandardMaterial({
+      color: 0xef4444,
+      emissive: 0x991b1b,
+      emissiveIntensity: 0.42,
+      roughness: 0.24,
+      metalness: 0.12
+    });
+
+    function buildDoorControlButton(yPos, capMat) {
+      const wrap = new THREE.Group();
+      wrap.position.set(0, yPos, 0);
+
+      // Outer anodized guard shroud + raised safety ring
+      const shroud = new THREE.Mesh(new THREE.CylinderGeometry(0.036, 0.040, 0.018, 18), matCtrlShroud);
+      shroud.rotation.x = Math.PI / 2;
+      shroud.position.z = 0.084;
+      wrap.add(shroud);
+
+      const guardRing = new THREE.Mesh(new THREE.TorusGeometry(0.034, 0.0045, 8, 18), matCtrlShroud);
+      guardRing.position.z = 0.094;
+      wrap.add(guardRing);
+
+      // Chrome bezel collar & rubber weather boot
+      const bezel = new THREE.Mesh(new THREE.CylinderGeometry(0.029, 0.031, 0.020, 18), matCtrlChrome);
+      bezel.rotation.x = Math.PI / 2;
+      bezel.position.z = 0.088;
+      wrap.add(bezel);
+
+      // Depressible translucent plunger + dome cap
+      const plungerGroup = new THREE.Group();
+      const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.023, 0.024, 0.020, 18), capMat);
+      barrel.rotation.x = Math.PI / 2;
+      barrel.position.z = 0.097;
+      plungerGroup.add(barrel);
+
+      const dome = new THREE.Mesh(new THREE.SphereGeometry(0.022, 14, 10, 0, Math.PI * 2, 0, Math.PI * 0.42), capMat);
+      dome.rotation.x = Math.PI / 2;
+      dome.scale.set(1, 0.42, 1);
+      dome.position.z = 0.105;
+      plungerGroup.add(dome);
+
+      wrap.add(plungerGroup);
+      return { wrap, plungerGroup };
+    }
+
+    function buildDoorControlStation(doorLabel) {
+      const station = new THREE.Group();
+
+      // 1. Heavy steel wall mounting backplate + 4 hex lag bolts
+      const backplate = new THREE.Mesh(new THREE.BoxGeometry(0.25, 0.45, 0.014), matSteel);
+      backplate.position.set(0, 0, -0.063);
+      station.add(backplate);
+
+      const boltGeo = new THREE.CylinderGeometry(0.009, 0.009, 0.014, 6);
+      [[-0.105, 0.195], [0.105, 0.195], [-0.105, -0.195], [0.105, -0.195]].forEach(([bx, by]) => {
+        const bolt = new THREE.Mesh(boltGeo, matCtrlBolt);
+        bolt.rotation.x = Math.PI / 2;
+        bolt.position.set(bx, by, -0.052);
+        station.add(bolt);
+      });
+
+      // 2. Main cast safety-yellow NEMA 4X enclosure body
+      const body = new THREE.Mesh(new THREE.BoxGeometry(0.215, 0.37, 0.108), matCtrlEnclosure);
+      body.position.set(0, 0, -0.004);
+      station.add(body);
+
+      // 3. Recessed rubber gasket seam + hinged front cover door
+      const gasket = new THREE.Mesh(new THREE.BoxGeometry(0.208, 0.358, 0.007), matBlackRubber);
+      gasket.position.set(0, 0, 0.052);
+      station.add(gasket);
+
+      const cover = new THREE.Mesh(new THREE.BoxGeometry(0.202, 0.352, 0.020), matCtrlEnclosure);
+      cover.position.set(0, 0, 0.064);
+      station.add(cover);
+
+      // Side barrel hinges (left) + quarter-turn stainless cam latch (right)
+      [-0.105, 0.105].forEach((hy) => {
+        const hinge = new THREE.Mesh(new THREE.CylinderGeometry(0.010, 0.010, 0.036, 10), matCtrlChrome);
+        hinge.position.set(-0.104, hy, 0.057);
+        station.add(hinge);
+      });
+      const latchBase = new THREE.Mesh(new THREE.BoxGeometry(0.018, 0.044, 0.022), matCtrlChrome);
+      latchBase.position.set(0.104, 0, 0.062);
+      station.add(latchBase);
+      const latchTab = new THREE.Mesh(new THREE.CylinderGeometry(0.008, 0.008, 0.014, 10), matCtrlShroud);
+      latchTab.rotation.z = Math.PI / 2;
+      latchTab.position.set(0.114, 0, 0.062);
+      station.add(latchTab);
+
+      // 4. Top cast conduit hub & gland nut
+      const hubNut = new THREE.Mesh(new THREE.CylinderGeometry(0.030, 0.035, 0.032, 8), matCtrlBolt);
+      hubNut.position.set(0, 0.198, -0.012);
+      station.add(hubNut);
+      const hubCollar = new THREE.Mesh(new THREE.CylinderGeometry(0.022, 0.022, 0.022, 12), matCtrlShroud);
+      hubCollar.position.set(0, 0.220, -0.012);
+      station.add(hubCollar);
+
+      // 5. Brushed dark steel silk-screened faceplate
+      const faceTex = createDoorControlFaceplateTexture ? createDoorControlFaceplateTexture(doorLabel) : null;
+      const matFaceFront = new THREE.MeshStandardMaterial(
+        faceTex
+          ? { map: faceTex, roughness: 0.42, metalness: 0.45 }
+          : { color: 0x1e293b, roughness: 0.42, metalness: 0.45 }
+      );
+      const faceMaterials = [
+        matCtrlShroud, matCtrlShroud, matCtrlShroud, matCtrlShroud,
+        matFaceFront, matCtrlShroud
+      ];
+      const faceplate = new THREE.Mesh(new THREE.BoxGeometry(0.174, 0.322, 0.006), faceMaterials);
+      faceplate.position.set(0, 0, 0.077);
+      station.add(faceplate);
+
+      // 6. Tactile 3-layer shrouded OPEN & CLOSE pushbuttons aligned with faceplate collars
+      const openBtn = buildDoorControlButton(0.053, matCtrlOpenCap);
+      station.add(openBtn.wrap);
+      const closeBtn = buildDoorControlButton(-0.026, matCtrlCloseCap);
+      station.add(closeBtn.wrap);
+
+      // 7. Live Pilot Jewel LED (left) & Keyed Lockout Selector (right)
+      const pilotBezel = new THREE.Mesh(new THREE.CylinderGeometry(0.015, 0.017, 0.012, 14), matCtrlChrome);
+      pilotBezel.rotation.x = Math.PI / 2;
+      pilotBezel.position.set(-0.042, -0.089, 0.083);
+      station.add(pilotBezel);
+
+      const pilotMat = new THREE.MeshStandardMaterial({
+        color: 0x22c55e,
+        emissive: 0x22c55e,
+        emissiveIntensity: 0.75,
+        roughness: 0.18,
+        metalness: 0.15
+      });
+      const pilotJewel = new THREE.Mesh(new THREE.SphereGeometry(0.011, 12, 10), pilotMat);
+      pilotJewel.position.set(-0.042, -0.089, 0.090);
+      station.add(pilotJewel);
+
+      const lockBezel = new THREE.Mesh(new THREE.CylinderGeometry(0.015, 0.017, 0.014, 14), matCtrlChrome);
+      lockBezel.rotation.x = Math.PI / 2;
+      lockBezel.position.set(0.042, -0.089, 0.084);
+      station.add(lockBezel);
+      const lockKnob = new THREE.Mesh(new THREE.BoxGeometry(0.007, 0.024, 0.014), matCtrlShroud);
+      lockKnob.rotation.z = -0.45;
+      lockKnob.position.set(0.042, -0.089, 0.094);
+      station.add(lockKnob);
+
+      return {
+        group: station,
+        openBtnGroup: openBtn.plungerGroup,
+        closeBtnGroup: closeBtn.plungerGroup,
+        pilotMat: pilotMat,
+        pressAnim: 0,
+        pressTarget: 'open'
+      };
+    }
+
+    // Shared Heavy-Duty 3-Aspect Dock Traffic Signal Fixture Builder
+    const beaconFaceTex = createBeaconFaceplateTexture ? createBeaconFaceplateTexture() : null;
+    const beaconLensTex = createBeaconLensTexture ? createBeaconLensTexture() : null;
+    const beaconGlowTex = createBeaconGlowTexture ? createBeaconGlowTexture() : null;
+    const matBeaconFaceFront = new THREE.MeshStandardMaterial(
+      beaconFaceTex
+        ? { map: beaconFaceTex, roughness: 0.44, metalness: 0.42 }
+        : { color: 0x1e293b, roughness: 0.44, metalness: 0.42 }
+    );
+
+    function buildDoorBeaconBay(yPos, initialColorHex) {
+      const bay = new THREE.Group();
+      bay.position.set(0, yPos, 0);
+
+      // Chrome inner parabolic reflector collar & matte rubber weatherseal ring
+      const reflector = new THREE.Mesh(new THREE.CylinderGeometry(0.064, 0.068, 0.016, 20), matCtrlChrome);
+      reflector.rotation.x = Math.PI / 2;
+      reflector.position.z = 0.103;
+      bay.add(reflector);
+
+      const gasketRing = new THREE.Mesh(new THREE.TorusGeometry(0.070, 0.0085, 10, 22), matCtrlShroud);
+      gasketRing.position.z = 0.105;
+      bay.add(gasketRing);
+
+      // 3-piece tapered industrial anti-glare sun visor hood (top brow + left/right blinders)
+      const visorTop = new THREE.Mesh(new THREE.BoxGeometry(0.156, 0.012, 0.098), matCtrlShroud);
+      visorTop.position.set(0, 0.073, 0.148);
+      visorTop.rotation.x = 0.09;
+      bay.add(visorTop);
+
+      [-0.074, 0.074].forEach((vx) => {
+        const blinder = new THREE.Mesh(new THREE.BoxGeometry(0.012, 0.112, 0.088), matCtrlShroud);
+        blinder.position.set(vx, 0.016, 0.143);
+        bay.add(blinder);
+      });
+
+      // Fresnel glass bullseye dome lens with independent material for live ON/OFF & emissive state
+      const lensMat = new THREE.MeshStandardMaterial({
+        map: beaconLensTex || null,
+        emissiveMap: beaconLensTex || null,
+        color: initialColorHex,
+        emissive: 0x000000,
+        emissiveIntensity: 0,
+        roughness: 0.22,
+        metalness: 0.12
+      });
+      const lens = new THREE.Mesh(new THREE.SphereGeometry(0.060, 18, 14), lensMat);
+      lens.scale.set(1, 1, 0.56);
+      lens.position.set(0, 0, 0.111);
+      bay.add(lens);
+
+      // Soft optical halo plane shown only while this aspect is illuminated
+      const haloMat = new THREE.MeshBasicMaterial({
+        map: beaconGlowTex || null,
+        color: initialColorHex,
+        transparent: true,
+        opacity: 0.42,
+        depthWrite: false
+      });
+      const halo = new THREE.Mesh(new THREE.PlaneGeometry(0.19, 0.19), haloMat);
+      halo.position.set(0, 0, 0.132);
+      halo.visible = false;
+      bay.add(halo);
+
+      return { bay, lens, halo };
+    }
+
+    function buildDoorBeaconFixture() {
+      const fixture = new THREE.Group();
+
+      // 1. Heavy steel wall mounting backplate + slotted bracket ears + 4 hex lag bolts
+      const backplate = new THREE.Mesh(new THREE.BoxGeometry(0.30, 0.88, 0.016), matSteel);
+      backplate.position.set(0, 0, -0.102);
+      fixture.add(backplate);
+
+      const spine = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.80, 0.028), matCtrlShroud);
+      spine.position.set(0, 0, -0.084);
+      fixture.add(spine);
+
+      const lagGeo = new THREE.CylinderGeometry(0.010, 0.010, 0.016, 6);
+      [[-0.122, 0.41], [0.122, 0.41], [-0.122, -0.41], [0.122, -0.41]].forEach(([bx, by]) => {
+        const bolt = new THREE.Mesh(lagGeo, matCtrlBolt);
+        bolt.rotation.x = Math.PI / 2;
+        bolt.position.set(bx, by, -0.090);
+        fixture.add(bolt);
+      });
+
+      // 2. Cast powder-coat safety-yellow housing + dark anodized top cap & bottom sill
+      const body = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.78, 0.19), matCtrlEnclosure);
+      body.position.set(0, 0, 0.0);
+      fixture.add(body);
+
+      const topCap = new THREE.Mesh(new THREE.BoxGeometry(0.296, 0.034, 0.208), matCtrlShroud);
+      topCap.position.set(0, 0.398, 0.002);
+      fixture.add(topCap);
+
+      const botSill = new THREE.Mesh(new THREE.BoxGeometry(0.296, 0.034, 0.208), matCtrlShroud);
+      botSill.position.set(0, -0.398, 0.002);
+      fixture.add(botSill);
+
+      // Side cooling ribs / cast reinforcement fins on both flanks
+      [-0.143, 0.143].forEach((fx) => {
+        [-0.24, -0.08, 0.08, 0.24].forEach((fy) => {
+          const fin = new THREE.Mesh(new THREE.BoxGeometry(0.010, 0.036, 0.145), matCtrlShroud);
+          fin.position.set(fx, fy, 0.0);
+          fixture.add(fin);
+        });
+      });
+
+      // Bottom cast conduit hub & hex locknut (aligned with wall conduit at z = -0.047)
+      const conduitHub = new THREE.Mesh(new THREE.CylinderGeometry(0.032, 0.036, 0.036, 12), matCtrlShroud);
+      conduitHub.position.set(0, -0.422, -0.047);
+      fixture.add(conduitHub);
+      const conduitNut = new THREE.Mesh(new THREE.CylinderGeometry(0.040, 0.040, 0.014, 6), matCtrlChrome);
+      conduitNut.position.set(0, -0.440, -0.047);
+      fixture.add(conduitNut);
+
+      // 3. Perimeter gasket collar + brushed dark-slate silk-screened front faceplate
+      const gasket = new THREE.Mesh(new THREE.BoxGeometry(0.264, 0.752, 0.010), matCtrlShroud);
+      gasket.position.set(0, 0, 0.094);
+      fixture.add(gasket);
+
+      const faceMaterials = [
+        matCtrlShroud, matCtrlShroud, matCtrlShroud, matCtrlShroud,
+        matBeaconFaceFront, matCtrlShroud
+      ];
+      const faceplate = new THREE.Mesh(new THREE.BoxGeometry(0.244, 0.728, 0.008), faceMaterials);
+      faceplate.position.set(0, 0, 0.099);
+      fixture.add(faceplate);
+
+      // 4. Three individual hooded Fresnel lens bays (Red / Amber / Green)
+      const redBay = buildDoorBeaconBay(0.195, 0xef4444);
+      const amberBay = buildDoorBeaconBay(0.0, 0x451a03);
+      const greenBay = buildDoorBeaconBay(-0.195, 0x052e16);
+      fixture.add(redBay.bay);
+      fixture.add(amberBay.bay);
+      fixture.add(greenBay.bay);
+
+      return {
+        group: fixture,
+        redLens: redBay.lens,
+        amberLens: amberBay.lens,
+        greenLens: greenBay.lens,
+        redHalo: redBay.halo,
+        amberHalo: amberBay.halo,
+        greenHalo: greenBay.halo
+      };
+    }
 
     // 5. 4 Interactive Roll-Up Doors with Shrouds, Curtains, Rounded Bollards & Unobscured Beacons
     const dockDoors = [
@@ -523,20 +843,11 @@
       // For Dock 4: Mounted on the LEFT pier (-doorWidth/2 - 0.55m) so it is NEVER hidden by the East corner wall!
       const ctrlOffsetX = (dd.id === 4) ? (-doorWidth / 2 - 0.55) : (doorWidth / 2 + 0.55);
 
-      // Industrial Wall Control Button Station Box (at Y = 1.45m on the flat pier, unobstructed)
-      const switchBox = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.38, 0.14), matYellowBumper);
-      switchBox.position.set(ctrlOffsetX, 1.45, 0.22);
-      group.add(switchBox);
-
-      const greenBtn = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.045, 0.06, 12), new THREE.MeshBasicMaterial({ color: 0x22c55e }));
-      greenBtn.rotation.x = Math.PI / 2;
-      greenBtn.position.set(ctrlOffsetX, 1.52, 0.30);
-      group.add(greenBtn);
-
-      const redBtn = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.045, 0.06, 12), new THREE.MeshBasicMaterial({ color: 0xef4444 }));
-      redBtn.rotation.x = Math.PI / 2;
-      redBtn.position.set(ctrlOffsetX, 1.38, 0.30);
-      group.add(redBtn);
+      // Industrial Wall Control Button Station (at Y = 1.45m on the flat pier, unobstructed)
+      const station = buildDoorControlStation(`DOOR ${dd.id}`);
+      station.group.position.set(ctrlOffsetX, 1.45, 0.22);
+      group.add(station.group);
+      dd.stationCtrl = station;
 
       // Generous hitbox for raycast interaction
       const switchHitbox = new THREE.Mesh(new THREE.BoxGeometry(0.40, 0.56, 0.32), new THREE.MeshBasicMaterial({ visible: false }));
@@ -554,6 +865,10 @@
         getPrompt: () => `[E] Push Button - ${dd.isOpen ? 'CLOSE' : 'OPEN'} ${dd.name}`,
         interact: () => {
           dd.isOpen = !dd.isOpen;
+          if (dd.stationCtrl) {
+            dd.stationCtrl.pressTarget = dd.isOpen ? 'open' : 'close';
+            dd.stationCtrl.pressAnim = 1.0;
+          }
           SoundSystem.playButtonClick();
           const remainingTravel = (dd.isOpen ? (1.0 - dd.currentProgress) : dd.currentProgress);
           const motorTime = Math.max(0.3, remainingTravel * DOCK_DOOR_DURATION);
@@ -567,32 +882,21 @@
       interactibles.push(dockInteractible);
       switchHitbox.userData.interactible = dockInteractible;
 
-      // Vertical metal conduit running from button box straight up to the high beacon
-      const conduitPipe = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 2.5, 8), matConduit);
-      conduitPipe.position.set(ctrlOffsetX, 2.8, 0.22);
+      // Vertical metal conduit running from button box straight up into the high beacon conduit hub
+      const conduitPipe = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 2.20, 8), matConduit);
+      conduitPipe.position.set(ctrlOffsetX, 2.75, 0.22);
       group.add(conduitPipe);
 
       // 3-LENS TRAFFIC BEACON: Mounted high up at Y = 4.25m on bulkhead wall!
       // Unobscured by bollards or walls; visible across the entire warehouse floor!
-      const beaconHousing = new THREE.Mesh(new THREE.BoxGeometry(0.26, 0.72, 0.22), matSteel);
-      beaconHousing.position.set(ctrlOffsetX, 4.25, 0.25);
-      group.add(beaconHousing);
+      const beacon = buildDoorBeaconFixture();
+      beacon.group.position.set(ctrlOffsetX, 4.25, 0.26);
+      group.add(beacon.group);
 
-      const redLens = new THREE.Mesh(new THREE.SphereGeometry(0.065, 12, 12), new THREE.MeshBasicMaterial({ color: 0xef4444 }));
-      redLens.position.set(ctrlOffsetX, 4.45, 0.36);
-      group.add(redLens);
-
-      const amberLens = new THREE.Mesh(new THREE.SphereGeometry(0.065, 12, 12), new THREE.MeshBasicMaterial({ color: 0x451a03 }));
-      amberLens.position.set(ctrlOffsetX, 4.25, 0.36);
-      group.add(amberLens);
-
-      const greenLens = new THREE.Mesh(new THREE.SphereGeometry(0.065, 12, 12), new THREE.MeshBasicMaterial({ color: 0x052e16 }));
-      greenLens.position.set(ctrlOffsetX, 4.05, 0.36);
-      group.add(greenLens);
-
-      dd.redLens = redLens;
-      dd.amberLens = amberLens;
-      dd.greenLens = greenLens;
+      dd.redLens = beacon.redLens;
+      dd.amberLens = beacon.amberLens;
+      dd.greenLens = beacon.greenLens;
+      dd.beaconCtrl = beacon;
 
       // Dynamic 3D Semi-Trailer + Tractor Assembly (visible ONLY while dd.hasTrailer is true)
       const trailerGroup = new THREE.Group();
@@ -1261,45 +1565,33 @@
     // ==========================================
 
     // SIDE DOOR NORTH BUTTON STATION (North of door on East wall near desk, local Z = -1.95m / World Z = 6.45m)
-    const sideNorthPlate = new THREE.Mesh(new THREE.BoxGeometry(0.02, 0.44, 0.26), matSteelFrame);
-    sideNorthPlate.position.set(-0.255, 1.45, -1.95);
-    sideRollupGroup.add(sideNorthPlate);
+    const sideStation = buildDoorControlStation('SIDE DOOR');
+    sideStation.group.rotation.y = -Math.PI / 2;
+    sideStation.group.position.set(-0.325, 1.45, -1.95);
+    sideRollupGroup.add(sideStation.group);
+    sideRollupDoor.stationCtrl = sideStation;
 
-    const sideNorthSwitchBox = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.38, 0.22), matYellowBumper);
-    sideNorthSwitchBox.position.set(-0.325, 1.45, -1.95);
-    sideRollupGroup.add(sideNorthSwitchBox);
-
-    const sideNorthGreenBtn = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.045, 0.06, 12), new THREE.MeshBasicMaterial({ color: 0x22c55e }));
-    sideNorthGreenBtn.rotation.z = Math.PI / 2;
-    sideNorthGreenBtn.position.set(-0.42, 1.52, -1.95);
-    sideRollupGroup.add(sideNorthGreenBtn);
-
-    const sideNorthRedBtn = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.045, 0.06, 12), new THREE.MeshBasicMaterial({ color: 0xef4444 }));
-    sideNorthRedBtn.rotation.z = Math.PI / 2;
-    sideNorthRedBtn.position.set(-0.42, 1.38, -1.95);
-    sideRollupGroup.add(sideNorthRedBtn);
-
-    // Continuous conduit running up from North panel and directly into top of side door mechanism:
-    // 1. Vertical conduit rising from top of switch box (Y = 1.64m) to mechanism height (Y = 3.42m)
-    const sideNorthConduitVert = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 1.78, 8), matConduit);
-    sideNorthConduitVert.position.set(-0.27, 2.53, -1.95);
+    // Continuous conduit running up from North panel top hub (X = -0.313, Y = 1.67m) into side door mechanism (Y = 3.42m):
+    // 1. Vertical conduit rising from top of switch box hub to mechanism height (Y = 3.42m)
+    const sideNorthConduitVert = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 1.75, 8), matConduit);
+    sideNorthConduitVert.position.set(-0.313, 2.545, -1.95);
     sideRollupGroup.add(sideNorthConduitVert);
 
     // 2. 90-degree conduit junction elbow at Y = 3.42m, Z = -1.95m
     const sideNorthConduitElbow = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.06, 0.06), matConduit);
-    sideNorthConduitElbow.position.set(-0.27, 3.42, -1.95);
+    sideNorthConduitElbow.position.set(-0.313, 3.42, -1.95);
     sideRollupGroup.add(sideNorthConduitElbow);
 
     // 3. Horizontal conduit running South along wall from Z = -1.95m into the side door mechanism at Z = -1.35m
     const sideNorthConduitHoriz = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 0.60, 8), matConduit);
     sideNorthConduitHoriz.rotation.x = Math.PI / 2;
-    sideNorthConduitHoriz.position.set(-0.27, 3.42, -1.65);
+    sideNorthConduitHoriz.position.set(-0.313, 3.42, -1.65);
     sideRollupGroup.add(sideNorthConduitHoriz);
 
     // 4. Industrial conduit fitting entering directly into the top of sideDrumBox
     const sideNorthConduitFlange = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.035, 0.06, 12), matSteelFrame);
     sideNorthConduitFlange.rotation.x = Math.PI / 2;
-    sideNorthConduitFlange.position.set(-0.27, 3.42, -1.35);
+    sideNorthConduitFlange.position.set(-0.313, 3.42, -1.35);
     sideRollupGroup.add(sideNorthConduitFlange);
 
     // North Button Station Hitbox & Interactible
@@ -1350,6 +1642,10 @@
           return;
         }
         sideRollupDoor.isOpen = !sideRollupDoor.isOpen;
+        if (sideRollupDoor.stationCtrl) {
+          sideRollupDoor.stationCtrl.pressTarget = sideRollupDoor.isOpen ? 'open' : 'close';
+          sideRollupDoor.stationCtrl.pressAnim = 1.0;
+        }
         SoundSystem.playButtonClick();
         const remainingTravel = (sideRollupDoor.isOpen ? (1.0 - sideRollupDoor.currentProgress) : sideRollupDoor.currentProgress);
         const motorTime = Math.max(0.3, remainingTravel * SIDE_DOOR_DURATION);
@@ -1367,25 +1663,24 @@
     sideNorthHitbox.userData.interactible = sideNorthInteractible;
 
     // 3. HIGH-MOUNTED 3-LENS BEACON: Raised to Y = 4.00m on East wall so it clears the button conduit (Y = 3.42m)
-    const sideBeaconHousing = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.72, 0.26), matSteel);
-    sideBeaconHousing.position.set(-0.36, 4.00, -sideRollupDoor.width / 2 - 0.55);
-    sideRollupGroup.add(sideBeaconHousing);
+    const sideBeaconZ = -sideRollupDoor.width / 2 - 0.55;
+    const sideBeaconTee = new THREE.Mesh(new THREE.BoxGeometry(0.055, 0.055, 0.055), matConduit);
+    sideBeaconTee.position.set(-0.313, 3.42, sideBeaconZ);
+    sideRollupGroup.add(sideBeaconTee);
 
-    const sideRedLens = new THREE.Mesh(new THREE.SphereGeometry(0.065, 12, 12), new THREE.MeshBasicMaterial({ color: 0xef4444 }));
-    sideRedLens.position.set(-0.50, 4.20, -sideRollupDoor.width / 2 - 0.55);
-    sideRollupGroup.add(sideRedLens);
+    const sideBeaconRiser = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 0.18, 8), matConduit);
+    sideBeaconRiser.position.set(-0.313, 3.51, sideBeaconZ);
+    sideRollupGroup.add(sideBeaconRiser);
 
-    const sideAmberLens = new THREE.Mesh(new THREE.SphereGeometry(0.065, 12, 12), new THREE.MeshBasicMaterial({ color: 0x451a03 }));
-    sideAmberLens.position.set(-0.50, 4.00, -sideRollupDoor.width / 2 - 0.55);
-    sideRollupGroup.add(sideAmberLens);
+    const sideBeacon = buildDoorBeaconFixture();
+    sideBeacon.group.rotation.y = -Math.PI / 2;
+    sideBeacon.group.position.set(-0.36, 4.00, sideBeaconZ);
+    sideRollupGroup.add(sideBeacon.group);
 
-    const sideGreenLens = new THREE.Mesh(new THREE.SphereGeometry(0.065, 12, 12), new THREE.MeshBasicMaterial({ color: 0x052e16 }));
-    sideGreenLens.position.set(-0.50, 3.80, -sideRollupDoor.width / 2 - 0.55);
-    sideRollupGroup.add(sideGreenLens);
-
-    sideRollupDoor.redLens = sideRedLens;
-    sideRollupDoor.amberLens = sideAmberLens;
-    sideRollupDoor.greenLens = sideGreenLens;
+    sideRollupDoor.redLens = sideBeacon.redLens;
+    sideRollupDoor.amberLens = sideBeacon.amberLens;
+    sideRollupDoor.greenLens = sideBeacon.greenLens;
+    sideRollupDoor.beaconCtrl = sideBeacon;
 
     // Outside Delivery Pad visible through open door
     const outdoorPad = new THREE.Mesh(new THREE.PlaneGeometry(6.0, 4.0), new THREE.MeshStandardMaterial({ color: 0x334155, roughness: 0.9 }));
