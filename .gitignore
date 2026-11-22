@@ -1,0 +1,14 @@
+# OS / Explorer
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Editors
+.vscode/
+.idea/
+
+# Logs
+*.log
+
+# Astrocade local session metadata (if copied)
+.astrocade_session.json

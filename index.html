@@ -1,0 +1,750 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <title>New 3D Game - DSD Receiving Facility</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <script src="./js/dsd-catalog.js"></script>
+  <script src="./js/shift-clock.js"></script>
+  <script src="./js/shift-stats.js"></script>
+  <script src="./js/dsd-receipts.js"></script>
+  <script src="./js/warehouse-trucks.js"></script>
+  <script src="./js/backstock-racks.js"></script>
+  <script src="./js/claims-totes.js"></script>
+  <script src="./js/sound-system.js"></script>
+  <script src="./js/warehouse-textures.js"></script>
+  <script src="./js/warehouse-world.js"></script>
+  <script src="./js/warehouse-models.js"></script>
+  <script src="./js/delivery-system.js"></script>
+  <script src="./game.js"></script>
+  <script src="./js/dock-runtime.js"></script>
+  <link rel="stylesheet" href="./css/styles.css">
+</head>
+
+<body>
+  <div id="game-container">
+    <div id="reticle"></div>
+
+    <div id="box-hover-pill"
+      style="display:none; position:absolute; pointer-events:none; z-index:59; background:rgba(15,23,42,0.92); color:#f8fafc; border:1px solid #38bdf8; border-radius:6px; padding:4px 9px; font-size:11px; font-weight:700; white-space:nowrap; box-shadow:0 4px 12px rgba(0,0,0,0.5);">
+    </div>
+    <div id="overage-mode-pill" style="display:none;">
+      <span id="overage-mode-text">🚩 OVERAGE MODE — Aim &amp; click excess case(s) on Cart/Pallet</span>
+      <button type="button" id="btn-overage-done">RETURN TO INVOICE [ESC]</button>
+    </div>
+
+    <!-- Top HUD Info -->
+    <div id="top-hud">
+      <div class="hud-card" id="hitch-status-card" style="display: none;">
+        <span style="color: #f59e0b;">HAULING: </span>
+        <span id="hitch-pallet-name" style="color: #fff;">None</span>
+      </div>
+      <div id="hud-top-right-row">
+        <div class="hud-card" id="door-lights-panel" aria-label="Live door beacon lights">
+          <div class="dlp-item">
+            <span class="dlp-label">D1</span>
+            <span class="dlp-light" id="door-light-1"></span>
+          </div>
+          <div class="dlp-item">
+            <span class="dlp-label">D2</span>
+            <span class="dlp-light" id="door-light-2"></span>
+          </div>
+          <div class="dlp-item">
+            <span class="dlp-label">D3</span>
+            <span class="dlp-light" id="door-light-3"></span>
+          </div>
+          <div class="dlp-item">
+            <span class="dlp-label">D4</span>
+            <span class="dlp-light" id="door-light-4"></span>
+          </div>
+          <div class="dlp-item">
+            <span class="dlp-label">SD</span>
+            <span class="dlp-light" id="door-light-sd"></span>
+          </div>
+        </div>
+        <div class="hud-card" id="hud-clock-card">
+          <span id="hud-shift-score" style="color: #22c55e; font-weight: 800;">0 pts</span>
+          <button id="end-shift-btn" type="button">END SHIFT</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Centered Top-Middle Retro Red LCD Timeclock -->
+    <div id="retro-digital-clock" aria-label="In-game digital clock">
+      <div class="rdc-screws" aria-hidden="true"><span></span><span></span></div>
+      <div class="rdc-bezel">
+        <div class="rdc-screen">
+          <div class="rdc-scanlines" aria-hidden="true"></div>
+          <div class="rdc-time-row">
+            <div class="rdc-digits-wrap">
+              <div class="rdc-ghost" aria-hidden="true">88:88</div>
+              <div class="rdc-digits" id="rdc-time-digits"><span class="rdc-dim-zero" id="rdc-lead-zero">0</span><span
+                  id="rdc-hour-main">6</span><span class="rdc-colon" id="rdc-colon">:</span><span
+                  id="rdc-minute">00</span></div>
+            </div>
+            <div class="rdc-ampm-col">
+              <span class="rdc-ind on" id="rdc-ind-am">AM</span>
+              <span class="rdc-ind" id="rdc-ind-pm">PM</span>
+            </div>
+          </div>
+          <div class="rdc-progress-track">
+            <div class="rdc-progress-fill" id="rdc-shift-progress"></div>
+          </div>
+          <div class="rdc-date-row">
+            <span class="rdc-date-item" id="rdc-dow">MON</span>
+            <span class="rdc-date-item" id="rdc-mon-day">JAN 01</span>
+            <span class="rdc-date-item" id="rdc-year">1996</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Minimap Container -->
+    <div id="minimap-container">
+      <canvas id="minimap-canvas" width="110" height="220"></canvas>
+    </div>
+
+    <button id="lock-hint" title="Toggle pointer lock">Click to lock mouse</button>
+
+    <!-- Live Pending Deliveries Dispatch Panel -->
+    <div id="pending-deliveries-panel">
+      <div class="pd-header">
+        <span>PENDING DELIVERIES</span>
+        <button id="pending-toggle-btn" type="button" title="Collapse or expand schedule [P]">[&ndash;]</button>
+      </div>
+      <div id="pending-deliveries-list"></div>
+    </div>
+
+    <!-- Context Interaction Prompts -->
+    <div id="prompt-container">
+      <div id="prompt-door" class="action-prompt door-action">[E] Push Button - Toggle Dock Door</div>
+      <div id="prompt-side-door" class="action-prompt door-action">[E] Toggle Side Rollup Door (Vendor Entry)</div>
+      <div id="prompt-pallet" class="action-prompt">[Space] Hitch Pallet Jack</div>
+      <div id="prompt-terminal" class="action-prompt secondary">[E] Access Receiving Terminal</div>
+      <div id="prompt-desk" class="action-prompt secondary" style="border-left-color: #f59e0b;">[E] Inspect Desk
+        Paperwork</div>
+      <div id="prompt-driver" class="action-prompt secondary" style="border-left-color: #3b82f6;">[E] Speak with Driver
+        / Review Invoice</div>
+    </div>
+
+    <!-- Alert / Notice Banners -->
+    <div id="alert-banner"></div>
+    <div id="notify-banner"></div>
+
+    <!-- 2D GUI Handheld Barcode Scanner (Non-Modal Bottom HUD) -->
+    <div id="scanner-modal-overlay">
+      <div class="scanner-device" id="scanner-device">
+        <!-- Top Rugged Protective Bumper & Laser Scan Lens -->
+        <div class="scanner-top-bumper">
+          <div class="scanner-laser-lens" id="scanner-laser-lens"></div>
+        </div>
+
+        <!-- Scanner Upper Head Bezel & Brand Plate -->
+        <div class="scanner-head">
+          <div class="scanner-badge-plate">
+            <span class="scanner-badge-icon">⯬⯮</span>
+          </div>
+          <div class="scanner-speaker-slot"></div>
+        </div>
+
+        <!-- Left & Right Armor Grip Bumpers -->
+        <div class="scanner-side-bumper-l"></div>
+        <div class="scanner-side-bumper-r"></div>
+
+        <!-- Monochrome LCD Panel Section -->
+        <div class="scanner-lcd-bezel">
+          <div class="scanner-lcd-screen" id="scanner-lcd">
+            <!-- LCD Status Bar -->
+            <div class="lcd-status-bar">
+              <span>DSD-9300</span>
+              <div class="lcd-status-right">
+                <span>🔊</span>
+                <span class="lcd-batt-box" title="Battery 80%">
+                  <span class="lcd-batt-bar"></span>
+                  <span class="lcd-batt-bar"></span>
+                  <span class="lcd-batt-bar"></span>
+                </span>
+                <span>📶</span>
+              </div>
+            </div>
+
+            <!-- Static 5-Screen DSD Check-In LCD Display -->
+            <div class="lcd-body" id="lcd-dsd-view">
+              <div id="lcd-dsd-body" class="lcd-scr"></div>
+            </div>
+          </div>
+
+          <!-- Keypad Bezel -->
+          <div class="scanner-keypad-bezel">
+            <!-- Primary Action Keys: ENT, Up/Down Nav, PWR (Scan trigger is under the grip) -->
+            <div class="keypad-action-row">
+              <button class="scanner-btn btn-ent" id="key-ent" data-key="enter" title="Enter / Confirm [Enter]">
+                <span>ENT</span>
+                <span class="pc-kb-hint">⏎</span>
+              </button>
+              <button class="scanner-btn nav-btn" id="key-nav-u" data-key="arrowup"
+                title="Up / Scroll Up [▲]">▲</button>
+              <button class="scanner-btn nav-btn" id="key-nav-d" data-key="arrowdown"
+                title="Down / Scroll Down [▼]">▼</button>
+              <button class="scanner-btn btn-pwr" id="key-pwr" data-key="pwr" title="Holster / Power Off [F]">
+                <span>PWR</span>
+                <span class="pc-kb-hint">[F]</span>
+              </button>
+            </div>
+
+            <!-- Dedicated 1990s Function Key Rows (F1-F6) -->
+            <div class="keypad-fn-row">
+              <button class="scanner-btn fn-btn key-fn" id="key-f1" data-key="home" title="F1: Home Screen">
+                <span class="fn-key-code">F1</span>
+              </button>
+              <button class="scanner-btn fn-btn key-fn" id="key-f2" data-key="star" title="F2: Totals &amp; Costs [*]">
+                <span class="fn-key-code">F2</span>
+              </button>
+              <button class="scanner-btn fn-btn key-fn" id="key-f3" data-key="back" title="F3: Universal Back">
+                <span class="fn-key-code">F3</span>
+              </button>
+              <button class="scanner-btn fn-btn key-fn" id="key-f4" data-key="slash" title="F4: Item List [/]">
+                <span class="fn-key-code">F4</span>
+              </button>
+            </div>
+
+            <!-- F5-F8 Row -->
+            <div class="keypad-nav-row">
+              <button class="scanner-btn fn-btn key-fn" id="key-f5" data-key="plus"
+                title="F5: Finalize Receipt [+ or End]">
+                <span class="fn-key-code">F5</span>
+              </button>
+              <button class="scanner-btn fn-btn key-fn" id="key-f6" data-key="print" title="F6: Print">
+                <span class="fn-key-code">F6</span>
+              </button>
+              <button class="scanner-btn fn-btn key-fn" id="key-f7" data-key="f7" title="F7: Resume Initial Receipt">
+                <span class="fn-key-code">F7</span>
+              </button>
+              <button class="scanner-btn fn-btn key-fn" id="key-f8" data-key="f8" title="F8: Edit Expected Totals">
+                <span class="fn-key-code">F8</span>
+              </button>
+            </div>
+
+            <!-- 3x4 Numeric & Credit Sign Keypad Grid -->
+            <div class="keypad-grid-3x4">
+              <button class="scanner-btn num-btn key-num" data-key="7">7</button>
+              <button class="scanner-btn num-btn key-num" data-key="8">8</button>
+              <button class="scanner-btn num-btn key-num" data-key="9">9</button>
+
+              <button class="scanner-btn num-btn key-num" data-key="4">4</button>
+              <button class="scanner-btn num-btn key-num" data-key="5">5</button>
+              <button class="scanner-btn num-btn key-num" data-key="6">6</button>
+
+              <button class="scanner-btn num-btn key-num" data-key="1">1</button>
+              <button class="scanner-btn num-btn key-num" data-key="2">2</button>
+              <button class="scanner-btn num-btn key-num" data-key="3">3</button>
+
+              <button class="scanner-btn num-btn clr key-num" id="key-clr" data-key="clr"
+                title="Backspace [Backspace]">BKSP</button>
+              <button class="scanner-btn num-btn key-num" data-key="0">0</button>
+              <button class="scanner-btn num-btn neg-btn key-op" id="key-minus" data-key="minus"
+                title="Negative / Credit Sign [-]">-</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- Printed Dot-Matrix Receipt HUD (Bottom-Center Paper Strip) -->
+    <div id="printed-receipt-hud" class="printed-receipt-hud" aria-label="Printed DSD Receipts" style="display:none;">
+    </div>
+
+    <!-- Workstation Terminal Modal -->
+    <div id="terminal-modal">
+      <div id="terminal-main-split">
+        <div id="terminal-crt-unit">
+          <h2>
+            <span id="terminal-screen-title">AS/400 DSD RECEIVING SYSTEM</span>
+            <div style="display:flex; gap:8px; align-items:center;">
+              <button class="close-btn" id="terminal-paper-btn"
+                style="background:#422006; color:#fde047; border-color:#f59e0b;">[ F2=PAPER ]</button>
+              <button class="close-btn" id="terminal-back-btn"
+                style="display:none; border-color:#facc15; color:#facc15;">[ F12=MENU ]</button>
+              <button class="close-btn" id="close-terminal-btn">[ F3=CLOSE ]</button>
+            </div>
+          </h2>
+          <div id="terminal-screen-body"></div>
+        </div>
+        <div id="terminal-keypad-cord" aria-hidden="true"></div>
+        <div id="terminal-keypad-section">
+          <div id="terminal-keypad-status">
+            <span id="terminal-keypad-field-lbl">ACTIVE: DEPT #</span>
+            <button type="button" class="term-mode-btn" id="terminal-mode-toggle-btn" style="display:none;">123 /
+              ABC</button>
+          </div>
+          <div id="terminal-keypad-grid">
+            <button type="button" class="term-key-btn" data-tkey="1">1</button>
+            <button type="button" class="term-key-btn" data-tkey="2">2</button>
+            <button type="button" class="term-key-btn" data-tkey="3">3</button>
+            <button type="button" class="term-key-btn term-key-tab" data-tkey="TAB">TAB</button>
+
+            <button type="button" class="term-key-btn" data-tkey="4">4</button>
+            <button type="button" class="term-key-btn" data-tkey="5">5</button>
+            <button type="button" class="term-key-btn" data-tkey="6">6</button>
+
+            <button type="button" class="term-key-btn" data-tkey="7">7</button>
+            <button type="button" class="term-key-btn" data-tkey="8">8</button>
+            <button type="button" class="term-key-btn" data-tkey="9">9</button>
+            <button type="button" class="term-key-btn term-key-esc" data-tkey="ESC">ESC</button>
+
+            <button type="button" class="term-key-btn term-key-bksp" data-tkey="BKSP">BKSP</button>
+            <button type="button" class="term-key-btn" data-tkey="0">0</button>
+            <button type="button" class="term-key-btn term-key-neg" data-tkey="NEG">&plusmn;</button>
+            <button type="button" class="term-key-btn term-key-enter" data-tkey="ENTER">ENTER</button>
+          </div>
+          <div id="terminal-alpha-grid">
+            <div class="term-alpha-row" style="grid-template-columns:repeat(10,1fr);">
+              <button type="button" class="term-key-btn alpha" data-tkey="Q">Q</button>
+              <button type="button" class="term-key-btn alpha" data-tkey="W">W</button>
+              <button type="button" class="term-key-btn alpha" data-tkey="E">E</button>
+              <button type="button" class="term-key-btn alpha" data-tkey="R">R</button>
+              <button type="button" class="term-key-btn alpha" data-tkey="T">T</button>
+              <button type="button" class="term-key-btn alpha" data-tkey="Y">Y</button>
+              <button type="button" class="term-key-btn alpha" data-tkey="U">U</button>
+              <button type="button" class="term-key-btn alpha" data-tkey="I">I</button>
+              <button type="button" class="term-key-btn alpha" data-tkey="O">O</button>
+              <button type="button" class="term-key-btn alpha" data-tkey="P">P</button>
+            </div>
+            <div class="term-alpha-row" style="grid-template-columns:repeat(9,1fr);">
+              <button type="button" class="term-key-btn alpha" data-tkey="A">A</button>
+              <button type="button" class="term-key-btn alpha" data-tkey="S">S</button>
+              <button type="button" class="term-key-btn alpha" data-tkey="D">D</button>
+              <button type="button" class="term-key-btn alpha" data-tkey="F">F</button>
+              <button type="button" class="term-key-btn alpha" data-tkey="G">G</button>
+              <button type="button" class="term-key-btn alpha" data-tkey="H">H</button>
+              <button type="button" class="term-key-btn alpha" data-tkey="J">J</button>
+              <button type="button" class="term-key-btn alpha" data-tkey="K">K</button>
+              <button type="button" class="term-key-btn alpha" data-tkey="L">L</button>
+            </div>
+            <div class="term-alpha-row" style="grid-template-columns:repeat(9,1fr);">
+              <button type="button" class="term-key-btn alpha" data-tkey="Z">Z</button>
+              <button type="button" class="term-key-btn alpha" data-tkey="X">X</button>
+              <button type="button" class="term-key-btn alpha" data-tkey="C">C</button>
+              <button type="button" class="term-key-btn alpha" data-tkey="V">V</button>
+              <button type="button" class="term-key-btn alpha" data-tkey="B">B</button>
+              <button type="button" class="term-key-btn alpha" data-tkey="N">N</button>
+              <button type="button" class="term-key-btn alpha" data-tkey="M">M</button>
+              <button type="button" class="term-key-btn alpha term-key-bksp" data-tkey="BKSP">⌫</button>
+              <button type="button" class="term-key-btn alpha term-key-esc" data-tkey="CLR">CLR</button>
+            </div>
+            <div class="term-alpha-row" style="grid-template-columns:1fr 2fr 1fr;">
+              <button type="button" class="term-key-btn alpha" data-tkey="SWITCH_MODE">123</button>
+              <button type="button" class="term-key-btn alpha" data-tkey="SPACE">SPACE</button>
+              <button type="button" class="term-key-btn alpha term-key-enter" data-tkey="DONE">DONE</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Receiving Invoice Check-In GUI + Inner Physical Paper Invoice -->
+    <div id="invoice-modal">
+      <!-- Digital Receiving Workstation GUI Header -->
+      <div class="inv-ui-header">
+        <div>
+          <div class="inv-ui-title">DSD INVOICE CHECK-IN</div>
+          <div class="inv-ui-sub" id="inv-subtitle">DIRECT STORE DELIVERY (SIDE DOOR)</div>
+        </div>
+        <button type="button" class="inv-close-btn" id="close-invoice-btn">CLOSE</button>
+      </div>
+
+      <!-- Physical Paper Invoice Sheet Inside Recessed Dark Clipboard Tray -->
+      <div class="inv-scroll-wrap">
+        <div class="inv-paper-sheet">
+          <div class="arch-short-stamp" id="inv-sheet-short-stamp" style="display:none;">SHORT</div>
+          <div class="inv-paper-head">
+            <div class="inv-carrier-title" id="inv-carrier-title">GOURMET FOODS INC.</div>
+          </div>
+
+          <div class="inv-meta-grid">
+            <div class="inv-meta-cell">
+              <span class="inv-meta-lbl">DEPT #</span>
+              <span class="inv-meta-val" id="inv-dept-num">10</span>
+            </div>
+            <div class="inv-meta-cell">
+              <span class="inv-meta-lbl">VENDOR #</span>
+              <span class="inv-meta-val" id="inv-vendor-num">101</span>
+            </div>
+            <div class="inv-meta-cell">
+              <span class="inv-meta-lbl" id="inv-doc-lbl">INVOICE #</span>
+              <span class="inv-meta-val" id="inv-doc-num">482109</span>
+            </div>
+            <div class="inv-meta-cell">
+              <span class="inv-meta-lbl">DATE</span>
+              <span class="inv-meta-val" id="inv-delivery-date">02/01/96</span>
+            </div>
+          </div>
+          <div style="display:none;"><span id="inv-seal-status">VERIFIED</span></div>
+
+          <table class="inv-table">
+            <thead>
+              <tr>
+                <th>CODE</th>
+                <th class="num">PACK</th>
+                <th>ITEM NAME</th>
+                <th class="num">UNITS</th>
+                <th class="num">UNIT $</th>
+                <th class="num">COST</th>
+              </tr>
+            </thead>
+            <tbody id="inv-items-body">
+            </tbody>
+          </table>
+
+          <div class="inv-paper-totals">
+            <div class="inv-paper-total-item">
+              <span class="inv-paper-total-lbl">TOTAL UNITS:</span>
+              <span id="inv-total-units">0</span>
+            </div>
+            <div class="inv-paper-total-item">
+              <span class="inv-paper-total-lbl">TOTAL COST:</span>
+              <span id="inv-total-cost">$0.00</span>
+            </div>
+          </div>
+
+          <div class="inv-paper-sig-block">
+            <div>
+              <div class="inv-meta-lbl">DRIVER SIGNATURE</div>
+              <div class="inv-sig-line" id="inv-driver-sig">Signed</div>
+            </div>
+            <div>
+              <div class="inv-meta-lbl">RECEIVER APPROVAL</div>
+              <div class="inv-sig-line" id="inv-receiver-sig" style="color:#64748b;">Awaiting Sign-Off</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Separate Receiving GUI Zones -->
+      <div class="inv-gui-zones">
+        <!-- Zone 1: Temperature Check & Delivery Refusal -->
+        <div class="inv-gui-zone inv-zone-temp">
+          <div class="inv-zone-lbl">TEMPERATURE AUDIT &amp; REFUSAL</div>
+          <div class="inv-zone-row">
+            <div class="inv-ui-pill">
+              <span class="inv-ui-stat-lbl">CARGO TEMP</span>
+              <span class="inv-ui-stat-val" id="inv-cargo-temp">AMBIENT (68°F)</span>
+            </div>
+            <button type="button" class="inv-gui-btn inv-btn-temp" id="btn-inv-temp"
+              title="Run Cargo Temperature Audit">TEMP PROBE</button>
+            <button type="button" class="inv-gui-btn inv-btn-refuse" id="btn-inv-refuse"
+              title="Refuse Delivery">REFUSE</button>
+          </div>
+        </div>
+
+        <!-- Zone 2: Shortages / Overages & Credit Memo Toggle -->
+        <div class="inv-gui-zone inv-zone-err" id="inv-mod-bar">
+          <div class="inv-zone-lbl">DISCREPANCIES &amp; CREDIT MEMO</div>
+          <div class="inv-zone-row">
+            <button type="button" class="inv-gui-btn inv-btn-short" id="btn-inv-short"
+              title="Mark Shortages on Paper Invoice">SHORTAGE</button>
+            <button type="button" class="inv-gui-btn inv-btn-over" id="btn-inv-over"
+              title="Flag Overages on Physical Cart / Pallet">OVERAGE</button>
+            <div class="inv-doc-tabs" id="inv-doc-tabs"></div>
+          </div>
+        </div>
+
+        <!-- Zone 3: Handheld Scanner Receipt & Invoice Sign-Off -->
+        <div class="inv-gui-zone inv-zone-sign">
+          <div class="inv-zone-lbl">SCANNER RECEIPT &amp; APPROVAL</div>
+          <div class="inv-zone-row">
+            <div class="inv-ui-pill">
+              <span class="inv-ui-stat-lbl">RECEIPT NO</span>
+              <span class="inv-ui-stat-val" id="inv-receipt-num" style="color:#fbbf24;">Pending...</span>
+            </div>
+            <div class="inv-ui-pill" id="inv-credit-receipt-pill" style="display:none;">
+              <span class="inv-ui-stat-lbl">CREDIT NO</span>
+              <span class="inv-ui-stat-val" id="inv-credit-receipt-num" style="color:#fbbf24;">Pending...</span>
+            </div>
+            <button type="button" class="inv-gui-btn inv-scanner-btn" id="btn-toggle-scanner-from-inv">SCANNER
+              [F]</button>
+            <button type="button" class="inv-gui-btn inv-sign-btn" id="btn-sign-invoice">SIGN &amp; ACCEPT</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Warehouse Truck Bill of Lading (BOL) Sign-Off GUI -->
+    <div id="bol-modal">
+      <div class="inv-ui-header">
+        <div>
+          <div class="inv-ui-title" style="color:#f59e0b;">WAREHOUSE BILL OF LADING (BOL)</div>
+          <div class="inv-ui-sub" id="bol-subtitle">APEX LOGISTICS · DEPT 01 REPLENISHMENT</div>
+        </div>
+        <button type="button" class="inv-close-btn" id="close-bol-btn">CLOSE</button>
+      </div>
+
+      <div class="inv-scroll-wrap">
+        <div class="inv-paper-sheet bol-paper">
+          <div class="bol-paper-banner">STRAIGHT BILL OF LADING · NON-NEGOTIABLE FREIGHT MANIFEST</div>
+          <div class="inv-paper-head">
+            <div class="inv-carrier-title" id="bol-carrier-title">APEX LOGISTICS</div>
+          </div>
+
+          <div class="inv-meta-grid bol-meta-grid">
+            <div class="inv-meta-cell">
+              <span class="inv-meta-lbl">DEPT #</span>
+              <span class="inv-meta-val" id="bol-dept-num">01</span>
+            </div>
+            <div class="inv-meta-cell">
+              <span class="inv-meta-lbl">VENDOR #</span>
+              <span class="inv-meta-val" id="bol-vendor-num">011</span>
+            </div>
+            <div class="inv-meta-cell">
+              <span class="inv-meta-lbl">BOL / INV #</span>
+              <span class="inv-meta-val" id="bol-doc-num">901100</span>
+            </div>
+            <div class="inv-meta-cell">
+              <span class="inv-meta-lbl">BAY / SEAL</span>
+              <span class="inv-meta-val" id="bol-bay-seal">BAY 4 · VERIFIED</span>
+            </div>
+            <div class="inv-meta-cell">
+              <span class="inv-meta-lbl">DATE</span>
+              <span class="inv-meta-val" id="bol-delivery-date">02/01/96</span>
+            </div>
+            <div class="inv-meta-cell">
+              <span class="inv-meta-lbl">PALLETS STAGED</span>
+              <span class="inv-meta-val" id="bol-pallet-count">0 / 0</span>
+            </div>
+          </div>
+
+          <div class="bol-zone-strip" id="bol-zone-breakdown"></div>
+
+          <table class="inv-table bol-table">
+            <thead>
+              <tr>
+                <th>SKU</th>
+                <th>FREIGHT DESCRIPTION</th>
+                <th class="num">CASES</th>
+                <th class="num">UNIT $</th>
+                <th class="num">COST</th>
+              </tr>
+            </thead>
+            <tbody id="bol-items-body"></tbody>
+          </table>
+
+          <div class="inv-paper-totals">
+            <div class="inv-paper-total-item">
+              <span class="inv-paper-total-lbl">TOTAL CASES:</span>
+              <span id="bol-total-cases">0</span>
+            </div>
+            <div class="inv-paper-total-item">
+              <span class="inv-paper-total-lbl">MANIFEST VALUE:</span>
+              <span id="bol-total-cost">$0.00</span>
+            </div>
+          </div>
+
+          <div class="inv-paper-sig-block">
+            <div>
+              <div class="inv-meta-lbl">DRIVER SIGNATURE</div>
+              <div class="inv-sig-line" id="bol-driver-sig">Signed</div>
+            </div>
+            <div>
+              <div class="inv-meta-lbl">RECEIVER BOL SIGN-OFF</div>
+              <div class="inv-sig-line" id="bol-receiver-sig" style="color:#64748b;">Awaiting Sign-Off</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="bol-gui-footer">
+        <div class="inv-ui-pill" style="flex:1 1 auto;">
+          <span class="inv-ui-stat-lbl">DEPT 01 AUTO-POSTING</span>
+          <span class="inv-ui-stat-val" id="bol-receipt-status" style="color:#86efac;">Auto-finalizes 01 receipt &amp; leaves simplified invoice for filing (no print-out needed)</span>
+        </div>
+        <button type="button" class="inv-gui-btn inv-sign-btn" id="btn-sign-bol">SIGN BILL OF LADING</button>
+      </div>
+    </div>
+
+    <!-- Side Door Multi-Queue Waiting List Modal -->
+    <div id="door-queue-modal">
+      <div class="dq-header">
+        <div class="dq-title">SIDE DOOR ENTRY QUEUE</div>
+        <button type="button" class="dq-btn dq-btn-close" id="dq-close-btn">[ESC] WAIT</button>
+      </div>
+      <div class="dq-subbar">
+        <span id="dq-slot-summary">WAITING OUTSIDE: 0 / 5 (D1-D4 + SD)</span>
+        <span>1 PER DOOR QUEUE MAX</span>
+      </div>
+      <div class="dq-priority-warn" id="dq-priority-warn"></div>
+      <div class="dq-list" id="dq-list"></div>
+      <div class="dq-footer">
+        <button type="button" class="dq-btn dq-btn-sec" id="dq-toggle-all-btn">SELECT ALL</button>
+        <div style="display:flex; gap:8px;">
+          <button type="button" class="dq-btn dq-btn-all" id="dq-let-all-btn">LET ALL IN</button>
+          <button type="button" class="dq-btn dq-btn-go" id="dq-let-selected-btn">LET SELECTED IN</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Under-Desk Trash Can Selection Modal -->
+    <div id="trash-receipt-modal">
+      <div class="dq-header">
+        <div class="dq-title" style="color:#f87171;">🗑️ TRASH CAN — DISCARD PRINTED RECEIPTS</div>
+        <button type="button" class="dq-btn dq-btn-sec" id="trm-close-btn">[ESC] KEEP ALL</button>
+      </div>
+      <div class="dq-subbar">
+        <span id="trm-summary">HELD PRINT-OUTS: 0</span>
+        <span>SELECT DUPLICATE OR UNNEEDED SLIPS</span>
+      </div>
+      <div class="dq-list" id="trm-list"></div>
+      <div class="dq-footer">
+        <button type="button" class="dq-btn dq-btn-sec" id="trm-toggle-all-btn">SELECT ALL</button>
+        <div style="display:flex; gap:8px;">
+          <button type="button" class="dq-btn dq-btn-close" id="trm-trash-selected-btn">DISCARD SELECTED</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Hand Printed Receipts to Waiting Driver/Vendor Modal -->
+    <div id="hand-receipt-modal">
+      <div class="dq-header">
+        <div class="dq-title" id="hrm-title" style="color:#4ade80;">📄 HAND RECEIPTS TO DRIVER</div>
+        <button type="button" class="dq-btn dq-btn-close" id="hrm-close-btn">[ESC] WAIT</button>
+      </div>
+      <div class="dq-subbar">
+        <span id="hrm-summary">HELD PRINT-OUTS: 0</span>
+        <span id="hrm-needed-badge">NEEDED: --</span>
+      </div>
+      <div class="dq-priority-warn" id="hrm-status-warn"></div>
+      <div class="dq-list" id="hrm-list"></div>
+      <div class="dq-footer">
+        <button type="button" class="dq-btn dq-btn-sec" id="hrm-toggle-matching-btn">SELECT NEEDED</button>
+        <div style="display:flex; gap:8px;">
+          <button type="button" class="dq-btn dq-btn-go" id="hrm-give-selected-btn">HAND SELECTED</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Paper Invoice Shortage Quantity Entry Modal -->
+    <div id="shortage-qty-modal">
+      <div class="dq-header">
+        <div class="dq-title" style="color:#fbbf24;">📝 STAMP SHORTAGE QUANTITY</div>
+        <button type="button" class="dq-btn dq-btn-sec" id="sqm-close-btn">[ESC] CANCEL</button>
+      </div>
+      <div class="dq-subbar">
+        <span id="sqm-item-code">ITEM #0000</span>
+        <span id="sqm-billed-qty">BILLED QTY: 0</span>
+      </div>
+      <div class="sqm-item-name" id="sqm-item-name">Item Description</div>
+      <div class="sqm-stepper-row">
+        <button type="button" class="sqm-step-btn" id="sqm-minus-btn" aria-label="Decrease quantity">−</button>
+        <input type="number" min="0" max="999" step="1" id="sqm-qty-input" class="sqm-qty-input" value="0">
+        <button type="button" class="sqm-step-btn" id="sqm-plus-btn" aria-label="Increase quantity">+</button>
+      </div>
+      <div id="sqm-error" style="min-height:14px; font-size:11px; color:#f87171; font-weight:700; text-align:center; margin-top:4px;"></div>
+      <div class="dq-footer">
+        <button type="button" class="dq-btn dq-btn-sec" id="sqm-zero-btn">SET 0</button>
+        <button type="button" class="dq-btn dq-btn-go" id="sqm-apply-btn">STAMP SHORTAGE</button>
+      </div>
+    </div>
+
+    <!-- Mobile Touch Controls -->
+    <div id="mobile-controls">
+      <div id="touch-walk-zone"></div>
+      <div id="joystick-zone">
+        <div id="joystick-knob"></div>
+      </div>
+      <div id="mobile-btn-dock">
+        <button id="btn-touch-action" class="touch-btn touch-btn-jack" type="button">Jack</button>
+        <button id="btn-touch-door" class="touch-btn touch-btn-use" type="button">Use</button>
+        <button id="btn-touch-scan" class="touch-btn touch-btn-scanner" type="button">Scanner</button>
+      </div>
+      <div id="touch-look-zone"></div>
+    </div>
+
+    <!-- Phase 2: Night Drops & Pinned Archive Reference Panel -->
+    <div id="night-drop-panel">
+      <div class="nd-header">
+        <div>
+          <div class="nd-title">DESK INBOX TRAY</div>
+          <div class="nd-sub">NIGHT DROPS &amp; PINNED PAPERWORK</div>
+        </div>
+        <button id="night-drop-close" class="inv-close-btn" type="button">CLOSE</button>
+      </div>
+      <div id="night-drop-tabs"></div>
+      <div id="night-drop-content"></div>
+    </div>
+
+    <!-- Phase 2: Daily Filing Matching Modal -->
+    <div id="filing-overlay">
+      <div class="phase2-modal-card filing-folder-shell">
+        <div class="phase2-modal-hdr">
+          <h3>📁 DAILY FILING FOLDER — PAPER INVOICES &amp; STORE COPY PRINTOUTS</h3>
+          <button id="filing-close-btn" class="nd-close-btn" type="button">[X] CLOSE</button>
+        </div>
+        <div id="filing-status-bar">Checking filing status...</div>
+        <div class="filing-columns">
+          <div class="filing-col-wrap filing-desk-left">
+            <div class="filing-col-title">TODAY'S ARCHIVE FOLDER (INVOICES &amp; MATCHED STORE COPIES)</div>
+            <div id="filing-invoices-col"></div>
+          </div>
+          <div class="filing-col-wrap filing-desk-right">
+            <div class="filing-col-title">LOOSE STORE COPY PRINTOUTS (DRAG OR CLICK ONTO INVOICE)</div>
+            <div id="filing-receipts-col"></div>
+          </div>
+        </div>
+        <div class="phase2-modal-ftr">
+          <span style="font-size:11px;color:#94a3b8;">Print Store Copies from Terminal [2] Receipt Ledger. Click or drag a Store Copy onto its matching Invoice to paperclip them together.</span>
+          <button id="filing-file-btn" type="button">FILE ALL LINKED PAIRS TO CABINET</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Phase 2: 32-Day File Cabinet Archive Modal -->
+    <div id="invoice-archive-overlay">
+      <div class="phase2-modal-card">
+        <div class="phase2-modal-hdr">
+          <h3>🗄️ RECEIVING FILE CABINET ARCHIVE (32 DAYS)</h3>
+          <button id="archive-close-btn" class="nd-close-btn" type="button">[X] CLOSE</button>
+        </div>
+        <div class="archive-body">
+          <div id="archive-sidebar"></div>
+          <div id="archive-viewer"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- End-of-Shift KPI Summary Modal -->
+    <div id="shift-summary-modal">
+      <div class="shift-summary-card">
+        <div class="shift-summary-header">
+          <h2>SHIFT RECEIVING SUMMARY</h2>
+          <div class="shift-summary-subtitle" id="summary-shift-subtitle">THU FEB 01, 1996 (DAY 1/21)</div>
+        </div>
+        <div class="shift-summary-rank" id="summary-shift-rank">DOCK HAND</div>
+        <div class="shift-summary-rows">
+          <div class="shift-summary-row"><span>Side-Door Vendors</span><strong id="summary-vendors-val">0 (+0)</strong>
+          </div>
+          <div class="shift-summary-row"><span>Dock &amp; Warehouse Trucks</span><strong id="summary-trucks-val">0
+              (+0)</strong></div>
+          <div class="shift-summary-row"><span>Night Drops</span><strong id="summary-nightdrops-val">0 (+0)</strong>
+          </div>
+          <div class="shift-summary-row"><span>Receiving Tasks &amp; Recalls</span><strong id="summary-tasks-val">0
+              (+0)</strong></div>
+          <div class="shift-summary-row"><span>Facility Checklist</span><strong id="summary-checklist-val">Filing ✗ ·
+              Putaway ✗ · Audit ✗ (+0)</strong></div>
+          <div class="shift-summary-row"><span>Compliance &amp; End-of-Day Penalties</span><strong
+              id="summary-compliance-val" style="color: #f87171;">-0 pts</strong></div>
+          <div class="shift-summary-row"><span>Operational Errors</span><strong id="summary-errors-val"
+              style="color: #f87171;">-0 pts</strong></div>
+          <div class="shift-summary-row total"><span>NET SHIFT SCORE</span><span id="summary-total-val">0 pts</span>
+          </div>
+        </div>
+        <ul id="summary-unfinished-list"></ul>
+        <button id="btn-next-shift" type="button">START NEXT SHIFT</button>
+      </div>
+    </div>
+  </div>
+
+</body>
+
+</html>

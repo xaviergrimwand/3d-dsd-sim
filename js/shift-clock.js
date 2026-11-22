@@ -1,0 +1,375 @@
+(function (global) {
+  'use strict';
+
+  /**
+   * ShiftClock - In-game shift time (6:00 AM - 2:00 PM), Feb 1996 weekday calendar,
+   * door-left-open security timers, and 3D wallClock synchronization.
+   */
+  const DAY_NAMES = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'];
+  const MONTH_NAMES = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
+
+  function getConfig() {
+    return (global.DSDCatalog && global.DSDCatalog.SHIFT_CONFIG) || {
+      shiftStartHour: 6,
+      shiftDurationHours: 8,
+      timeSpeedMultiplier: 1,
+      msPerGameMinute: 4000,
+      deliveryCutoffHour: 12,
+      startDate: { month: 1, day: 1, year: 1996 },
+      endCampaignDate: { month: 2, day: 1, year: 1996 }
+    };
+  }
+
+  function createDoorTimerState() {
+    return {
+      active: false,
+      startTotalMinutes: 0,
+      warned5: false,
+      penalized10: false,
+      lastProlongedMark: 10
+    };
+  }
+
+  const state = {
+    hour: 6,
+    minute: 0,
+    second: 0,
+    millisecond: 0,
+    gameMinuteProgress: 0, // 0..1 fraction of current in-game minute
+    date: { month: 1, day: 1, year: 1996 },
+    workdayIndex: 1,
+    paused: false,
+    systemPaused: false, // Reserved for a future in-game system/pause menu (not active yet)
+    shiftEnded: false,
+    campaignComplete: false,
+    doorTimers: {
+      side: createDoorTimerState(),
+      dock1: createDoorTimerState(),
+      dock2: createDoorTimerState(),
+      dock3: createDoorTimerState(),
+      dock4: createDoorTimerState()
+    },
+    listeners: {
+      onShiftEnd: [],
+      onDoorWarning: [],
+      onDoorPenalty: [],
+      onMinuteTick: []
+    }
+  };
+
+  function emit(eventName, payload) {
+    const list = state.listeners[eventName] || [];
+    for (let i = 0; i < list.length; i++) {
+      try {
+        list[i](payload);
+      } catch (err) {
+        console.error('ShiftClock listener error (' + eventName + '):', err);
+      }
+    }
+  }
+
+  function on(eventName, fn) {
+    if (state.listeners[eventName] && typeof fn === 'function') {
+      state.listeners[eventName].push(fn);
+    }
+  }
+
+  function getShiftStartMinutes() {
+    return getConfig().shiftStartHour * 60;
+  }
+
+  function getShiftEndHour() {
+    const cfg = getConfig();
+    return cfg.shiftStartHour + cfg.shiftDurationHours;
+  }
+
+  function getShiftEndMinutes() {
+    return getShiftEndHour() * 60;
+  }
+
+  function getCurrentTotalMinutes() {
+    return state.hour * 60 + state.minute;
+  }
+
+  function getExactTotalMinutes() {
+    return state.hour * 60 + state.minute + state.gameMinuteProgress;
+  }
+
+  function isAfterNoon() {
+    return state.hour >= (getConfig().deliveryCutoffHour || 12);
+  }
+
+  function isShiftOver() {
+    return getCurrentTotalMinutes() >= getShiftEndMinutes();
+  }
+
+  function resetClockToShiftStart() {
+    const cfg = getConfig();
+    state.hour = cfg.shiftStartHour;
+    state.minute = 0;
+    state.second = 0;
+    state.millisecond = 0;
+    state.gameMinuteProgress = 0;
+    state.shiftEnded = false;
+    Object.keys(state.doorTimers).forEach((k) => {
+      state.doorTimers[k] = createDoorTimerState();
+    });
+  }
+
+  function init() {
+    const cfg = getConfig();
+    state.date = {
+      month: cfg.startDate.month,
+      day: cfg.startDate.day,
+      year: cfg.startDate.year
+    };
+    state.workdayIndex = 1;
+    state.campaignComplete = false;
+    state.paused = false;
+    state.systemPaused = false;
+    resetClockToShiftStart();
+  }
+
+  function setPaused(paused) {
+    state.paused = Boolean(paused);
+  }
+
+  function setSystemPaused(paused) {
+    state.systemPaused = Boolean(paused);
+  }
+
+  function isSystemPaused() {
+    return state.systemPaused;
+  }
+
+  function startDoorTimer(doorKey) {
+    const timer = state.doorTimers[doorKey];
+    if (!timer || timer.active) return;
+    timer.active = true;
+    timer.startTotalMinutes = getExactTotalMinutes();
+    timer.warned5 = false;
+    timer.penalized10 = false;
+    timer.lastProlongedMark = 10;
+  }
+
+  function stopDoorTimer(doorKey) {
+    const timer = state.doorTimers[doorKey];
+    if (!timer || !timer.active) return;
+    state.doorTimers[doorKey] = createDoorTimerState();
+  }
+
+  function getDoorTimerState(doorKey) {
+    const timer = state.doorTimers[doorKey];
+    if (!timer || !timer.active) {
+      return { active: false, elapsedMinutes: 0, warned5: false, penalized10: false };
+    }
+    return {
+      active: true,
+      elapsedMinutes: Math.max(0, getExactTotalMinutes() - timer.startTotalMinutes),
+      warned5: Boolean(timer.warned5),
+      penalized10: Boolean(timer.penalized10)
+    };
+  }
+
+  function checkDoorTimers() {
+    const nowExactMin = getExactTotalMinutes();
+    Object.keys(state.doorTimers).forEach((doorKey) => {
+      const timer = state.doorTimers[doorKey];
+      if (!timer.active) return;
+      const elapsedMin = nowExactMin - timer.startTotalMinutes;
+
+      if (elapsedMin >= 5 && !timer.warned5) {
+        timer.warned5 = true;
+        emit('onDoorWarning', { doorKey: doorKey, elapsedMinutes: elapsedMin });
+      }
+      if (elapsedMin >= 10 && !timer.penalized10) {
+        timer.penalized10 = true;
+        timer.lastProlongedMark = 10;
+        emit('onDoorPenalty', { doorKey: doorKey, prolonged: false, elapsedMinutes: elapsedMin });
+      } else if (elapsedMin >= timer.lastProlongedMark + 5) {
+        timer.lastProlongedMark += 5;
+        emit('onDoorPenalty', { doorKey: doorKey, prolonged: true, elapsedMinutes: elapsedMin });
+      }
+    });
+  }
+
+  function update(dtSeconds, externalPaused) {
+    if (state.paused || state.systemPaused || externalPaused || state.shiftEnded || state.campaignComplete) {
+      return;
+    }
+    const cfg = getConfig();
+    const safeDt = Math.max(0, Math.min(Number(dtSeconds) || 0, 0.25));
+    const realSecPerGameMinute = (cfg.msPerGameMinute || 4000) / (1000 * (cfg.timeSpeedMultiplier || 1));
+    if (realSecPerGameMinute <= 0) return;
+
+    state.gameMinuteProgress += safeDt / realSecPerGameMinute;
+
+    let minutesAdded = 0;
+    while (state.gameMinuteProgress >= 1) {
+      state.gameMinuteProgress -= 1;
+      state.minute += 1;
+      minutesAdded += 1;
+      if (state.minute >= 60) {
+        state.minute = 0;
+        state.hour += 1;
+        if (state.hour >= 24) {
+          state.hour = 0;
+        }
+      }
+    }
+
+    const totalSecInMin = state.gameMinuteProgress * 60;
+    state.second = Math.floor(totalSecInMin);
+    state.millisecond = Math.floor((totalSecInMin - state.second) * 1000);
+
+    if (minutesAdded > 0) {
+      emit('onMinuteTick', getTimeSnapshot());
+    }
+
+    checkDoorTimers();
+
+    if (isShiftOver() && !state.shiftEnded) {
+      const endHour = getShiftEndHour();
+      state.hour = Math.floor(endHour);
+      state.minute = Math.round((endHour % 1) * 60);
+      state.second = 0;
+      state.millisecond = 0;
+      state.gameMinuteProgress = 0;
+      state.shiftEnded = true;
+      emit('onShiftEnd', { reason: 'clock_reached_end', time: getTimeSnapshot() });
+    }
+  }
+
+  function advanceWorkday() {
+    const cfg = getConfig();
+    const d = new Date(state.date.year, state.date.month, state.date.day);
+    do {
+      d.setDate(d.getDate() + 1);
+    } while (d.getDay() === 0 || d.getDay() === 6); // Skip Sun (0) & Sat (6)
+
+    const endCampaign = new Date(
+      cfg.endCampaignDate.year,
+      cfg.endCampaignDate.month,
+      cfg.endCampaignDate.day
+    );
+    if (d >= endCampaign) {
+      state.campaignComplete = true;
+      return false;
+    }
+
+    state.date = { month: d.getMonth(), day: d.getDate(), year: d.getFullYear() };
+    state.workdayIndex += 1;
+    resetClockToShiftStart();
+    return true;
+  }
+
+  function getNextShiftDateInfo() {
+    const cfg = getConfig();
+    const d = new Date(state.date.year, state.date.month, state.date.day);
+    do {
+      d.setDate(d.getDate() + 1);
+    } while (d.getDay() === 0 || d.getDay() === 6); // Mon-Fri shifts only
+
+    const endCampaign = new Date(
+      cfg.endCampaignDate.year,
+      cfg.endCampaignDate.month,
+      cfg.endCampaignDate.day
+    );
+    const target = d >= endCampaign
+      ? new Date(cfg.startDate.year, cfg.startDate.month, cfg.startDate.day)
+      : d;
+    const mm = String(target.getMonth() + 1).padStart(2, '0');
+    const dd = String(target.getDate()).padStart(2, '0');
+    const yyyy = String(target.getFullYear());
+    return {
+      month: target.getMonth(),
+      day: target.getDate(),
+      year: target.getFullYear(),
+      dayName: DAY_NAMES[target.getDay()] || 'MON',
+      mmddyyyy: mm + '/' + dd + '/' + yyyy
+    };
+  }
+
+  function formatTime12h() {
+    const h24 = state.hour;
+    const period = h24 >= 12 ? 'PM' : 'AM';
+    const h12 = h24 % 12 === 0 ? 12 : h24 % 12;
+    const minStr = String(state.minute).padStart(2, '0');
+    return h12 + ':' + minStr + ' ' + period;
+  }
+
+  function formatTime24h() {
+    return String(state.hour).padStart(2, '0') + ':' + String(state.minute).padStart(2, '0');
+  }
+
+  function formatDateShort() {
+    const d = new Date(state.date.year, state.date.month, state.date.day);
+    const dow = DAY_NAMES[d.getDay()];
+    const mon = MONTH_NAMES[state.date.month] || 'FEB';
+    const dayStr = String(state.date.day).padStart(2, '0');
+    return dow + ' ' + mon + ' ' + dayStr + ', ' + state.date.year;
+  }
+
+  function getTimeSnapshot() {
+    const d = new Date(state.date.year, state.date.month, state.date.day);
+    const h24 = state.hour;
+    const h12 = h24 % 12 === 0 ? 12 : h24 % 12;
+    const startMin = getShiftStartMinutes();
+    const endMin = getShiftEndMinutes();
+    const span = Math.max(1, endMin - startMin);
+    const progressPct = Math.max(0, Math.min(1, (getExactTotalMinutes() - startMin) / span));
+
+    return {
+      hour: state.hour,
+      hour12: h12,
+      minute: state.minute,
+      second: state.second,
+      millisecond: state.millisecond,
+      exactSecond: state.second + state.millisecond / 1000,
+      amPm: h24 >= 12 ? 'PM' : 'AM',
+      totalMinutes: getCurrentTotalMinutes(),
+      progressPct: progressPct,
+      formatted12h: formatTime12h(),
+      formatted24h: formatTime24h(),
+      dayName: DAY_NAMES[d.getDay()] || 'MON',
+      monthName: MONTH_NAMES[state.date.month] || 'JAN',
+      dayOfMonth: String(state.date.day).padStart(2, '0'),
+      year: state.date.year,
+      dateLabel: formatDateShort(),
+      workdayIndex: state.workdayIndex,
+      afterNoon: isAfterNoon(),
+      shiftOver: isShiftOver(),
+      shiftEnded: state.shiftEnded,
+      campaignComplete: state.campaignComplete
+    };
+  }
+
+  init();
+
+  global.ShiftClock = {
+    init: init,
+    update: update,
+    setPaused: setPaused,
+    setSystemPaused: setSystemPaused,
+    isSystemPaused: isSystemPaused,
+    resetClockToShiftStart: resetClockToShiftStart,
+    advanceWorkday: advanceWorkday,
+    getShiftStartMinutes: getShiftStartMinutes,
+    getShiftEndHour: getShiftEndHour,
+    getShiftEndMinutes: getShiftEndMinutes,
+    getCurrentTotalMinutes: getCurrentTotalMinutes,
+    getExactTotalMinutes: getExactTotalMinutes,
+    isAfterNoon: isAfterNoon,
+    isShiftOver: isShiftOver,
+    startDoorTimer: startDoorTimer,
+    stopDoorTimer: stopDoorTimer,
+    getDoorTimerState: getDoorTimerState,
+    formatTime12h: formatTime12h,
+    formatTime24h: formatTime24h,
+    formatDateShort: formatDateShort,
+    getNextShiftDateInfo: getNextShiftDateInfo,
+    getTimeSnapshot: getTimeSnapshot,
+    on: on
+  };
+})(window);
+
