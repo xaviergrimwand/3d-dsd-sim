@@ -1710,7 +1710,11 @@ function createWoodGrainTexture() {
   return new THREE.CanvasTexture(canvas);
 }
 
-function createCardboardBoxTexture(sku, name, tempType, notScannable, unitsPerCase) {
+function createCardboardBoxTexture(sku, name, tempType, notScannable, unitsPerCase, opts) {
+  const o = opts || {};
+  const isLabeled = Boolean(o.labeled);
+  const isPluUnlabeled = Boolean(notScannable && !isLabeled);
+
   const canvas = document.createElement('canvas');
   canvas.width = 1024; canvas.height = 1024;
   const ctx = canvas.getContext('2d');
@@ -1732,11 +1736,11 @@ function createCardboardBoxTexture(sku, name, tempType, notScannable, unitsPerCa
   ctx.lineWidth = 2;
   ctx.strokeRect(0, 230, 512, 52);
 
-  // White thermal shipping label
-  ctx.fillStyle = '#ffffff';
+  // Top thermal shipping label (bright green for unlabeled PLU, white for standard, yellow-tinted if labeled)
+  ctx.fillStyle = isLabeled ? '#fef9c3' : (isPluUnlabeled ? '#86efac' : '#ffffff');
   ctx.fillRect(40, 60, 432, 145);
-  ctx.strokeStyle = notScannable ? '#d97706' : '#94a3b8';
-  ctx.lineWidth = notScannable ? 4 : 2;
+  ctx.strokeStyle = isPluUnlabeled ? '#15803d' : (isLabeled ? '#ca8a04' : '#94a3b8');
+  ctx.lineWidth = (isPluUnlabeled || isLabeled) ? 4 : 2;
   ctx.strokeRect(40, 60, 432, 145);
 
   ctx.fillStyle = '#0f172a';
@@ -1745,17 +1749,17 @@ function createCardboardBoxTexture(sku, name, tempType, notScannable, unitsPerCa
   ctx.fillText(shortName, 56, 94);
 
   ctx.font = 'bold 18px monospace';
-  ctx.fillStyle = notScannable ? '#b45309' : '#334155';
-  const codeLabel = (notScannable ? 'PLU ONLY: ' : 'UPC/SKU: ') + (sku || 'CASE-108');
+  ctx.fillStyle = isPluUnlabeled ? '#052e16' : '#334155';
+  const codeLabel = (isPluUnlabeled ? 'PLU ONLY: ' : 'UPC/SKU: ') + (sku || 'CASE-108');
   ctx.fillText(codeLabel, 56, 124);
 
-  if (notScannable) {
-    ctx.fillStyle = '#fef3c7';
+  if (isPluUnlabeled) {
+    ctx.fillStyle = '#4ade80';
     ctx.fillRect(56, 136, 396, 46);
-    ctx.strokeStyle = '#d97706';
+    ctx.strokeStyle = '#15803d';
     ctx.lineWidth = 2;
     ctx.strokeRect(56, 136, 396, 46);
-    ctx.fillStyle = '#92400e';
+    ctx.fillStyle = '#052e16';
     ctx.font = 'bold 22px monospace';
     ctx.fillText('NO BARCODE · KEY PLU ' + (sku || ''), 70, 167);
   } else {
@@ -1783,20 +1787,27 @@ function createCardboardBoxTexture(sku, name, tempType, notScannable, unitsPerCa
     ctx.fillText('📦 AMBIENT', 345, 94);
   }
 
-  // Large high-contrast yellow inventory tag on the bottom-left corner of overstock cases
+  // Case inventory/check-in tag on the bottom-left corner:
+  // Yellow = printed scannable inventory label (UPC);
+  // Bright Green = unlabeled PLU case (PLU);
+  // White = check-in / unlabeled standard case / Dept 60 supply (UPC).
   if (unitsPerCase && Number(unitsPerCase) > 0) {
     const tagX = 14;
     const tagY = 286;
     const tagW = 368;
     const tagH = 212;
 
-    ctx.fillStyle = '#facc15';
+    const bgHex = isLabeled ? '#facc15' : (isPluUnlabeled ? '#4ade80' : '#ffffff');
+    const borderHex = isPluUnlabeled ? '#14532d' : '#000000';
+    const textHex = isPluUnlabeled ? '#052e16' : '#000000';
+
+    ctx.fillStyle = bgHex;
     ctx.fillRect(tagX, tagY, tagW, tagH);
-    ctx.strokeStyle = '#000000';
+    ctx.strokeStyle = borderHex;
     ctx.lineWidth = 5;
     ctx.strokeRect(tagX, tagY, tagW, tagH);
 
-    ctx.fillStyle = '#000000';
+    ctx.fillStyle = textHex;
     ctx.textAlign = 'left';
     ctx.font = '900 30px Arial, Helvetica, sans-serif';
     const tagName = (name || 'BACKSTOCK').toUpperCase().slice(0, 14);
@@ -1808,7 +1819,7 @@ function createCardboardBoxTexture(sku, name, tempType, notScannable, unitsPerCa
     ctx.fillText('QTY: ' + String(Number(unitsPerCase)), tagX + 16, tagY + 128, tagW - 32);
 
     ctx.font = '900 50px Arial, Helvetica, sans-serif';
-    const tagCode = (notScannable ? 'PLU ' : 'UPC ') + String(sku || '');
+    const tagCode = (isPluUnlabeled ? 'PLU ' : 'UPC ') + String(sku || '');
     ctx.fillText(tagCode, tagX + 16, tagY + 188, tagW - 32);
   }
 

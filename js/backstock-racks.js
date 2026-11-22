@@ -108,16 +108,19 @@
     return map[rackId] || rackId;
   }
 
-  function getBoxTexture(code, name, type, notScannable, unitsPerCase) {
+  function getBoxTexture(code, name, type, notScannable, unitsPerCase, opts) {
     const qty = Math.max(0, Math.round(Number(unitsPerCase) || 0));
-    const key = `${code}|${type || 'ambient'}|${Boolean(notScannable)}|${qty}`;
+    const isLabeled = Boolean(opts && opts.labeled);
+    const effectivePlu = Boolean(notScannable && !isLabeled);
+    const key = `${code}|${type || 'ambient'}|${effectivePlu}|${isLabeled}|${qty}`;
     if (!state.texCache[key] && global.WarehouseTextures && typeof global.WarehouseTextures.createCardboardBoxTexture === 'function') {
       state.texCache[key] = global.WarehouseTextures.createCardboardBoxTexture(
         code,
         name,
         type,
-        Boolean(notScannable),
-        qty
+        effectivePlu,
+        qty,
+        { labeled: isLabeled }
       );
     }
     return state.texCache[key] || null;
@@ -235,12 +238,17 @@
   function syncCaseLabelTexture(caseRec, displayQty) {
     if (!caseRec || !caseRec.mesh || !caseRec.mesh.material) return;
     const targetQty = Math.max(1, Math.round(Number(displayQty) || caseRec.unitsPerCase || 1));
-    if (caseRec.displayedLabelQty === targetQty) return;
-    const tex = getBoxTexture(caseRec.code, caseRec.name, caseRec.type, caseRec.notScannable, targetQty);
+    const supply = isSupplyCase(caseRec);
+    const isLabeled = Boolean(caseRec.labeled && !supply);
+    const effectivePlu = Boolean(caseRec.notScannable && !isLabeled && !supply);
+    const labelKey = `${targetQty}|${isLabeled ? 1 : 0}|${effectivePlu ? 1 : 0}`;
+    if (caseRec.displayedLabelQty === targetQty && caseRec._displayedLabelKey === labelKey) return;
+    const tex = getBoxTexture(caseRec.code, caseRec.name, caseRec.type, effectivePlu, targetQty, { labeled: isLabeled });
     if (tex) {
       caseRec.mesh.material.map = tex;
       caseRec.mesh.material.needsUpdate = true;
       caseRec.displayedLabelQty = targetQty;
+      caseRec._displayedLabelKey = labelKey;
     }
   }
 
@@ -495,6 +503,7 @@
     const fitsDepth = (depthEnd <= shelfDepth + 0.002);
     const zoneMatches = (!caseRec || !caseRec.targetRackId || caseRec.targetRackId === slot.rackId);
     const requiredRackName = caseRec && caseRec.targetRackId ? getRackDisplayName(caseRec.targetRackId) : '';
+    const labelOk = Boolean(!caseRec || isSupplyCase(caseRec) || caseRec.labeled);
 
     let hasSupport = (resolvedBaseY <= slot.deckY + 0.005);
     let supportReason = 'Needs solid support below';
@@ -557,7 +566,8 @@
     const y = resolvedBaseY + dims.h / 2;
 
     let reason = '';
-    if (!zoneMatches) reason = `Wrong rack — must go on ${requiredRackName}`;
+    if (!labelOk) reason = 'Print yellow label (Scanner 3 -> 1) before slotting';
+    else if (!zoneMatches) reason = `Wrong rack — must go on ${requiredRackName}`;
     else if (!skuAllowed) reason = 'Only identical cases can link back-to-back';
     else if (!fitsDepth) reason = 'Not enough shelf depth';
     else if (!fitsHeight) reason = 'Too tall for shelf';
@@ -574,7 +584,7 @@
       dims: dims,
       linkedRowQty: linkInfo ? linkInfo.newTotalQty : (caseRec ? caseRec.unitsPerCase : dims.units),
       linkedCount: linkInfo ? (linkInfo.depthIdx + 1) : 1,
-      valid: Boolean(zoneMatches && skuAllowed && fitsDepth && fitsHeight && hasSupport && !collides),
+      valid: Boolean(labelOk && zoneMatches && skuAllowed && fitsDepth && fitsHeight && hasSupport && !collides),
       reason: reason
     };
   }
@@ -813,7 +823,9 @@
     const sizeKey = normalizeSize(opts.size);
     const dims = CASE_SIZE_SPECS[sizeKey] || CASE_SIZE_SPECS.medium;
     const unitsPerCase = Number(opts.unitsPerCase) || dims.units;
-    const tex = getBoxTexture(opts.code, opts.name, opts.type, opts.notScannable, unitsPerCase);
+    const supply = Boolean(String(opts.deptNo || '') === '60' || String(opts.vendorNo || '') === '601' || opts.rackId === 'claims_steel');
+    const effectivePlu = Boolean(opts.notScannable && !supply);
+    const tex = getBoxTexture(opts.code, opts.name, opts.type, effectivePlu, unitsPerCase, { labeled: false });
     const mat = new THREE.MeshStandardMaterial({
       map: tex || undefined,
       color: tex ? 0xffffff : 0xc59f6b,
@@ -1008,6 +1020,7 @@
 
     const slot = p.slot;
     if (!slot || slot.hasTotes) return null;
+    if (caseRec && !isSupplyCase(caseRec) && !caseRec.labeled) return null;
     if (caseRec.targetRackId && slot.rackId !== caseRec.targetRackId) return null;
     if (!Array.isArray(slot.placedCases)) slot.placedCases = [];
 
@@ -1202,7 +1215,7 @@
     };
 
     const starterPlan = [
-      { rackId: 'claims_steel', pool: getCatalogProductsForDeptGroup('60', true), guaranteeAll: true, min: 1, max: 3 },
+      { rackId: 'claims_steel', pool: getCatalogProductsForDeptGroup('60', true), guaranteeAll: true },
       { rackId: 'dry_steel', pool: getCatalogProductsForDeptGroup(['1', '4', '5'], false), guaranteeAll: false, min: 7, max: 10 },
       { rackId: 'cooler_steel', pool: getCatalogProductsForDeptGroup('2', false), guaranteeAll: false, min: 6, max: 9 },
       { rackId: 'freezer_steel', pool: getCatalogProductsForDeptGroup('3', false), guaranteeAll: false, min: 6, max: 8 }
@@ -1213,31 +1226,15 @@
       const shuffledPool = shuffleCopy(plan.pool);
 
       if (plan.guaranteeAll) {
-        // Ensure at least 1 box of every Dept 60 supply item exists, plus extras grouped into doubles/triples
+        // Seed exactly 1 starting case of every Dept 60 supply UPC
         shuffledPool.forEach((prod) => spawnProdCase(plan.rackId, prod));
-        const extraCount = randInt(plan.min, plan.max);
-        const focusProd = shuffledPool[0];
-        for (let i = 0; i < extraCount; i++) {
-          spawnProdCase(plan.rackId, focusProd);
-        }
         return;
       }
 
-      // Group total cases cleanly into doubles (2) and triples (3) using the same total case counts
-      let remaining = randInt(plan.min, plan.max);
-      let poolIdx = 0;
-      while (remaining > 0) {
-        let groupSize;
-        if (remaining <= 3) groupSize = remaining;
-        else if (remaining === 4) groupSize = 2;
-        else groupSize = (Math.random() < 0.60) ? 3 : 2;
-
-        const prod = shuffledPool[poolIdx % shuffledPool.length];
-        poolIdx += 1;
-        for (let q = 0; q < groupSize; q++) {
-          spawnProdCase(plan.rackId, prod);
-        }
-        remaining -= groupSize;
+      // Pick random individual cases from the department pool without forcing duplicate multiples
+      const count = randInt(plan.min, plan.max);
+      for (let i = 0; i < count; i++) {
+        spawnProdCase(plan.rackId, shuffledPool[i % shuffledPool.length]);
       }
     });
   }
@@ -1996,10 +1993,204 @@
     return applyDailySupplyUsage();
   }
 
+  function canSlotCaseOnSteel(caseRec) {
+    return Boolean(!caseRec || isSupplyCase(caseRec) || caseRec.labeled);
+  }
+
+  function labelCase(caseId) {
+    const caseRec = state.cases.find((c) => c && c.id === caseId);
+    if (!caseRec) return { ok: false, reason: 'not_found', error: 'CASE NOT FOUND' };
+    if (isSupplyCase(caseRec)) return { ok: false, reason: 'supply_exempt', error: 'DEPT 60 NO LABEL REQ' };
+    if (caseRec.labeled) return { ok: false, reason: 'already_labeled', error: 'ALREADY LABELED' };
+    const wasPlu = Boolean(caseRec.notScannable);
+    caseRec.labeled = true;
+    caseRec._displayedLabelKey = null;
+    syncCaseLabelTexture(caseRec, caseRec.unitsPerCase);
+    return {
+      ok: true,
+      caseRec: caseRec,
+      wasPlu: wasPlu
+    };
+  }
+
+  function findBackstockCaseForLabelInput(rawCode, preferredCaseId) {
+    const codeStr = String(rawCode || '').trim();
+    if (!codeStr) return null;
+    const candidates = state.cases.filter((c) => c && !c.labeled && !isSupplyCase(c));
+    if (preferredCaseId) {
+      const hoveredMatch = candidates.find((c) => c.id === preferredCaseId && codesMatch(c.code, codeStr));
+      if (hoveredMatch) return hoveredMatch;
+    }
+    const palletMatch = candidates.find((c) => !c.placedOnRack && codesMatch(c.code, codeStr));
+    if (palletMatch) return palletMatch;
+    return candidates.find((c) => codesMatch(c.code, codeStr)) || null;
+  }
+
   function resetForShift() {
     rebuildRackAndPalletRegistries();
     buildPlacementTargets();
     spawnStartingBackstock();
+  }
+
+  function exportState() {
+    return {
+      nextCaseSeq: Number(state.nextCaseSeq) || 1,
+      nextAuditGroupSeq: Number(state.nextAuditGroupSeq) || 1,
+      inventoryFinalized: Boolean(state.inventoryFinalized),
+      heldCaseId: state.heldCase ? state.heldCase.id : null,
+      cases: (state.cases || []).map((c) => ({
+        id: c.id,
+        code: c.code,
+        name: c.name,
+        deptNo: c.deptNo,
+        vendorNo: c.vendorNo,
+        vendorName: c.vendorName,
+        type: c.type,
+        size: c.size,
+        unitsPerCase: Number(c.unitsPerCase) || 1,
+        notScannable: Boolean(c.notScannable),
+        source: c.source || 'shift_start',
+        deliveryId: c.deliveryId || null,
+        targetRackId: c.targetRackId || null,
+        homePalletRackId: c.homePalletRackId || null,
+        homePalletId: c.homePalletId || null,
+        placedOnRack: Boolean(c.placedOnRack),
+        placedRackId: c.placedRackId || null,
+        slotKey: c.rackSlot ? `${c.rackSlot.rackId}|${c.rackSlot.segment}|${c.rackSlot.level}` : null,
+        zoneMismatch: Boolean(c.zoneMismatch),
+        labeled: Boolean(c.labeled),
+        inventoried: Boolean(c.inventoried),
+        auditedQty: c.auditedQty !== undefined ? c.auditedQty : null,
+        auditMismatch: Boolean(c.auditMismatch),
+        auditGroupId: c.auditGroupId || null,
+        palletCol: Number(c.palletCol) || 0,
+        depthIdx: Number(c.depthIdx) || 0,
+        linkedCount: Number(c.linkedCount) || 1,
+        linkedChainQty: Number(c.linkedChainQty) || Number(c.unitsPerCase) || 1,
+        displayedLabelQty: Number(c.displayedLabelQty) || Number(c.unitsPerCase) || 1,
+        pos: c.mesh ? { x: Number(c.mesh.position.x) || 0, y: Number(c.mesh.position.y) || 0, z: Number(c.mesh.position.z) || 0 } : null,
+        rotY: c.mesh ? Number(c.mesh.rotation.y) || 0 : 0
+      }))
+    };
+  }
+
+  function importState(data) {
+    if (!data || typeof data !== 'object') return false;
+    clearAllCases();
+    rebuildRackAndPalletRegistries();
+    buildPlacementTargets();
+
+    state.nextCaseSeq = Number.isFinite(Number(data.nextCaseSeq)) ? Number(data.nextCaseSeq) : 1;
+    state.nextAuditGroupSeq = Number.isFinite(Number(data.nextAuditGroupSeq)) ? Number(data.nextAuditGroupSeq) : 1;
+    state.inventoryFinalized = Boolean(data.inventoryFinalized);
+
+    const slotByKey = {};
+    state.shelfSlots.forEach((slot) => {
+      if (slot && slot.rackId) {
+        slotByKey[`${slot.rackId}|${slot.segment}|${slot.level}`] = slot;
+      }
+    });
+
+    const heldId = data.heldCaseId || null;
+    const savedCases = Array.isArray(data.cases) ? data.cases : [];
+
+    savedCases.forEach((sc) => {
+      if (!sc) return;
+      const sizeKey = normalizeSize(sc.size);
+      const dims = CASE_SIZE_SPECS[sizeKey] || CASE_SIZE_SPECS.medium;
+      const unitsPerCase = Number(sc.unitsPerCase) || dims.units;
+      const labelQty = Number(sc.displayedLabelQty) || unitsPerCase;
+      const scSupply = Boolean(String(sc.deptNo || '') === '60' || String(sc.vendorNo || '') === '601' || sc.targetRackId === 'claims_steel');
+      const scLabeled = Boolean(sc.labeled && !scSupply);
+      const scEffectivePlu = Boolean(sc.notScannable && !scLabeled && !scSupply);
+      const tex = getBoxTexture(sc.code, sc.name, sc.type, scEffectivePlu, labelQty, { labeled: scLabeled });
+      const mat = new THREE.MeshStandardMaterial({
+        map: tex || undefined,
+        color: tex ? 0xffffff : 0xc59f6b,
+        roughness: 0.78
+      });
+      const mesh = new THREE.Mesh(new THREE.BoxGeometry(dims.w, dims.h, dims.d), mat);
+
+      const palletRec = getPalletRecord(sc.homePalletId || sc.homePalletRackId);
+      const caseRec = {
+        id: sc.id || (`bs_${state.nextCaseSeq++}`),
+        code: String(sc.code || '0000'),
+        name: String(sc.name || 'Backstock Case'),
+        deptNo: String(sc.deptNo || '10'),
+        vendorNo: sc.vendorNo ? String(sc.vendorNo) : '',
+        vendorName: String(sc.vendorName || ''),
+        type: String(sc.type || 'ambient'),
+        size: sizeKey,
+        dims: dims,
+        unitsPerCase: unitsPerCase,
+        notScannable: Boolean(sc.notScannable),
+        source: sc.source || 'shift_start',
+        deliveryId: sc.deliveryId || null,
+        targetRackId: sc.targetRackId || sc.placedRackId || null,
+        homePalletRackId: sc.homePalletRackId || null,
+        homePalletId: palletRec ? palletRec.palletId : (sc.homePalletId || null),
+        placedOnRack: Boolean(sc.placedOnRack),
+        placedRackId: sc.placedRackId || null,
+        rackSlot: null,
+        zoneMismatch: Boolean(sc.zoneMismatch),
+        labeled: Boolean(sc.labeled),
+        inventoried: Boolean(sc.inventoried),
+        auditedQty: sc.auditedQty !== undefined ? sc.auditedQty : null,
+        auditMismatch: Boolean(sc.auditMismatch),
+        auditGroupId: sc.auditGroupId || null,
+        palletCol: Number(sc.palletCol) || 0,
+        targetFallY: sc.pos ? Number(sc.pos.y) || 0 : 0,
+        fallVelY: 0,
+        targetSlideX: sc.pos ? Number(sc.pos.x) || 0 : 0,
+        targetSlideZ: sc.pos ? Number(sc.pos.z) || 0 : 0,
+        depthIdx: Number(sc.depthIdx) || 0,
+        linkedCount: Number(sc.linkedCount) || 1,
+        linkedChainQty: Number(sc.linkedChainQty) || unitsPerCase,
+        displayedLabelQty: labelQty,
+        _lastChainSig: null,
+        mesh: mesh
+      };
+      mesh.userData.backstockCaseRef = caseRec;
+
+      if (heldId && caseRec.id === heldId) {
+        caseRec.placedOnRack = false;
+        caseRec.rackSlot = null;
+        mesh.visible = false;
+        state.cases.push(caseRec);
+        showHeldCaseView(caseRec);
+        return;
+      }
+
+      const targetSlot = sc.placedOnRack && sc.slotKey ? slotByKey[sc.slotKey] : null;
+      if (sc.placedOnRack && targetSlot) {
+        caseRec.placedOnRack = true;
+        caseRec.placedRackId = targetSlot.rackId;
+        caseRec.rackSlot = targetSlot;
+        targetSlot.placedCases.push(caseRec);
+        if (sc.pos) {
+          mesh.position.set(Number(sc.pos.x) || 0, Number(sc.pos.y) || 0, Number(sc.pos.z) || 0);
+        } else {
+          mesh.position.set(targetSlot.centerX, targetSlot.deckY + dims.h / 2, targetSlot.centerZ);
+        }
+        mesh.rotation.set(0, Number(sc.rotY) || 0, 0);
+        if (state.scene) state.scene.add(mesh);
+      } else if (palletRec) {
+        caseRec.placedOnRack = false;
+        palletRec.cases.push(caseRec);
+      }
+      state.cases.push(caseRec);
+    });
+
+    Object.keys(state.palletStateById).forEach((pId) => {
+      relayoutPalletCargo(pId);
+    });
+    state.shelfSlots.forEach((slot) => {
+      if (slot && Array.isArray(slot.placedCases) && slot.placedCases.length > 0) {
+        reflowSlotChains(slot, true);
+      }
+    });
+    syncInventoryVisuals(state.inventoryFinalized);
+    return true;
   }
 
   global.BackstockRacks = {
@@ -2007,6 +2198,8 @@
     OVERSTOCK_CHANCE_PER_CASE: OVERSTOCK_CHANCE_PER_CASE,
     init: init,
     resetForShift: resetForShift,
+    exportState: exportState,
+    importState: importState,
     advanceShift: advanceShift,
     update: update,
     spawnStartingBackstock: spawnStartingBackstock,
@@ -2015,6 +2208,13 @@
     getRackDisplayName: getRackDisplayName,
     formatSlotDesignation: formatSlotDesignation,
     isSupplyCase: isSupplyCase,
+    canSlotCaseOnSteel: canSlotCaseOnSteel,
+    labelCase: labelCase,
+    findBackstockCaseForLabelInput: findBackstockCaseForLabelInput,
+    getLabelableRaycastMeshes: () => state.cases
+      .filter((c) => c && c.mesh && c.mesh.visible && c !== state.heldCase)
+      .map((c) => c.mesh),
+    getUnlabeledBackstockCount: () => state.cases.filter((c) => c && !c.labeled && !isSupplyCase(c)).length,
     getSupplyStockMap: getSupplyStockMap,
     getUnplacedSupplyCasesCount: getUnplacedSupplyCasesCount,
     applyDailySupplyUsage: applyDailySupplyUsage,

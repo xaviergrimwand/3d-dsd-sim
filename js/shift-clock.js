@@ -344,6 +344,72 @@
     };
   }
 
+  function exportState() {
+    const timersCopy = {};
+    Object.keys(state.doorTimers).forEach((k) => {
+      const t = state.doorTimers[k] || createDoorTimerState();
+      timersCopy[k] = {
+        active: Boolean(t.active),
+        startTotalMinutes: Number(t.startTotalMinutes) || 0,
+        warned5: Boolean(t.warned5),
+        penalized10: Boolean(t.penalized10),
+        lastProlongedMark: Number.isFinite(Number(t.lastProlongedMark)) ? Number(t.lastProlongedMark) : 10
+      };
+    });
+    return {
+      hour: Number(state.hour),
+      minute: Number(state.minute),
+      second: Number(state.second) || 0,
+      millisecond: Number(state.millisecond) || 0,
+      gameMinuteProgress: Number(state.gameMinuteProgress) || 0,
+      date: {
+        month: Number(state.date.month) || 1,
+        day: Number(state.date.day) || 1,
+        year: Number(state.date.year) || 1996
+      },
+      workdayIndex: Number(state.workdayIndex) || 1,
+      paused: Boolean(state.paused),
+      shiftEnded: Boolean(state.shiftEnded),
+      campaignComplete: Boolean(state.campaignComplete),
+      doorTimers: timersCopy
+    };
+  }
+
+  function importState(data) {
+    if (!data || typeof data !== 'object') return false;
+    const cfg = getConfig();
+    state.hour = Number.isFinite(Number(data.hour)) ? Number(data.hour) : cfg.shiftStartHour;
+    state.minute = Number.isFinite(Number(data.minute)) ? Number(data.minute) : 0;
+    state.second = Number.isFinite(Number(data.second)) ? Number(data.second) : 0;
+    state.millisecond = Number.isFinite(Number(data.millisecond)) ? Number(data.millisecond) : 0;
+    state.gameMinuteProgress = Number.isFinite(Number(data.gameMinuteProgress)) ? Number(data.gameMinuteProgress) : 0;
+    const d = data.date || {};
+    state.date = {
+      month: Number(d.month) || cfg.startDate.month,
+      day: Number(d.day) || cfg.startDate.day,
+      year: Number(d.year) || cfg.startDate.year
+    };
+    state.workdayIndex = Number.isFinite(Number(data.workdayIndex)) ? Number(data.workdayIndex) : 1;
+    state.paused = Boolean(data.paused);
+    state.systemPaused = false;
+    state.shiftEnded = Boolean(data.shiftEnded);
+    state.campaignComplete = Boolean(data.campaignComplete);
+    const savedTimers = (data.doorTimers && typeof data.doorTimers === 'object') ? data.doorTimers : {};
+    Object.keys(state.doorTimers).forEach((k) => {
+      const base = createDoorTimerState();
+      const src = savedTimers[k];
+      if (src && typeof src === 'object') {
+        base.active = Boolean(src.active);
+        base.startTotalMinutes = Number(src.startTotalMinutes) || 0;
+        base.warned5 = Boolean(src.warned5);
+        base.penalized10 = Boolean(src.penalized10);
+        base.lastProlongedMark = Number.isFinite(Number(src.lastProlongedMark)) ? Number(src.lastProlongedMark) : 10;
+      }
+      state.doorTimers[k] = base;
+    });
+    return true;
+  }
+
   init();
 
   global.ShiftClock = {
@@ -369,6 +435,8 @@
     formatDateShort: formatDateShort,
     getNextShiftDateInfo: getNextShiftDateInfo,
     getTimeSnapshot: getTimeSnapshot,
+    exportState: exportState,
+    importState: importState,
     on: on
   };
 })(window);

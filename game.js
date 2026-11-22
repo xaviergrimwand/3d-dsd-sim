@@ -9,7 +9,10 @@
   const state = {
     initialized: false,
     shiftSummaryOpen: false,
-    systemMenuOpen: false, // Reserved for a future in-game system/pause menu (not active yet)
+    systemMenuOpen: false,
+    mainMenuOpen: true,
+    saveLoadModalOpen: false,
+    infoModalOpen: false,
     hooks: {
       showAlert: null,
       showNotification: null,
@@ -17,6 +20,8 @@
       playSuccessChime: null,
       playButtonClick: null,
       getUnfinishedWork: null,
+      onNewGame: null,
+      onMenuStateChange: null,
       onResetShift: []
     },
     dom: {}
@@ -36,6 +41,11 @@
       rdcDow: document.getElementById('rdc-dow'),
       rdcMonDay: document.getElementById('rdc-mon-day'),
       rdcYear: document.getElementById('rdc-year'),
+      statNd: document.getElementById('hud-stat-nd'),
+      statSd: document.getElementById('hud-stat-sd'),
+      statVt: document.getElementById('hud-stat-vt'),
+      statWh: document.getElementById('hud-stat-wh'),
+      statTs: document.getElementById('hud-stat-ts'),
       scoreValue: document.getElementById('hud-shift-score'),
       endShiftBtn: document.getElementById('end-shift-btn'),
       summaryModal: document.getElementById('shift-summary-modal'),
@@ -57,6 +67,7 @@
   function updateHud() {
     if (!global.ShiftClock || !global.ShiftStats) return;
     const snap = global.ShiftClock.getTimeSnapshot();
+    const st = global.ShiftStats.getStats();
     const score = global.ShiftStats.getLiveScore();
     const d = state.dom;
 
@@ -90,8 +101,13 @@
     if (d.rdcMonDay) d.rdcMonDay.textContent = (snap.monthName || 'JAN') + ' ' + (snap.dayOfMonth || '01');
     if (d.rdcYear) d.rdcYear.textContent = String(snap.year || 1996);
 
+    if (d.statNd) d.statNd.textContent = String(Number(st.nightDropsProcessed) || 0);
+    if (d.statSd) d.statSd.textContent = String(Number(st.vendorsProcessed) || 0);
+    if (d.statVt) d.statVt.textContent = String(Number(st.trucksProcessed) || 0);
+    if (d.statWh) d.statWh.textContent = String(Number(st.warehouseTrucksProcessed) || 0);
+    if (d.statTs) d.statTs.textContent = String(Number(st.tasksCompleted) || 0);
     if (d.scoreValue) {
-      d.scoreValue.textContent = (score < 0 ? '-' : '') + Math.abs(score) + ' pts';
+      d.scoreValue.textContent = (score < 0 ? '-' : '') + Math.abs(score);
       d.scoreValue.style.color = score < 0 ? '#ef4444' : '#22c55e';
     }
     if (d.endShiftBtn) {
@@ -206,6 +222,10 @@
       try { fn(); } catch (err) { console.error('onResetShift error:', err); }
     });
 
+    if (global.SaveSystem && typeof global.SaveSystem.triggerAutosave === 'function') {
+      global.SaveSystem.triggerAutosave('shift_transition');
+    }
+
     updateHud();
   }
 
@@ -250,6 +270,21 @@
     });
   }
 
+  function syncClockPauseFlag() {
+    if (global.ShiftClock && typeof global.ShiftClock.setSystemPaused === 'function') {
+      global.ShiftClock.setSystemPaused(isSystemPaused());
+    }
+    if (typeof state.hooks.onMenuStateChange === 'function') {
+      state.hooks.onMenuStateChange({
+        mainMenuOpen: state.mainMenuOpen,
+        systemMenuOpen: state.systemMenuOpen,
+        saveLoadModalOpen: state.saveLoadModalOpen,
+        infoModalOpen: state.infoModalOpen,
+        shiftSummaryOpen: state.shiftSummaryOpen
+      });
+    }
+  }
+
   function init(hooks) {
     if (hooks && typeof hooks === 'object') {
       if (hooks.showAlert) state.hooks.showAlert = hooks.showAlert;
@@ -258,16 +293,17 @@
       if (hooks.playSuccessChime) state.hooks.playSuccessChime = hooks.playSuccessChime;
       if (hooks.playButtonClick) state.hooks.playButtonClick = hooks.playButtonClick;
       if (hooks.getUnfinishedWork) state.hooks.getUnfinishedWork = hooks.getUnfinishedWork;
+      if (typeof hooks.onNewGame === 'function') state.hooks.onNewGame = hooks.onNewGame;
+      if (typeof hooks.onMenuStateChange === 'function') state.hooks.onMenuStateChange = hooks.onMenuStateChange;
       if (typeof hooks.onResetShift === 'function') state.hooks.onResetShift.push(hooks.onResetShift);
     }
 
-    if (state.initialized) {
-      updateHud();
-      return;
+    if (!state.initialized) {
+      state.initialized = true;
+      cacheDom();
+      bindEvents();
     }
-    state.initialized = true;
-    cacheDom();
-    bindEvents();
+    syncClockPauseFlag();
     updateHud();
   }
 
@@ -278,18 +314,106 @@
   }
 
   function isModalOpen() {
-    return state.shiftSummaryOpen || state.systemMenuOpen;
+    return state.shiftSummaryOpen || state.systemMenuOpen || state.mainMenuOpen || state.saveLoadModalOpen || state.infoModalOpen;
+  }
+
+  function isShiftSummaryOpen() {
+    return state.shiftSummaryOpen;
   }
 
   function isSystemPaused() {
-    return state.systemMenuOpen;
+    return Boolean(state.systemMenuOpen || state.mainMenuOpen || state.shiftSummaryOpen || state.saveLoadModalOpen || state.infoModalOpen);
   }
 
   function setSystemPaused(paused) {
     state.systemMenuOpen = Boolean(paused);
-    if (global.ShiftClock && typeof global.ShiftClock.setSystemPaused === 'function') {
-      global.ShiftClock.setSystemPaused(state.systemMenuOpen);
+    syncClockPauseFlag();
+  }
+
+  function isMainMenuOpen() {
+    return state.mainMenuOpen;
+  }
+
+  function setMainMenuOpen(open) {
+    state.mainMenuOpen = Boolean(open);
+    syncClockPauseFlag();
+  }
+
+  function isPauseMenuOpen() {
+    return state.systemMenuOpen;
+  }
+
+  function setPauseMenuOpen(open) {
+    state.systemMenuOpen = Boolean(open);
+    syncClockPauseFlag();
+  }
+
+  function isSaveLoadModalOpen() {
+    return state.saveLoadModalOpen;
+  }
+
+  function setSaveLoadModalOpen(open) {
+    state.saveLoadModalOpen = Boolean(open);
+    syncClockPauseFlag();
+  }
+
+  function isInfoModalOpen() {
+    return state.infoModalOpen;
+  }
+
+  function setInfoModalOpen(open) {
+    state.infoModalOpen = Boolean(open);
+    syncClockPauseFlag();
+  }
+
+  function startNewGame() {
+    state.shiftSummaryOpen = false;
+    state.systemMenuOpen = false;
+    state.saveLoadModalOpen = false;
+    state.infoModalOpen = false;
+    state.mainMenuOpen = false;
+    if (state.dom.summaryModal) {
+      state.dom.summaryModal.style.display = 'none';
     }
+    if (typeof state.hooks.onNewGame === 'function') {
+      state.hooks.onNewGame();
+    }
+    if (global.ShiftClock) {
+      global.ShiftClock.setPaused(false);
+    }
+    syncClockPauseFlag();
+    updateHud();
+  }
+
+  function returnToMainMenu() {
+    if (global.SaveSystem && typeof global.SaveSystem.triggerAutosave === 'function') {
+      global.SaveSystem.triggerAutosave('return_to_menu');
+    }
+    state.shiftSummaryOpen = false;
+    state.systemMenuOpen = false;
+    state.saveLoadModalOpen = false;
+    state.infoModalOpen = false;
+    state.mainMenuOpen = true;
+    if (state.dom.summaryModal) {
+      state.dom.summaryModal.style.display = 'none';
+    }
+    syncClockPauseFlag();
+  }
+
+  function syncAfterLoad() {
+    state.shiftSummaryOpen = false;
+    state.systemMenuOpen = false;
+    state.saveLoadModalOpen = false;
+    state.infoModalOpen = false;
+    state.mainMenuOpen = false;
+    if (state.dom.summaryModal) {
+      state.dom.summaryModal.style.display = 'none';
+    }
+    if (global.ShiftClock) {
+      global.ShiftClock.setPaused(false);
+    }
+    syncClockPauseFlag();
+    updateHud();
   }
 
   global.DSDGame = {
@@ -299,7 +423,19 @@
     startNextShift: startNextShift,
     registerResetHandler: registerResetHandler,
     isModalOpen: isModalOpen,
+    isShiftSummaryOpen: isShiftSummaryOpen,
     isSystemPaused: isSystemPaused,
-    setSystemPaused: setSystemPaused
+    setSystemPaused: setSystemPaused,
+    isMainMenuOpen: isMainMenuOpen,
+    setMainMenuOpen: setMainMenuOpen,
+    isPauseMenuOpen: isPauseMenuOpen,
+    setPauseMenuOpen: setPauseMenuOpen,
+    isSaveLoadModalOpen: isSaveLoadModalOpen,
+    setSaveLoadModalOpen: setSaveLoadModalOpen,
+    isInfoModalOpen: isInfoModalOpen,
+    setInfoModalOpen: setInfoModalOpen,
+    startNewGame: startNewGame,
+    returnToMainMenu: returnToMainMenu,
+    syncAfterLoad: syncAfterLoad
   };
 })(window);

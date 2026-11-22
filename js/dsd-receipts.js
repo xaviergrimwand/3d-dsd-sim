@@ -110,6 +110,16 @@
         computedDisposition: '',
         isVendorCredit: false
       },
+      inventoryMenuIdx: 0,
+      label: {
+        productCode: '',
+        pendingCaseId: null,
+        pluTargetCaseId: null,
+        lastScannedLabel: '',
+        qtyPerCase: 0,
+        isPluCase: false,
+        printedCount: 0
+      },
       inventory: {
         binLabel: '',
         productCode: '',
@@ -164,8 +174,12 @@
       onFinalizeReceiving: null,
       onCloseTerminal: null,
       onOpenTerminalScreen: null,
+      onToggleTerminalScreen: null,
+      isTerminalOpen: null,
       onOpenScanner: null,
+      onToggleScanner: null,
       onCloseScanner: null,
+      isScannerOpen: null,
       onDeskStateChanged: null,
       onPhase2ModalChange: null,
       playBeep: null,
@@ -174,7 +188,8 @@
       playPaper: null,
       showNotification: null,
       showAlert: null,
-      renderScannerFallback: null
+      renderScannerFallback: null,
+      getHoveredLabelCase: null
     }
   };
 
@@ -1047,6 +1062,8 @@
     }
     generateHomeOfficeTasksForShift();
 
+    state.scanner.inventoryMenuIdx = 0;
+    state.scanner.label = createInitialLabelState();
     state.scanner.inventory = createInitialInventoryState();
     state.scanner.supply = createInitialSupplyState();
     state.scanner.damage = createInitialDamageState();
@@ -1723,6 +1740,7 @@
     sc.screen = nextScreen;
     sc.phase = nextScreen === 'home' ? 'home' : (nextScreen === 'create' ? 'headers' : nextScreen);
     sc.homeSelectedIdx = 0;
+    sc.inventoryMenuIdx = 0;
     sc.activeReceiptNo = null;
     sc.standaloneMode = !initialDelivery;
     sc.activeField = 'deptNo';
@@ -1784,8 +1802,8 @@
     return { delivery: delivery, isPalletTarget: false };
   }
 
-  const SCANNER_VALID_SCREENS = ['home', 'create', 'resume', 'scanning', 'list', 'totals', 'totals-edit', 'confirm-finalize', 'supply', 'supply-cart', 'supply-confirm', 'supply-done', 'inventory', 'inventory-list', 'inventory-confirm', 'inventory-done', 'damage', 'damage-cond', 'damage-disp', 'damage-ready'];
-  const SCANNER_HOME_SCREENS = ['create', 'supply', 'inventory', 'damage'];
+  const SCANNER_VALID_SCREENS = ['home', 'create', 'resume', 'scanning', 'list', 'totals', 'totals-edit', 'confirm-finalize', 'supply', 'supply-cart', 'supply-confirm', 'supply-done', 'inventory-menu', 'label-cases', 'inventory', 'inventory-list', 'inventory-confirm', 'inventory-done', 'damage', 'damage-cond', 'damage-disp', 'damage-ready'];
+  const SCANNER_HOME_SCREENS = ['create', 'supply', 'inventory-menu', 'damage'];
 
   function createInitialDamageState() {
     return {
@@ -1832,6 +1850,22 @@
 
   function isScannerSupplyMode() {
     return ['supply', 'supply-cart', 'supply-confirm', 'supply-done'].includes(state.scanner.screen);
+  }
+
+  function createInitialLabelState() {
+    return {
+      productCode: '',
+      pendingCaseId: null,
+      pluTargetCaseId: null,
+      lastScannedLabel: '',
+      qtyPerCase: 0,
+      isPluCase: false,
+      printedCount: 0
+    };
+  }
+
+  function isScannerLabelMode() {
+    return state.scanner.screen === 'label-cases';
   }
 
   function createInitialInventoryState() {
@@ -1891,8 +1925,13 @@
     const d = getActiveDeliveryEnriched();
     ensureScannerSession(d);
     const sc = state.scanner;
-    const validTargets = ['home', 'create', 'resume', 'supply', 'inventory', 'damage'];
-    const resolved = validTargets.includes(targetScreen) ? targetScreen : 'home';
+    const validTargets = ['home', 'create', 'resume', 'supply', 'inventory', 'inventory-menu', 'inventory-audit', 'label-cases', 'damage'];
+    let resolved = validTargets.includes(targetScreen) ? targetScreen : 'home';
+    if (resolved === 'inventory') {
+      resolved = 'inventory-menu';
+    } else if (resolved === 'inventory-audit') {
+      resolved = (sc.inventory && sc.inventory.finalized) ? 'inventory-done' : 'inventory';
+    }
 
     // Keep an active open INITIAL receipt intact if the player holstered mid-scan
     const hasOpenReceipt = Boolean(
@@ -1912,9 +1951,9 @@
       return;
     }
 
-    const resolvedScreen = (resolved === 'inventory' && sc.inventory && sc.inventory.finalized)
-      ? 'inventory-done'
-      : ((resolved === 'supply' && sc.supply && sc.supply.submittedToday) ? 'supply-done' : resolved);
+    const resolvedScreen = (resolved === 'supply' && sc.supply && sc.supply.submittedToday)
+      ? 'supply-done'
+      : resolved;
     sc.screen = resolvedScreen;
     sc.phase = resolvedScreen === 'home' ? 'home' : (resolvedScreen === 'create' ? 'headers' : resolvedScreen);
     if (resolvedScreen === 'home') {
@@ -2308,8 +2347,11 @@
       return true;
     }
 
-    // F6: Print Finalized Receipt (optional shortcut)
+    // F6: Label Print (Label Cases mode) or Print Finalized Receipt (optional shortcut)
     if (action === 'print') {
+      if (isScannerLabelMode()) {
+        return handleLabelScannerKey(action, val);
+      }
       if (sc.screen === 'finalized' && sc.finalizedSnapshot && sc.finalizedSnapshot.receiptNumber) {
         const res = printReceiptSlip(sc.finalizedSnapshot.receiptNumber, { fromScanner: true });
         if (res.ok) {
@@ -2370,7 +2412,15 @@
       return handleSupplyScannerKey(action, val);
     }
 
-    // Daily Backroom Inventory Mode (Option 3)
+    // Backroom Inventory Subsection Menu & Label Cases Mode (Option 3 -> 1 / 2)
+    if (sc.screen === 'inventory-menu') {
+      return handleInventoryMenuKey(action, val);
+    }
+    if (isScannerLabelMode()) {
+      return handleLabelScannerKey(action, val);
+    }
+
+    // Daily Backroom Inventory Mode (Option 3 -> 2)
     if (isScannerInventoryMode()) {
       return handleInventoryScannerKey(action, val);
     }
@@ -2396,6 +2446,8 @@
         sc.phase = resolvedTarget === 'create' ? 'headers' : resolvedTarget;
         if (resolvedTarget === 'create') {
           sc.activeField = 'deptNo';
+        } else if (resolvedTarget === 'inventory-menu') {
+          sc.inventoryMenuIdx = 0;
         }
         setScannerMessage('', 'info');
         playBeep();
@@ -3105,6 +3157,223 @@
       unitsPerCase: Number(res.expectedQty) || 1,
       mismatch: Boolean(res.mismatch)
     });
+  }
+
+  function scanBackstockCaseForLabel(caseRec) {
+    const sc = state.scanner;
+    if (!sc.label) sc.label = createInitialLabelState();
+    const lbl = sc.label;
+
+    if (sc.screen !== 'label-cases') {
+      sc.screen = 'label-cases';
+      sc.phase = 'label-cases';
+    }
+
+    if (!caseRec) {
+      playError();
+      setScannerMessage('NO CASE SELECTED', 'err');
+      renderScannerUI();
+      return { ok: false, reason: 'not_found' };
+    }
+
+    const isSupply = Boolean(
+      String(caseRec.deptNo || '') === '60' ||
+      String(caseRec.vendorNo || '') === '601' ||
+      caseRec.targetRackId === 'claims_steel'
+    );
+    if (isSupply) {
+      lbl.pendingCaseId = null;
+      lbl.pluTargetCaseId = null;
+      lbl.productCode = String(caseRec.code || '');
+      lbl.lastScannedLabel = String(caseRec.name || 'Supply Item');
+      lbl.qtyPerCase = Number(caseRec.unitsPerCase) || 1;
+      lbl.isPluCase = false;
+      playError();
+      setScannerMessage('DEPT 60 NO LABEL REQ', 'warn');
+      renderScannerUI();
+      return { ok: false, reason: 'supply_exempt' };
+    }
+
+    if (caseRec.labeled) {
+      lbl.pendingCaseId = null;
+      lbl.pluTargetCaseId = null;
+      lbl.productCode = String(caseRec.code || '');
+      lbl.lastScannedLabel = String(caseRec.name || 'Backstock Case');
+      lbl.qtyPerCase = Number(caseRec.unitsPerCase) || 1;
+      lbl.isPluCase = false;
+      playBeep();
+      setScannerMessage('ALREADY YELLOW UPC', 'warn');
+      renderScannerUI();
+      return { ok: false, reason: 'already_labeled' };
+    }
+
+    // Light-green PLU cases must be entered manually: read PLU -> type PLU -> ENT -> F6
+    if (caseRec.notScannable) {
+      lbl.pendingCaseId = null;
+      lbl.pluTargetCaseId = caseRec.id;
+      lbl.productCode = '';
+      lbl.lastScannedLabel = '';
+      lbl.qtyPerCase = 0;
+      lbl.isPluCase = false;
+      playError();
+      setScannerMessage('PLU: TYPE CODE + ENT', 'warn');
+      renderScannerUI();
+      return { ok: true, loaded: false, isPlu: true };
+    }
+
+    lbl.pendingCaseId = caseRec.id;
+    lbl.pluTargetCaseId = null;
+    lbl.productCode = String(caseRec.code || '');
+    lbl.lastScannedLabel = String(caseRec.name || 'Backstock Case');
+    lbl.qtyPerCase = Number(caseRec.unitsPerCase) || 1;
+    lbl.isPluCase = false;
+    setScannerMessage('PRESS F6 TO PRINT', 'ok');
+    renderScannerUI();
+    return {
+      ok: true,
+      loaded: true,
+      isPlu: false
+    };
+  }
+
+  function handleInventoryMenuKey(action, val) {
+    const sc = state.scanner;
+    const openSubOption = (idx) => {
+      sc.inventoryMenuIdx = idx;
+      if (idx === 0) {
+        if (!sc.label) sc.label = createInitialLabelState();
+        sc.screen = 'label-cases';
+        sc.phase = 'label-cases';
+      } else {
+        const nextScreen = (sc.inventory && sc.inventory.finalized) ? 'inventory-done' : 'inventory';
+        sc.screen = nextScreen;
+        sc.phase = nextScreen;
+      }
+      setScannerMessage('', 'info');
+      playBeep();
+    };
+
+    if (action === 'back') {
+      sc.screen = 'home';
+      sc.phase = 'home';
+      setScannerMessage('', 'info');
+      playBeep();
+    } else if (action === 'up' || action === 'down') {
+      sc.inventoryMenuIdx = ((sc.inventoryMenuIdx || 0) + 1) % 2;
+      playBeep();
+    } else if (action === 'num') {
+      const idx = parseInt(String(val), 10) - 1;
+      if (idx === 0 || idx === 1) {
+        openSubOption(idx);
+      } else {
+        playBeep();
+      }
+    } else if (action === 'enter') {
+      openSubOption(sc.inventoryMenuIdx === 1 ? 1 : 0);
+    } else {
+      playBeep();
+    }
+
+    renderScannerUI();
+    return true;
+  }
+
+  function handleLabelScannerKey(action, val) {
+    const sc = state.scanner;
+    if (!sc.label) sc.label = createInitialLabelState();
+    const lbl = sc.label;
+    const racks = global.BackstockRacks;
+
+    if (action === 'back') {
+      sc.screen = 'inventory-menu';
+      sc.phase = 'inventory-menu';
+      setScannerMessage('', 'info');
+      playBeep();
+      renderScannerUI();
+      return true;
+    }
+
+    if (action === 'num') {
+      const digit = String(val);
+      if (lbl.productCode.length < 14) {
+        lbl.productCode += digit;
+        lbl.pendingCaseId = null;
+        lbl.lastScannedLabel = '';
+        lbl.qtyPerCase = 0;
+        lbl.isPluCase = false;
+      }
+      setScannerMessage('', 'info');
+      playBeep();
+    } else if (action === 'clear') {
+      if (lbl.productCode.length > 0) {
+        lbl.productCode = lbl.productCode.slice(0, -1);
+      }
+      lbl.pendingCaseId = null;
+      lbl.lastScannedLabel = '';
+      lbl.qtyPerCase = 0;
+      lbl.isPluCase = false;
+      if (!lbl.productCode) lbl.pluTargetCaseId = null;
+      setScannerMessage('', 'info');
+      playBeep();
+    } else if (action === 'scan') {
+      playBeep();
+      setScannerMessage('CLICK CASE/TYPE PLU', 'info');
+    } else if (action === 'enter') {
+      if (!lbl.productCode) {
+        playError();
+        setScannerMessage('KEY PLU / CLICK CASE', 'err');
+      } else {
+        const hovered = typeof state.hooks.getHoveredLabelCase === 'function'
+          ? state.hooks.getHoveredLabelCase()
+          : null;
+        const preferredId = lbl.pendingCaseId || lbl.pluTargetCaseId || (hovered ? hovered.id : null);
+        const foundCase = racks && typeof racks.findBackstockCaseForLabelInput === 'function'
+          ? racks.findBackstockCaseForLabelInput(lbl.productCode, preferredId)
+          : null;
+        if (!foundCase) {
+          playError();
+          setScannerMessage('NO UNLABELED MATCH', 'err');
+        } else {
+          lbl.pendingCaseId = foundCase.id;
+          lbl.pluTargetCaseId = null;
+          lbl.productCode = String(foundCase.code || '');
+          lbl.lastScannedLabel = String(foundCase.name || 'Backstock Case');
+          lbl.qtyPerCase = Number(foundCase.unitsPerCase) || 1;
+          lbl.isPluCase = Boolean(foundCase.notScannable);
+          playBeep();
+          setScannerMessage('READY: F6 PRINT LBL', 'ok');
+        }
+      }
+    } else if (action === 'print') {
+      if (!lbl.pendingCaseId) {
+        playError();
+        setScannerMessage(lbl.productCode ? 'PRESS ENT THEN F6' : 'CLICK/KEY CASE FIRST', 'err');
+      } else {
+        const res = racks && typeof racks.labelCase === 'function'
+          ? racks.labelCase(lbl.pendingCaseId)
+          : null;
+        if (!res || !res.ok) {
+          playError();
+          setScannerMessage((res && res.error) || 'LABEL PRINT FAILED', 'err');
+        } else {
+          lbl.printedCount = (lbl.printedCount || 0) + 1;
+          lbl.pendingCaseId = null;
+          lbl.pluTargetCaseId = null;
+          lbl.productCode = '';
+          lbl.lastScannedLabel = '';
+          lbl.qtyPerCase = 0;
+          lbl.isPluCase = false;
+          playSuccess();
+          setScannerMessage(res.wasPlu ? 'PRINTED YELLOW UPC!' : 'YELLOW LABEL PRINTED', 'ok');
+          notify('🏷️ Printed yellow UPC label for ' + res.caseRec.name + (res.wasPlu ? ' (PLU -> UPC).' : '.'), 2400);
+        }
+      }
+    } else {
+      playBeep();
+    }
+
+    renderScannerUI();
+    return true;
   }
 
   function scanBackstockCase(caseRec) {
@@ -3859,8 +4128,8 @@
     // Screen: 'inventory'
     if (action === 'back') {
       inv.negativeMode = false;
-      sc.screen = 'home';
-      sc.phase = 'home';
+      sc.screen = 'inventory-menu';
+      sc.phase = 'inventory-menu';
       setScannerMessage('', 'info');
       playBeep();
       renderScannerUI();
@@ -4541,6 +4810,44 @@
         '<div class="lcd-scr-line">Limit:  1 Order/Day</div>' +
         '<div class="lcd-scr-line">Status: FINALIZED</div>' +
         '<div class="lcd-scr-line">ENT Home | F3 Home</div>';
+    } else if (sc.screen === 'inventory-menu') {
+      const subOptions = [
+        '1. LABEL CASES',
+        '2. AUDIT BACKROOM'
+      ];
+      const subIdx = sc.inventoryMenuIdx === 1 ? 1 : 0;
+      sc.inventoryMenuIdx = subIdx;
+      const subRows = subOptions.map((label, idx) => {
+        const isSel = idx === subIdx;
+        return '<div class="lcd-scr-line' + (isSel ? ' notice' : '') + '">' + escapeHtml(label.slice(0, 24)) + '</div>';
+      }).join('');
+      linesHtml =
+        '<div class="lcd-scr-line">BACKROOM INVENTORY</div>' +
+        line2Notice +
+        subRows +
+        '<div class="lcd-scr-line"> </div>' +
+        '<div class="lcd-scr-line"> </div>' +
+        '<div class="lcd-scr-line"> </div>' +
+        '<div class="lcd-scr-line">1-2 or Up/Dn + ENT</div>' +
+        '<div class="lcd-scr-line">F3 Back</div>';
+    } else if (sc.screen === 'label-cases') {
+      if (!sc.label) sc.label = createInitialLabelState();
+      const lbl = sc.label;
+      const codeDisp = formatLcdCell(lbl.productCode, 10, true);
+      const qtyText = lbl.qtyPerCase > 0
+        ? (String(lbl.qtyPerCase) + 'u/cs' + (lbl.isPluCase ? ' [PLU->UPC]' : ''))
+        : '--';
+      const prodNameText = lbl.lastScannedLabel ? lbl.lastScannedLabel.slice(0, 20) : ' ';
+      linesHtml =
+        '<div class="lcd-scr-line">LABEL CASES</div>' +
+        line2Notice +
+        '<div class="lcd-scr-line">Code: <span class="lcd-input-box active">' + codeDisp + '</span></div>' +
+        '<div class="lcd-scr-line">Pack: ' + escapeHtml(qtyText.slice(0, 17)) + '</div>' +
+        '<div class="lcd-scr-line">Product Name:</div>' +
+        '<div class="lcd-scr-line">' + escapeHtml(prodNameText) + '</div>' +
+        '<div class="lcd-scr-line">Click Case | Key PLU</div>' +
+        '<div class="lcd-scr-line">ENT Load | F6 PRINT</div>' +
+        '<div class="lcd-scr-line">F3 Back</div>';
     } else if (sc.screen === 'inventory') {
       if (!sc.inventory) sc.inventory = createInitialInventoryState();
       const inv = syncBackstockInventoryEntriesFromRacks();
@@ -4554,7 +4861,7 @@
         : '<div class="lcd-scr-line">Audited Cases: ' + escapeHtml(String(inv.scannedEntries.length)) + '</div>';
 
       linesHtml =
-        '<div class="lcd-scr-line">BACKROOM INVENTORY</div>' +
+        '<div class="lcd-scr-line">AUDIT BACKROOM</div>' +
         line2Inv +
         '<div class="lcd-scr-line">Bin:   ' + escapeHtml(binStr) + '</div>' +
         '<div class="lcd-scr-line">UPC:   <span class="lcd-input-box' + (inv.activeField === 'productCode' ? ' active' : '') + '">' + upcDisp + '</span></div>' +
@@ -5518,14 +5825,19 @@
   }
 
   function getTerminalSummarySnapshot() {
-    // 1. Receipts (Today's Initial vs Final)
+    // 1. Receipts (Initial, Final, Void, Clear)
     let initialCount = 0;
     let finalCount = 0;
+    let voidCount = 0;
+    let clearCount = 0;
     (state.processedReceipts || []).forEach((r) => {
       const st = getReceiptStatus(r);
       if (st === 'INITIAL') initialCount++;
       else if (st === 'FINAL') finalCount++;
+      else if (st === 'VOID') voidCount++;
+      else if (st === 'CLEAR') clearCount++;
     });
+    const totalReceiptsCount = initialCount + finalCount + voidCount + clearCount;
 
     // 2. Scheduled Deliveries & Warehouse Trucks (Active / Uncompleted)
     const manifest = typeof state.hooks.getDeliveryManifest === 'function' ? (state.hooks.getDeliveryManifest() || []) : [];
@@ -5570,6 +5882,9 @@
     return {
       initialCount,
       finalCount,
+      voidCount,
+      clearCount,
+      totalReceiptsCount,
       activeCount: activeDeliveries.length,
       vendorTruckCount,
       sideDoorCount,
@@ -5598,9 +5913,11 @@
       <div class="crt-sum-title">SHIFT SUMMARY</div>
 
       <div class="crt-sum-group">
-        <div class="crt-sum-hdr"><span>RECEIPTS</span>${numVal(snap.initialCount + snap.finalCount)}</div>
+        <div class="crt-sum-hdr"><span>RECEIPTS</span>${numVal(snap.totalReceiptsCount)}</div>
         <div class="crt-sum-row"><span>Initial Receipts</span>${numVal(snap.initialCount)}</div>
         <div class="crt-sum-row"><span>Final Receipts</span>${numVal(snap.finalCount)}</div>
+        <div class="crt-sum-row"><span>Void Receipts</span>${numVal(snap.voidCount)}</div>
+        <div class="crt-sum-row"><span>Clear Receipts</span>${numVal(snap.clearCount)}</div>
       </div>
 
       <div class="crt-sum-group">
@@ -7577,6 +7894,7 @@
     if (panel) {
       panel.style.display = 'none';
       panel.classList.remove('docked-terminal');
+      panel.classList.remove('docked-scanner');
     }
     if (!silent) playBeep();
     notifyPhase2ModalChange();
@@ -7723,28 +8041,26 @@
 
     const keyScanBtn = document.getElementById('nd-key-scanner-btn');
     if (keyScanBtn) {
+      const scanOpen = typeof state.hooks.isScannerOpen === 'function' && state.hooks.isScannerOpen();
+      keyScanBtn.classList.toggle('is-active', scanOpen);
       keyScanBtn.addEventListener('click', () => {
         playBeep();
-        const panel = document.getElementById('night-drop-panel');
-        if (panel) {
-          panel.classList.remove('docked-terminal');
-          panel.classList.add('docked-scanner');
-        }
-        if (typeof state.hooks.onOpenScanner === 'function') {
+        if (typeof state.hooks.onToggleScanner === 'function') {
+          state.hooks.onToggleScanner('nightdrop');
+        } else if (typeof state.hooks.onOpenScanner === 'function') {
           state.hooks.onOpenScanner('nightdrop');
         }
       });
     }
     const keyBtn = document.getElementById('nd-key-terminal-btn');
     if (keyBtn) {
+      const termOpen = typeof state.hooks.isTerminalOpen === 'function' && state.hooks.isTerminalOpen();
+      keyBtn.classList.toggle('is-active', termOpen);
       keyBtn.addEventListener('click', () => {
         playBeep();
-        const panel = document.getElementById('night-drop-panel');
-        if (panel) {
-          panel.classList.remove('docked-scanner');
-          panel.classList.add('docked-terminal');
-        }
-        if (typeof state.hooks.onOpenTerminalScreen === 'function') {
+        if (typeof state.hooks.onToggleTerminalScreen === 'function') {
+          state.hooks.onToggleTerminalScreen('create');
+        } else if (typeof state.hooks.onOpenTerminalScreen === 'function') {
           state.hooks.onOpenTerminalScreen('create');
         } else {
           openTerminalScreen('create');
@@ -9152,16 +9468,189 @@
   // PUBLIC API
   // =========================================================================
 
+  function deepCloneData(val) {
+    if (val === undefined) return undefined;
+    if (val === null || typeof val !== 'object') return val;
+    return JSON.parse(JSON.stringify(val));
+  }
+
+  function exportState() {
+    const archiveFebDays = (state.archiveData || [])
+      .filter((day) => day && (day.isToday || String(day.dateStr || '').startsWith('FEB')))
+      .map((day) => deepCloneData(day));
+
+    return {
+      processedReceipts: deepCloneData(state.processedReceipts || []),
+      currentScreen: state.currentScreen || 'menu',
+      selectedReceiptNo: state.selectedReceiptNo || null,
+      selectedDeptNo: state.selectedDeptNo || null,
+      selectedVendorNo: state.selectedVendorNo || null,
+      supplierQuery: state.supplierQuery || '',
+      supplierTreeLevel: state.supplierTreeLevel || 'depts',
+      manualDraft: state.manualDraft ? deepCloneData(state.manualDraft) : null,
+      terminalActiveField: state.terminalActiveField || 'vendorNo',
+      terminalAlphaMode: Boolean(state.terminalAlphaMode),
+      terminalPage: deepCloneData(state.terminalPage || {}),
+      nightDropInvoices: deepCloneData(state.nightDropInvoices || []),
+      resolvedNightDrops: deepCloneData(state.resolvedNightDrops || []),
+      pinnedArchiveItems: deepCloneData(state.pinnedArchiveItems || []),
+      activeNightDropTab: Number(state.activeNightDropTab) || 0,
+      filingInvoices: deepCloneData(state.filingInvoices || []),
+      filingReceipts: deepCloneData(state.filingReceipts || []),
+      filingComplete: Boolean(state.filingComplete),
+      filedReceiptsCount: Number(state.filedReceiptsCount) || 0,
+      archiveFebDays: archiveFebDays,
+      archiveSelectedDay: Number(state.archiveSelectedDay) || 1,
+      archiveSelectedVendorIdx: Number(state.archiveSelectedVendorIdx) || 0,
+      scanner: deepCloneData(state.scanner),
+      printedSlips: deepCloneData(state.printedSlips || []),
+      printerTraySlips: deepCloneData(state.printerTraySlips || []),
+      activeSlipIndex: Number.isFinite(Number(state.activeSlipIndex)) ? Number(state.activeSlipIndex) : -1,
+      printedHudMinimized: Boolean(state.printedHudMinimized),
+      terminalRecallCount: String(state.terminalRecallCount || ''),
+      terminalLedgerMsg: String(state.terminalLedgerMsg || ''),
+      homeOfficeTasks: deepCloneData(state.homeOfficeTasks || [])
+    };
+  }
+
+  function importState(data) {
+    if (!data || typeof data !== 'object') return false;
+    state.restoredFromSave = true;
+
+    state.processedReceipts = Array.isArray(data.processedReceipts) ? deepCloneData(data.processedReceipts) : [];
+    state.currentScreen = data.currentScreen || 'menu';
+    state.selectedReceiptNo = data.selectedReceiptNo || null;
+    state.selectedDeptNo = data.selectedDeptNo || null;
+    state.selectedVendorNo = data.selectedVendorNo || null;
+    state.supplierQuery = data.supplierQuery || '';
+    state.supplierTreeLevel = data.supplierTreeLevel || 'depts';
+    state.manualDraft = data.manualDraft ? deepCloneData(data.manualDraft) : null;
+    state.terminalActiveField = data.terminalActiveField || 'vendorNo';
+    state.terminalAlphaMode = data.terminalAlphaMode !== undefined ? Boolean(data.terminalAlphaMode) : true;
+    state.terminalOpen = false;
+    state.terminalEditFields = null;
+    state.terminalSupplierKeypadOpen = false;
+    if (data.terminalPage && typeof data.terminalPage === 'object') {
+      state.terminalPage = Object.assign({
+        create: 0, receipts: 0, receiptDetail: 0, schedule: 0, tasks: 0,
+        suppliersSearch: 0, suppliersDepts: 0, suppliersVendors: 0, suppliersItems: 0
+      }, deepCloneData(data.terminalPage));
+    }
+
+    state.nightDropInvoices = Array.isArray(data.nightDropInvoices) ? deepCloneData(data.nightDropInvoices) : [];
+    state.resolvedNightDrops = Array.isArray(data.resolvedNightDrops) ? deepCloneData(data.resolvedNightDrops) : [];
+    state.pinnedArchiveItems = Array.isArray(data.pinnedArchiveItems) ? deepCloneData(data.pinnedArchiveItems) : [];
+    state.nightDropPanelOpen = false;
+    state.activeNightDropTab = Number(data.activeNightDropTab) || 0;
+
+    state.filingOpen = false;
+    state.filingInvoices = Array.isArray(data.filingInvoices) ? deepCloneData(data.filingInvoices) : [];
+    state.filingReceipts = Array.isArray(data.filingReceipts) ? deepCloneData(data.filingReceipts) : [];
+    state.filingComplete = Boolean(data.filingComplete);
+    state.filedReceiptsCount = Number(data.filedReceiptsCount) || 0;
+    state.filingSelectedSide = null;
+    state.filingSelectedIdx = -1;
+
+    state.archiveOpen = false;
+    state.archiveSelectedDay = Number(data.archiveSelectedDay) || 1;
+    state.archiveSelectedVendorIdx = Number(data.archiveSelectedVendorIdx) || 0;
+    const savedFebDays = Array.isArray(data.archiveFebDays) ? deepCloneData(data.archiveFebDays) : [];
+    if (savedFebDays.length > 0) {
+      state.archiveData = savedFebDays;
+      restoreHistoricalArchiveDays();
+      if (!state.staticArchiveHistory) {
+        loadArchiveHistory().then(() => {
+          restoreHistoricalArchiveDays();
+        });
+      }
+    } else {
+      state.archiveData = [];
+      generateArchiveData(true);
+    }
+
+    const baseDamage = createInitialDamageState();
+    const baseSupply = createInitialSupplyState();
+    const baseLabel = createInitialLabelState();
+    const baseInv = createInitialInventoryState();
+    const sc = (data.scanner && typeof data.scanner === 'object') ? deepCloneData(data.scanner) : {};
+    state.scanner = Object.assign({}, {
+      screen: 'home',
+      phase: 'home',
+      homeSelectedIdx: 0,
+      inventoryMenuIdx: 0,
+      activeReceiptNo: null,
+      standaloneMode: false,
+      activeField: 'deptNo',
+      headers: { vendorNo: '', deptNo: '', invoiceNo: '' },
+      expectedUnitsStr: '',
+      expectedCostCents: '',
+      expectedNegative: false,
+      expectedUnits: 0,
+      expectedCost: 0,
+      productCode: '',
+      quantity: '',
+      pendingBoxId: null,
+      negativeMode: false,
+      currentDocType: 'invoice',
+      scannedItems: [],
+      scannedCredits: [],
+      listScroll: 0,
+      resumeScroll: 0,
+      resumeSelectedIdx: 0,
+      finalizedSnapshot: null,
+      statusMessage: '',
+      statusKind: 'info',
+      lastScannedLabel: '',
+      finalizedPrinted: false
+    }, sc, {
+      supply: Object.assign({}, baseSupply, sc.supply || {}),
+      damage: Object.assign({}, baseDamage, sc.damage || {}),
+      label: Object.assign({}, baseLabel, sc.label || {}),
+      inventory: Object.assign({}, baseInv, sc.inventory || {})
+    });
+
+    state.printedSlips = Array.isArray(data.printedSlips) ? deepCloneData(data.printedSlips) : [];
+    state.printerTraySlips = Array.isArray(data.printerTraySlips) ? deepCloneData(data.printerTraySlips) : [];
+    state.activeSlipIndex = Number.isFinite(Number(data.activeSlipIndex)) ? Number(data.activeSlipIndex) : (state.printedSlips.length > 0 ? state.printedSlips.length - 1 : -1);
+    state.printedHudMinimized = Boolean(data.printedHudMinimized);
+
+    state.trashModalOpen = false;
+    state.selectedTrashSlipIds = new Set();
+    state.handModalOpen = false;
+    state.handTargetDelivery = null;
+    state.handOnComplete = null;
+    state.handStatusError = '';
+    state.selectedHandSlipIds = new Set();
+
+    state.terminalRecallCount = String(data.terminalRecallCount || '');
+    state.terminalLedgerMsg = String(data.terminalLedgerMsg || '');
+    state.homeOfficeTasks = Array.isArray(data.homeOfficeTasks) ? deepCloneData(data.homeOfficeTasks) : [];
+
+    if (global.BackstockRacks && typeof global.BackstockRacks.syncInventoryVisuals === 'function') {
+      global.BackstockRacks.syncInventoryVisuals(Boolean(state.scanner.inventory && state.scanner.inventory.finalized));
+    }
+    if (typeof document !== 'undefined' && document.getElementById('printed-receipt-hud')) {
+      renderPrintedReceiptHud();
+    }
+    notifyDeskStateChanged();
+    return true;
+  }
+
   global.DSDReceipts = {
     loadArchiveHistory,
     init(hooks) {
+      state.restoredFromSave = false;
       Object.assign(state.hooks, hooks || {});
       enrichAllDeliveries();
       generateNightDropInvoices();
       if (!state.staticArchiveHistory) {
         loadArchiveHistory().then(() => {
-          generateArchiveData(true);
-          generateHomeOfficeTasksForShift();
+          if (state.restoredFromSave) {
+            restoreHistoricalArchiveDays();
+          } else {
+            generateArchiveData(true);
+            generateHomeOfficeTasksForShift();
+          }
         });
       }
       generateArchiveData(false);
@@ -9297,6 +9786,8 @@
     enrichDelivery,
     enrichAllDeliveries,
     resetDailyReceipts,
+    exportState,
+    importState,
     resetScannerSession,
     getReceipts,
     getReceiptStatus,
@@ -9319,6 +9810,8 @@
     refuseDelivery: refuseActiveDelivery,
     handleTerminalKey,
     scanSpecificBox,
+    isScannerLabelMode,
+    scanBackstockCaseForLabel,
     scanBackstockCase,
     isScannerInventoryMode,
     getBackstockInventorySummary,

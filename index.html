@@ -18,13 +18,15 @@
   <script src="./js/warehouse-world.js"></script>
   <script src="./js/warehouse-models.js"></script>
   <script src="./js/delivery-system.js"></script>
+  <script src="./js/save-system.js"></script>
+  <script src="./js/menu-ui.js"></script>
   <script src="./game.js"></script>
   <script src="./js/dock-runtime.js"></script>
   <link rel="stylesheet" href="./css/styles.css">
 </head>
 
 <body>
-  <div id="game-container">
+  <div id="game-container" class="main-menu-open">
     <div id="reticle"></div>
 
     <div id="box-hover-pill"
@@ -64,38 +66,67 @@
             <span class="dlp-light" id="door-light-sd"></span>
           </div>
         </div>
-        <div class="hud-card" id="hud-clock-card">
-          <span id="hud-shift-score" style="color: #22c55e; font-weight: 800;">0 pts</span>
-          <button id="end-shift-btn" type="button">END SHIFT</button>
-        </div>
+        <button id="end-shift-btn" type="button">END SHIFT</button>
+        <button id="pause-menu-btn" type="button" title="System &amp; Pause Menu [ESC]" aria-label="Pause Menu">⏸ MENU</button>
       </div>
     </div>
 
-    <!-- Centered Top-Middle Retro Red LCD Timeclock -->
-    <div id="retro-digital-clock" aria-label="In-game digital clock">
-      <div class="rdc-screws" aria-hidden="true"><span></span><span></span></div>
-      <div class="rdc-bezel">
-        <div class="rdc-screen">
-          <div class="rdc-scanlines" aria-hidden="true"></div>
-          <div class="rdc-time-row">
-            <div class="rdc-digits-wrap">
-              <div class="rdc-ghost" aria-hidden="true">88:88</div>
-              <div class="rdc-digits" id="rdc-time-digits"><span class="rdc-dim-zero" id="rdc-lead-zero">0</span><span
-                  id="rdc-hour-main">6</span><span class="rdc-colon" id="rdc-colon">:</span><span
-                  id="rdc-minute">00</span></div>
+    <!-- Centered Top-Middle Retro Red LCD Timeclock + Live Shift Stats & Points Tracker -->
+    <div id="top-clock-cluster">
+      <div id="retro-digital-clock" aria-label="In-game digital clock">
+        <div class="rdc-screws" aria-hidden="true"><span></span><span></span></div>
+        <div class="rdc-bezel">
+          <div class="rdc-screen">
+            <div class="rdc-scanlines" aria-hidden="true"></div>
+            <div class="rdc-time-row">
+              <div class="rdc-digits-wrap">
+                <div class="rdc-ghost" aria-hidden="true">88:88</div>
+                <div class="rdc-digits" id="rdc-time-digits"><span class="rdc-dim-zero" id="rdc-lead-zero">0</span><span
+                    id="rdc-hour-main">6</span><span class="rdc-colon" id="rdc-colon">:</span><span
+                    id="rdc-minute">00</span></div>
+              </div>
+              <div class="rdc-ampm-col">
+                <span class="rdc-ind on" id="rdc-ind-am">AM</span>
+                <span class="rdc-ind" id="rdc-ind-pm">PM</span>
+              </div>
             </div>
-            <div class="rdc-ampm-col">
-              <span class="rdc-ind on" id="rdc-ind-am">AM</span>
-              <span class="rdc-ind" id="rdc-ind-pm">PM</span>
+            <div class="rdc-progress-track">
+              <div class="rdc-progress-fill" id="rdc-shift-progress"></div>
+            </div>
+            <div class="rdc-date-row">
+              <span class="rdc-date-item" id="rdc-dow">MON</span>
+              <span class="rdc-date-item" id="rdc-mon-day">JAN 01</span>
+              <span class="rdc-date-item" id="rdc-year">1996</span>
             </div>
           </div>
-          <div class="rdc-progress-track">
-            <div class="rdc-progress-fill" id="rdc-shift-progress"></div>
+        </div>
+      </div>
+
+      <div class="hud-card" id="hud-stats-tracker" aria-label="Shift Stats and Points Tracker">
+        <div class="hst-top-tier" title="Total Shift Points">
+          <span class="hst-pts-lbl">Points</span>
+          <span class="hst-pts-val" id="hud-shift-score" style="color: #22c55e;">0</span>
+        </div>
+        <div class="hst-bottom-tier">
+          <div class="hst-cell" title="Night Drops Completed">
+            <span class="hst-lbl">ND</span>
+            <span class="hst-val" id="hud-stat-nd">0</span>
           </div>
-          <div class="rdc-date-row">
-            <span class="rdc-date-item" id="rdc-dow">MON</span>
-            <span class="rdc-date-item" id="rdc-mon-day">JAN 01</span>
-            <span class="rdc-date-item" id="rdc-year">1996</span>
+          <div class="hst-cell" title="Side-Door Vendors Completed">
+            <span class="hst-lbl">SD</span>
+            <span class="hst-val" id="hud-stat-sd">0</span>
+          </div>
+          <div class="hst-cell" title="Vendor Trucks Completed">
+            <span class="hst-lbl">VT</span>
+            <span class="hst-val" id="hud-stat-vt">0</span>
+          </div>
+          <div class="hst-cell" title="Warehouse Trucks Completed">
+            <span class="hst-lbl">WH</span>
+            <span class="hst-val" id="hud-stat-wh">0</span>
+          </div>
+          <div class="hst-cell" title="Home Office Tasks Completed">
+            <span class="hst-lbl">TS</span>
+            <span class="hst-val" id="hud-stat-ts">0</span>
           </div>
         </div>
       </div>
@@ -714,6 +745,116 @@
           <div id="archive-sidebar"></div>
           <div id="archive-viewer"></div>
         </div>
+      </div>
+    </div>
+
+    <!-- Classic Game Main Menu & Splash Overlay -->
+    <div id="main-menu-overlay" class="menu-stage active" role="dialog" aria-modal="true" aria-label="Main Menu">
+      <div class="splash-backdrop-blur" aria-hidden="true"></div>
+      <img class="splash-art" src="./assets/splash-dock.jpg" alt="1996 DSD Receiving Dock Splash">
+      <div class="splash-vignette" aria-hidden="true"></div>
+      <div class="splash-scanlines" aria-hidden="true"></div>
+
+      <div class="menu-shell">
+        <header class="game-logo" aria-label="3D DSD Receiving Simulator">
+          <div class="logo-store-tag">
+            <span class="logo-led" aria-hidden="true"></span>
+            <span>STORE #0412 · FEB 1996</span>
+          </div>
+          <div class="logo-main-row">
+            <span class="logo-3d-stamp">3D</span>
+            <span class="logo-dsd-word">DSD</span>
+          </div>
+          <div class="logo-hazard-divider" aria-hidden="true"></div>
+          <h1 class="logo-subtitle">RECEIVING SIMULATOR</h1>
+          <p class="logo-tagline">Backroom Logistics · Invoices · Claims · Compliance</p>
+        </header>
+
+        <nav class="menu-card" aria-label="Main Menu Actions">
+          <button id="btn-menu-new-game" class="menu-btn primary" type="button">
+            <span>New Game</span>
+            <span class="menu-badge">DAY 1</span>
+          </button>
+          <button id="btn-menu-load-game" class="menu-btn" type="button">
+            <span>Load Game</span>
+            <span id="menu-load-badge" class="menu-badge">EMPTY</span>
+          </button>
+          <button id="btn-menu-tutorial" class="menu-btn muted" type="button">
+            <span>Tutorial</span>
+            <span class="menu-badge">SOON</span>
+          </button>
+          <button id="btn-menu-about" class="menu-btn" type="button">
+            <span>About</span>
+            <span class="menu-badge">INFO</span>
+          </button>
+        </nav>
+
+        <div class="menu-footer-note">DESKTOP WASD + MOUSE · MOBILE TOUCH SUPPORTED · LOCAL SAVE READY</div>
+      </div>
+    </div>
+
+    <!-- In-Game Pause / System Menu Overlay -->
+    <div id="pause-menu-overlay" role="dialog" aria-modal="true" aria-label="Pause Menu">
+      <div class="pause-card">
+        <div class="pause-header">
+          <span class="pause-pill">SHIFT PAUSED</span>
+          <div class="game-logo pause-game-logo" aria-label="3D DSD Receiving Simulator">
+            <div class="logo-main-row">
+              <span class="logo-3d-stamp">3D</span>
+              <span class="logo-dsd-word">DSD</span>
+            </div>
+            <div class="logo-hazard-divider" aria-hidden="true"></div>
+            <h2 class="logo-subtitle">RECEIVING SIMULATOR</h2>
+          </div>
+          <div id="pause-shift-summary" class="pause-shift-meta">THU FEB 01, 1996 · 6:00 AM</div>
+        </div>
+        <div class="menu-card pause-actions">
+          <button id="btn-pause-resume" class="menu-btn primary" type="button">
+            <span>Resume Game</span>
+            <span class="menu-badge">ESC</span>
+          </button>
+          <button id="btn-pause-save" class="menu-btn" type="button">
+            <span>Save Game</span>
+            <span class="menu-badge">SLOTS</span>
+          </button>
+          <button id="btn-pause-load" class="menu-btn" type="button">
+            <span>Load Game</span>
+            <span class="menu-badge">RESTORE</span>
+          </button>
+          <button id="btn-pause-main-menu" class="menu-btn danger" type="button">
+            <span>Return to Main Menu</span>
+            <span class="menu-badge">EXIT</span>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Save / Load Slot Picker Modal -->
+    <div id="save-load-modal" role="dialog" aria-modal="true" aria-label="Save and Load Slots">
+      <div class="slm-card">
+        <div class="slm-hdr">
+          <h3 id="slm-title">📂 LOAD SHIFT PROGRESS</h3>
+          <button id="slm-close-btn" class="nd-close-btn" type="button">[ESC] CLOSE</button>
+        </div>
+        <div id="slm-subtitle" class="slm-subtitle">Choose a slot to continue or manage saved shifts.</div>
+        <div id="slm-slots-list" class="slm-slots-list"></div>
+        <div id="slm-status-msg" class="slm-status-msg"></div>
+        <div class="slm-ftr">
+          <button id="slm-export-btn" class="slm-ftr-btn" type="button">⬇ EXPORT .JSON</button>
+          <button id="slm-import-btn" class="slm-ftr-btn" type="button">⬆ IMPORT .JSON</button>
+          <input id="slm-import-file" type="file" accept=".json,application/json" style="display:none;">
+        </div>
+      </div>
+    </div>
+
+    <!-- Tutorial / About Modal -->
+    <div id="menu-info-modal" role="dialog" aria-modal="true" aria-label="Information">
+      <div class="mim-card">
+        <div class="slm-hdr">
+          <h3 id="mim-title">ℹ️ ABOUT</h3>
+          <button id="mim-close-btn" class="nd-close-btn" type="button">[ESC] CLOSE</button>
+        </div>
+        <div id="mim-body" class="mim-body"></div>
       </div>
     </div>
 

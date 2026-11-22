@@ -1208,15 +1208,38 @@ const DeliverySystem = {
     return best ? best.delivery : this.activeDelivery;
   },
 
-  init: function() {
-    setTimeout(() => {
+  _arrivalTimeoutId: null,
+
+  startShiftArrivals: function(delayMs) {
+    if (this._arrivalTimeoutId) {
+      clearTimeout(this._arrivalTimeoutId);
+      this._arrivalTimeoutId = null;
+    }
+    const run = () => {
+      this._arrivalTimeoutId = null;
       const snap = window.ShiftClock ? window.ShiftClock.getTimeSnapshot() : { hour: 6, minute: 0 };
       if (window.WarehouseTrucks && typeof window.WarehouseTrucks.tryArriveQueuedTrucks === 'function') {
         window.WarehouseTrucks.tryArriveQueuedTrucks(snap);
       }
       this.processArrivalQueues(snap);
       this.updateDeliveryHud();
-    }, 1600);
+    };
+    if (delayMs && delayMs > 0) {
+      this._arrivalTimeoutId = setTimeout(run, delayMs);
+    } else {
+      run();
+    }
+  },
+
+  cancelPendingArrivals: function() {
+    if (this._arrivalTimeoutId) {
+      clearTimeout(this._arrivalTimeoutId);
+      this._arrivalTimeoutId = null;
+    }
+  },
+
+  init: function() {
+    this.startShiftArrivals(1600);
   },
 
   clearAllSessions: function() {
@@ -2126,6 +2149,211 @@ const DeliverySystem = {
   update: function(dt) {
     if (!this.sessions.length) return;
     this.sessions.slice().forEach((s) => this.updateSession(s, dt));
+  },
+
+  exportState: function() {
+    return {
+      focusedDeliveryId: this.focusedDeliveryId || null,
+      selectedWaitingIds: Array.from(this.selectedWaitingIds || []),
+      sessions: (this.sessions || []).map((s) => ({
+        deliveryId: s.delivery ? s.delivery.id : null,
+        doorKey: s.doorKey,
+        slotIdx: Number(s.slotIdx) || 0,
+        state: s.state,
+        waypoints: (s.waypoints || []).map((wp) => ({
+          x: Number(wp.x) || 0,
+          y: Number(wp.y) || 0,
+          z: Number(wp.z) || 0
+        })),
+        currentWaypointIdx: Number(s.currentWaypointIdx) || 0,
+        vendorHasJack: Boolean(s.vendorHasJack),
+        vendorDroppedCount: Number(s.vendorDroppedCount) || 0,
+        vendorHitchedPalletId: s.vendorHitchedPallet && s.vendorHitchedPallet.data ? (s.vendorHitchedPallet.data.id || null) : null,
+        driverPos: s.driver && s.driver.mesh ? {
+          x: Number(s.driver.mesh.position.x) || 0,
+          y: Number(s.driver.mesh.position.y) || 0,
+          z: Number(s.driver.mesh.position.z) || 0
+        } : null,
+        driverYaw: s.driver && s.driver.mesh ? (Number(s.driver.mesh.rotation.y) || 0) : -Math.PI / 2,
+        cartPos: s.cart && s.cart.mesh ? {
+          x: Number(s.cart.mesh.position.x) || 0,
+          y: Number(s.cart.mesh.position.y) || 0,
+          z: Number(s.cart.mesh.position.z) || 0
+        } : null,
+        cartYaw: s.cart && s.cart.mesh ? (Number(s.cart.mesh.rotation.y) || 0) : 0,
+        hasCart: Boolean(s.cart),
+        hasCartCargo: Boolean(s.cart && s.cart.cargoGroup),
+        hasCreditTote: Boolean(s.creditTote),
+        hasVendorJack: Boolean(s.vendorJack),
+        vendorJackPos: s.vendorJack ? {
+          x: Number(s.vendorJack.position.x) || 0,
+          y: Number(s.vendorJack.position.y) || 0,
+          z: Number(s.vendorJack.position.z) || 0
+        } : null,
+        vendorJackYaw: s.vendorJack ? (Number(s.vendorJack.rotation.y) || 0) : 0
+      }))
+    };
+  },
+
+  importState: function(data) {
+    if (!data || typeof data !== 'object') return false;
+    this.cancelPendingArrivals();
+    this.clearAllSessions();
+
+    if (window.WarehouseTrucks && typeof window.WarehouseTrucks.getNonWarehouseQueue === 'function') {
+      DELIVERY_MANIFEST.length = 0;
+      DELIVERY_MANIFEST.push(...window.WarehouseTrucks.getNonWarehouseQueue());
+    }
+
+    const allSched = (window.WarehouseTrucks && typeof window.WarehouseTrucks.getScheduleRows === 'function')
+      ? window.WarehouseTrucks.getScheduleRows()
+      : [];
+
+    const savedSessions = Array.isArray(data.sessions) ? data.sessions : [];
+    savedSessions.forEach((ss) => {
+      if (!ss || !ss.deliveryId) return;
+      const d = allSched.find((e) => e && e.id === ss.deliveryId) || DELIVERY_MANIFEST.find((e) => e && e.id === ss.deliveryId);
+      if (!d) return;
+      if (window.DSDReceipts) window.DSDReceipts.enrichDelivery(d);
+
+      const spawnPos = ss.driverPos
+        ? new THREE.Vector3(Number(ss.driverPos.x) || 0, Number(ss.driverPos.y) || 0, Number(ss.driverPos.z) || 0)
+        : new THREE.Vector3(15.65, 0, 8.40);
+      const spawnYaw = Number.isFinite(Number(ss.driverYaw)) ? Number(ss.driverYaw) : -Math.PI / 2;
+
+      const driverObj = createHumanoidDriver3D({
+        variant: d.type,
+        name: d.driverName,
+        initialPos: spawnPos,
+        initialYaw: spawnYaw
+      });
+      if (driverObj && typeof driverObj.setOperatingJack === 'function') {
+        driverObj.setOperatingJack(Boolean(ss.vendorHasJack));
+      }
+
+      const doorKey = ss.doorKey || 'SD';
+      const session = {
+        delivery: d,
+        doorKey: doorKey,
+        slotIdx: Number(ss.slotIdx) || 0,
+        driver: driverObj,
+        cart: null,
+        creditTote: null,
+        vendorJack: null,
+        interactible: null,
+        state: ss.state || 'OUTSIDE_WAITING',
+        waypoints: Array.isArray(ss.waypoints)
+          ? ss.waypoints.map((wp) => new THREE.Vector3(Number(wp.x) || 0, Number(wp.y) || 0, Number(wp.z) || 0))
+          : [],
+        currentWaypointIdx: Number(ss.currentWaypointIdx) || 0,
+        vendorHasJack: Boolean(ss.vendorHasJack),
+        vendorHitchedPallet: null,
+        vendorDroppedCount: Number(ss.vendorDroppedCount) || 0
+      };
+
+      session.interactible = {
+        id: `driver_${d.id}`,
+        type: 'driver',
+        name: d.driverName,
+        session: session,
+        target: driverObj,
+        mesh: driverObj.hitbox,
+        get boxCenter() {
+          return new THREE.Vector3(driverObj.mesh.position.x, 0.95, driverObj.mesh.position.z);
+        },
+        boxSize: new THREE.Vector3(1.1, 1.9, 1.1),
+        getPrompt: () => {
+          if (session.state === 'OUTSIDE_WAITING') {
+            const wCount = DeliverySystem.getWaitingOutsideSessions().length;
+            return wCount > 1
+              ? `[E] Speak with ${d.driverName} (${doorKey}) — View ${wCount} Waiting Outside`
+              : `[E] Speak with ${d.driverName} (${doorKey} · ${d.carrier}) — May I Come In?`;
+          }
+          if (session.state === 'WAITING_CHECKIN') {
+            return d.type === 'warehouse'
+              ? `[E] Check In Warehouse Driver (${d.driverName} · Bay ${d.dockBay})`
+              : `[E] Review Invoice / Check In with ${d.driverName} (${doorKey} · ${d.carrier})`;
+          }
+          if (session.state === 'MOVING_TO_DOCK_STAND') {
+            return `${d.driverName} is heading to Dock ${d.dockBay}`;
+          }
+          if (session.state === 'AWAITING_PLAYER_UNLOAD') {
+            return `[E] Check Status with ${d.driverName} (Bay ${d.dockBay})`;
+          }
+          if (session.state === 'VENDOR_WAIT_DOOR_OPEN') {
+            return `${d.driverName} waiting for Dock ${d.dockBay} door to open`;
+          }
+          if (session.state === 'WAREHOUSE_RETURNING_FOR_SIGN') {
+            return `${d.driverName} walking to receiving area for BOL signature`;
+          }
+          if (session.state === 'WAITING_SIGN') {
+            return d.type === 'warehouse'
+              ? `[E] Sign Bill of Lading (${d.driverName} · Bay ${d.dockBay})`
+              : `[E] Review & Sign Receipt (${d.carrier})`;
+          }
+          if (session.state === 'WALKING_TO_EXIT' || session.state === 'WAITING_EXIT') {
+            if (window.DSDReceipts && !window.DSDReceipts.areAllRequiredReceiptsHanded(d)) {
+              const info = window.DSDReceipts.getPendingReceiptHandoffInfo(d);
+              if (info.heldMatchingCount > 0) {
+                return `[E] Hand Printed Receipt(s) to ${d.driverName}`;
+              }
+              return `[E] ${d.driverName} needs Printed Receipt (${info.missing.map((rn) => '#' + rn).join(', ')})`;
+            }
+            return `${d.driverName} waiting to exit — Open Side Door [E]`;
+          }
+          return `[E] Speak with ${d.driverName}`;
+        },
+        interact: () => {
+          DeliverySystem.interactWithSession(session);
+        }
+      };
+      interactibles.push(session.interactible);
+      driverObj.hitbox.userData.interactible = session.interactible;
+
+      if (d.type === 'sidedoor' && ss.hasCart) {
+        const cartPos = ss.cartPos
+          ? new THREE.Vector3(Number(ss.cartPos.x) || 0, Number(ss.cartPos.y) || 0, Number(ss.cartPos.z) || 0)
+          : new THREE.Vector3(spawnPos.x + Math.sin(spawnYaw) * 1.05, 0, spawnPos.z + Math.cos(spawnYaw) * 1.05);
+        session.cart = createHandCart3D(cartPos, Number.isFinite(Number(ss.cartYaw)) ? Number(ss.cartYaw) : (spawnYaw + Math.PI), d);
+        if (!ss.hasCartCargo && session.cart && session.cart.cargoGroup) {
+          session.cart.mesh.remove(session.cart.cargoGroup);
+          session.cart.cargoGroup = null;
+          session.cart.boxes.length = 0;
+        } else {
+          syncDeliveryBoxesVisuals(d);
+        }
+      } else if (d.dockBay) {
+        bindDeliveryBoxesToBayPallets(d);
+      }
+
+      if (ss.hasCreditTote) {
+        this.spawnCreditToteIfNeeded(session);
+      }
+
+      if (d.type === 'vendor_truck' && ss.hasVendorJack) {
+        const ownJack = createElectricJackWorld();
+        if (ss.vendorJackPos) {
+          ownJack.position.set(Number(ss.vendorJackPos.x) || 0, Number(ss.vendorJackPos.y) || 0, Number(ss.vendorJackPos.z) || 0);
+        }
+        ownJack.rotation.y = Number(ss.vendorJackYaw) || 0;
+        scene.add(ownJack);
+        session.vendorJack = ownJack;
+        if (ss.vendorHitchedPalletId) {
+          const hp = pallets.find((p) => p && p.data && p.data.id === ss.vendorHitchedPalletId);
+          if (hp) {
+            session.vendorHitchedPallet = hp;
+            hp.isHitched = true;
+          }
+        }
+      }
+
+      this.sessions.push(session);
+    });
+
+    this.focusedDeliveryId = data.focusedDeliveryId || null;
+    this.selectedWaitingIds = new Set(Array.isArray(data.selectedWaitingIds) ? data.selectedWaitingIds : []);
+    this.updateDeliveryHud();
+    return true;
   }
 };
 

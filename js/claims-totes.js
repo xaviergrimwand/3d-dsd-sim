@@ -1933,11 +1933,322 @@
     generateDailyClaimsItems();
   }
 
+  function exportState() {
+    const rec = state.recall;
+    return {
+      populated: Boolean(state.populated),
+      nextItemSeq: Number(state.nextItemSeq) || 1,
+      heldItemId: state.heldItem ? state.heldItem.id : null,
+      totes: (state.totes || []).map((tote) => ({
+        index: tote.index,
+        isOpen: Boolean(tote.isOpen),
+        openProgress: Number(tote.openProgress) || 0,
+        items: (tote.items || []).map((it) => ({
+          id: it.id,
+          toteIndex: it.toteIndex,
+          toteLabel: it.toteLabel,
+          code: it.code,
+          name: it.name,
+          deptNo: it.deptNo,
+          price: Number(it.price) || 0,
+          size: it.size || 'medium',
+          type: it.type || 'ambient',
+          damageType: it.damageType,
+          conditionLabel: it.conditionLabel,
+          confirmedCondition: it.confirmedCondition || null,
+          confirmedConditionLabel: it.confirmedConditionLabel || null,
+          confirmedDisposition: it.confirmedDisposition || null,
+          isVendorCredit: Boolean(it.isVendorCredit),
+          claimed: Boolean(it.claimed),
+          placedReceptacle: it.placedReceptacle || null,
+          scannerConfirmed: Boolean(it.scannerConfirmed),
+          claimKeywords: Array.isArray(it.claimKeywords) ? it.claimKeywords.slice() : [],
+          shapeKind: it.shapeKind || null,
+          homePos: it.homePos ? { x: Number(it.homePos.x) || 0, y: Number(it.homePos.y) || 0, z: Number(it.homePos.z) || 0 } : null,
+          homeRotY: it.homeRot ? Number(it.homeRot.y) || 0 : 0
+        }))
+      })),
+      recall: rec ? {
+        triggered: Boolean(rec.triggered),
+        active: Boolean(rec.active),
+        sorted: Boolean(rec.sorted),
+        holdingTote: Boolean(rec.holdingTote),
+        toteOnBottomShelf: Boolean(rec.toteOnBottomShelf),
+        toteDespawned: Boolean(rec.toteDespawned),
+        completed: Boolean(rec.completed),
+        triggerMinute: rec.triggerMinute !== undefined ? rec.triggerMinute : null,
+        scheduledRecalls: (rec.scheduledRecalls || []).map((s) => ({
+          index: s.index,
+          triggerMinute: s.triggerMinute,
+          triggered: Boolean(s.triggered),
+          product: s.product ? Object.assign({}, s.product) : null
+        })),
+        queuedRecalls: (rec.queuedRecalls || []).map((q) => ({
+          triggerMinute: q.triggerMinute,
+          triggered: Boolean(q.triggered),
+          product: q.product ? Object.assign({}, q.product) : null
+        })),
+        completedRecalls: Array.isArray(rec.completedRecalls) ? rec.completedRecalls.map((c) => Object.assign({}, c)) : [],
+        usedProductKeys: Array.isArray(rec.usedProductKeys) ? rec.usedProductKeys.slice() : [],
+        productKey: rec.productKey || null,
+        productName: rec.productName || '',
+        correctBin: rec.correctBin || 'trash',
+        totalCount: Number(rec.totalCount) || 0,
+        collectedCount: Number(rec.collectedCount) || 0,
+        submittedCount: Number(rec.submittedCount) || 0,
+        countMatched: rec.countMatched !== undefined ? rec.countMatched : null,
+        items: (rec.items || []).map((ri) => ({
+          id: ri.id,
+          index: ri.index,
+          code: ri.code,
+          name: ri.name,
+          damageType: ri.damageType || 'recall',
+          collected: Boolean(ri.collected),
+          pos: ri.mesh ? { x: Number(ri.mesh.position.x) || 0, y: Number(ri.mesh.position.y) || 0, z: Number(ri.mesh.position.z) || 0 } : null,
+          rotY: ri.mesh ? Number(ri.mesh.rotation.y) || 0 : 0,
+          rotZ: ri.mesh ? Number(ri.mesh.rotation.z) || 0 : 0
+        }))
+      } : null
+    };
+  }
+
+  function importState(data) {
+    if (!data || typeof data !== 'object') return false;
+    clearHeldItemView();
+    resetRecallForShift();
+
+    state.populated = Boolean(data.populated);
+    state.nextItemSeq = Number.isFinite(Number(data.nextItemSeq)) ? Number(data.nextItemSeq) : 1;
+
+    // Rebuild shelf totes & items
+    state.totes.forEach((tote) => clearToteItemMeshes(tote));
+    const savedTotes = Array.isArray(data.totes) ? data.totes : [];
+    const heldId = data.heldItemId || null;
+
+    savedTotes.forEach((st) => {
+      if (!st) return;
+      const tote = state.totes.find((t) => t && t.index === st.index);
+      if (!tote) return;
+      tote.isOpen = tote.isRed ? false : Boolean(st.isOpen);
+      tote.openProgress = tote.isRed ? 0 : (Number(st.openProgress) || 0);
+      applyTotePoseFromProgress(tote);
+
+      const savedItems = Array.isArray(st.items) ? st.items : [];
+      savedItems.forEach((si, idx) => {
+        if (!si) return;
+        const itemRec = {
+          id: si.id || ('claim_item_' + state.nextItemSeq++),
+          toteIndex: tote.index,
+          toteLabel: si.toteLabel || tote.label,
+          code: String(si.code || ''),
+          name: String(si.name || 'Damaged Item'),
+          deptNo: String(si.deptNo || '10').padStart(2, '0'),
+          price: Number(si.price) || 0,
+          size: si.size || 'medium',
+          type: String(si.type || 'ambient').toLowerCase(),
+          damageType: si.damageType || DAMAGE_CONDITIONS[0].key,
+          conditionLabel: si.conditionLabel || getConditionInfo(si.damageType).label,
+          confirmedCondition: si.confirmedCondition || null,
+          confirmedConditionLabel: si.confirmedConditionLabel || null,
+          confirmedDisposition: si.confirmedDisposition || null,
+          isVendorCredit: Boolean(si.isVendorCredit),
+          claimed: Boolean(si.claimed),
+          placedReceptacle: si.placedReceptacle || null,
+          scannerConfirmed: Boolean(si.scannerConfirmed),
+          claimKeywords: Array.isArray(si.claimKeywords) ? si.claimKeywords.slice() : [],
+          shapeKind: si.shapeKind || classifyItemShape(si),
+          mesh: null,
+          hitMeshes: [],
+          localSize: new THREE.Vector3(0.12, 0.12, 0.12),
+          localCenter: new THREE.Vector3(0, 0.06, 0)
+        };
+
+        const slotPos = ITEM_SLOT_POSITIONS[idx % ITEM_SLOT_POSITIONS.length] || [0, 0];
+        const px = si.homePos && Number.isFinite(Number(si.homePos.x)) ? Number(si.homePos.x) : slotPos[0];
+        const py = si.homePos && Number.isFinite(Number(si.homePos.y)) ? Number(si.homePos.y) : TOTE_FLOOR_Y;
+        const pz = si.homePos && Number.isFinite(Number(si.homePos.z)) ? Number(si.homePos.z) : slotPos[1];
+        const ry = Number.isFinite(Number(si.homeRotY)) ? Number(si.homeRotY) : 0;
+
+        const itemMesh = createDamagedItemMesh(itemRec);
+        itemMesh.position.set(px, py, pz);
+        itemMesh.rotation.y = ry;
+        const itemHits = [];
+        itemMesh.traverse((child) => {
+          if (child && child.isMesh) {
+            child.userData = child.userData || {};
+            child.userData.claimsItemRef = itemRec;
+            itemHits.push(child);
+          }
+        });
+        itemRec.mesh = itemMesh;
+        itemRec.hitMeshes = itemHits;
+        itemRec.homePos = itemMesh.position.clone();
+        itemRec.homeRot = itemMesh.rotation.clone();
+
+        tote.items.push(itemRec);
+        if (!itemRec.claimed) {
+          if (itemRec.scannerConfirmed) syncProcessedClaimVisual(itemRec);
+          if (heldId && itemRec.id === heldId) {
+            state.heldItem = itemRec;
+            state.heldItemTote = tote;
+            if (state.camera && itemRec.mesh) {
+              itemRec.mesh.position.set(0.24, -0.27, -0.52);
+              itemRec.mesh.rotation.set(0.18, -0.35, 0.04);
+              itemRec.mesh.scale.set(1.15, 1.15, 1.15);
+              itemRec.mesh.visible = true;
+              state.camera.add(itemRec.mesh);
+              state.heldViewMesh = itemRec.mesh;
+            }
+          } else if (tote.itemsGroup) {
+            tote.itemsGroup.add(itemMesh);
+          }
+        }
+      });
+    });
+
+    // Rebuild recall state & cart visuals
+    const sr = data.recall;
+    if (sr && typeof sr === 'object' && state.recall) {
+      const rec = state.recall;
+      rec.triggered = Boolean(sr.triggered);
+      rec.active = Boolean(sr.active);
+      rec.sorted = Boolean(sr.sorted);
+      rec.holdingTote = Boolean(sr.holdingTote);
+      rec.toteOnBottomShelf = Boolean(sr.toteOnBottomShelf);
+      rec.toteDespawned = Boolean(sr.toteDespawned);
+      rec.completed = Boolean(sr.completed);
+      rec.triggerMinute = sr.triggerMinute !== undefined ? sr.triggerMinute : null;
+      rec.scheduledRecalls = Array.isArray(sr.scheduledRecalls) ? sr.scheduledRecalls.map((s) => ({
+        index: s.index,
+        triggerMinute: s.triggerMinute,
+        triggered: Boolean(s.triggered),
+        product: s.product ? Object.assign({}, s.product) : null
+      })) : [];
+      rec.queuedRecalls = Array.isArray(sr.queuedRecalls) ? sr.queuedRecalls.map((q) => ({
+        triggerMinute: q.triggerMinute,
+        triggered: Boolean(q.triggered),
+        product: q.product ? Object.assign({}, q.product) : null
+      })) : [];
+      rec.completedRecalls = Array.isArray(sr.completedRecalls) ? sr.completedRecalls.map((c) => Object.assign({}, c)) : [];
+      rec.usedProductKeys = Array.isArray(sr.usedProductKeys) ? sr.usedProductKeys.slice() : [];
+      rec.productKey = sr.productKey || null;
+      rec.productName = sr.productName || '';
+      rec.correctBin = sr.correctBin || 'trash';
+      rec.totalCount = Number(sr.totalCount) || 0;
+      rec.collectedCount = Number(sr.collectedCount) || 0;
+      rec.submittedCount = Number(sr.submittedCount) || 0;
+      rec.countMatched = sr.countMatched !== undefined ? sr.countMatched : null;
+      rec.items = [];
+
+      if (rec.active) {
+        setupRecallCartAnchors();
+        clearRecallCartMeshes();
+        clearRecallToteVisuals();
+        const cartRec = state.world && state.world.recallCart ? state.world.recallCart : null;
+        const tierTopY = (cartRec && Array.isArray(cartRec.tierTopY) && cartRec.tierTopY.length >= 2) ? cartRec.tierTopY : [0.156, 0.876];
+        const bottomY = tierTopY[0];
+        const topY = tierTopY[tierTopY.length - 1];
+
+        setRecallCartVisible(true);
+
+        if (!rec.toteDespawned) {
+          const toteBuilt = buildSmallRecallTote();
+          rec.toteGroup = toteBuilt.group;
+          rec.toteItemsGroup = toteBuilt.itemsGroup;
+          rec.toteHitMeshes = toteBuilt.hitMeshes;
+          for (let ci = 0; ci < rec.collectedCount; ci++) {
+            if (rec.toteItemsGroup) {
+              const slotIdx = ci % RECALL_TOTE_INSIDE_SLOTS.length;
+              const layer = Math.floor(ci / RECALL_TOTE_INSIDE_SLOTS.length);
+              const [tx, tz] = RECALL_TOTE_INSIDE_SLOTS[slotIdx];
+              const mini = createDamagedItemMesh({
+                id: 'recall_tote_unit_' + ci,
+                code: rec.productKey,
+                name: rec.productName,
+                damageType: 'recall'
+              });
+              mini.scale.set(0.55, 0.55, 0.55);
+              mini.position.set(tx, layer * 0.068, tz);
+              mini.rotation.y = (ci % 3 - 1) * 0.2;
+              rec.toteItemsGroup.add(mini);
+            }
+          }
+          if (rec.holdingTote && state.camera) {
+            rec.toteGroup.position.set(0.26, -0.31, -0.56);
+            rec.toteGroup.rotation.set(0.22, -0.36, 0.05);
+            state.camera.add(rec.toteGroup);
+          } else {
+            rec.toteGroup.position.set(0, bottomY, 0);
+            rec.toteGroup.rotation.set(0, 0, 0);
+            rec.toteOnBottomShelf = true;
+            if (cartRec && cartRec.group) cartRec.group.add(rec.toteGroup);
+          }
+        }
+
+        const savedItems = Array.isArray(sr.items) ? sr.items : [];
+        savedItems.forEach((sri, i) => {
+          if (!sri) return;
+          const itemRec = {
+            id: sri.id || ('recall_unit_' + i),
+            index: sri.index !== undefined ? sri.index : i,
+            code: sri.code || rec.productKey,
+            name: sri.name || rec.productName,
+            damageType: sri.damageType || 'recall',
+            collected: Boolean(sri.collected),
+            mesh: null,
+            hitMeshes: [],
+            localSize: new THREE.Vector3(0.11, 0.12, 0.11),
+            localCenter: new THREE.Vector3(0, 0.06, 0)
+          };
+          if (!itemRec.collected && rec.cartGroup) {
+            const mesh = createDamagedItemMesh(itemRec);
+            const px = sri.pos && Number.isFinite(Number(sri.pos.x)) ? Number(sri.pos.x) : 0;
+            const py = sri.pos && Number.isFinite(Number(sri.pos.y)) ? Number(sri.pos.y) : topY;
+            const pz = sri.pos && Number.isFinite(Number(sri.pos.z)) ? Number(sri.pos.z) : 0;
+            mesh.position.set(px, py, pz);
+            mesh.rotation.y = Number(sri.rotY) || 0;
+            mesh.rotation.z = Number(sri.rotZ) || 0;
+            const itemHits = [];
+            mesh.traverse((child) => {
+              if (child && child.isMesh) {
+                child.userData = child.userData || {};
+                child.userData.recallItemRef = itemRec;
+                itemHits.push(child);
+              }
+            });
+            itemRec.mesh = mesh;
+            itemRec.hitMeshes = itemHits;
+            rec.cartGroup.add(mesh);
+          }
+          rec.items.push(itemRec);
+        });
+
+        if (rec.cartGroup) {
+          const ghostMat = new THREE.MeshBasicMaterial({
+            color: 0x38bdf8,
+            wireframe: true,
+            transparent: true,
+            opacity: 0.85
+          });
+          const ghost = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), ghostMat);
+          ghost.visible = false;
+          rec.cartGroup.add(ghost);
+          rec.arrangeGhostMesh = ghost;
+        }
+      } else {
+        setRecallCartVisible(false);
+      }
+    }
+    return true;
+  }
+
   global.ClaimsTotes = {
     DAMAGE_CONDITIONS: DAMAGE_CONDITIONS,
     init: init,
     update: update,
     resetForShift: resetForShift,
+    exportState: exportState,
+    importState: importState,
     toggleToteOpen: toggleToteOpen,
     setToteOpen: setToteOpen,
     closeAllTotes: closeAllTotes,

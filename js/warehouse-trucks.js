@@ -1357,6 +1357,69 @@
     if (typeof state.hooks.onScheduleUpdated === 'function') state.hooks.onScheduleUpdated();
   }
 
+  function exportState() {
+    const cleanSchedule = (state.schedule || []).map((entry) => {
+      const copy = JSON.parse(JSON.stringify(entry, (k, v) => (k === 'spawnedPallets' || k === 'mesh' ? undefined : v)));
+      copy.spawnedPallets = [];
+      return copy;
+    });
+    return {
+      palletCounter: Number(state.palletCounter) || 1,
+      invoiceSeed: Number(state.invoiceSeed) || 901100,
+      shiftLimits: Object.assign({}, state.shiftLimits),
+      priorityWarnedDeliveryIds: Object.assign({}, state.priorityWarnedDeliveryIds),
+      schedule: cleanSchedule
+    };
+  }
+
+  function relinkSpawnedPallets(palletsList) {
+    const list = Array.isArray(palletsList) ? palletsList : (state.hooks.pallets || []);
+    (state.schedule || []).forEach((entry) => {
+      if (!entry) return;
+      entry.spawnedPallets = [];
+      if (entry.type === 'warehouse') {
+        list.forEach((p) => {
+          if (p && p.data && p.data.deliveryId === entry.id) {
+            entry.spawnedPallets.push(p);
+          }
+        });
+      }
+    });
+    if (typeof state.hooks.updateStagedCounter === 'function') state.hooks.updateStagedCounter();
+  }
+
+  function importState(data) {
+    if (!data || typeof data !== 'object') return false;
+    clearAllSpawnedPallets();
+    const docks = state.hooks.dockDoors || [];
+    docks.forEach((dd) => {
+      dd.hasTrailer = false;
+      dd.trailerType = null;
+      dd.trailerDoorOpen = false;
+      dd.trailerDoorProgress = 0;
+    });
+    state.palletCounter = Number.isFinite(Number(data.palletCounter)) ? Number(data.palletCounter) : 1;
+    state.invoiceSeed = Number.isFinite(Number(data.invoiceSeed)) ? Number(data.invoiceSeed) : 901100;
+    const cfg = getCatalogConfig();
+    const lim = data.shiftLimits || {};
+    state.shiftLimits = {
+      dryRemaining: Number.isFinite(Number(lim.dryRemaining)) ? Number(lim.dryRemaining) : Number(cfg.maxDryPallets || 10),
+      chilledRemaining: Number.isFinite(Number(lim.chilledRemaining)) ? Number(lim.chilledRemaining) : Number(cfg.maxChilledPallets || 8),
+      frozenRemaining: Number.isFinite(Number(lim.frozenRemaining)) ? Number(lim.frozenRemaining) : Number(cfg.maxFrozenPallets || 8)
+    };
+    state.priorityWarnedDeliveryIds = Object.assign({}, data.priorityWarnedDeliveryIds || {});
+    state.schedule = Array.isArray(data.schedule)
+      ? data.schedule.map((e) => {
+        const cloned = JSON.parse(JSON.stringify(e));
+        cloned.spawnedPallets = [];
+        return cloned;
+      })
+      : [];
+    if (typeof state.hooks.updateStagedCounter === 'function') state.hooks.updateStagedCounter();
+    if (typeof state.hooks.onScheduleUpdated === 'function') state.hooks.onScheduleUpdated();
+    return true;
+  }
+
   function init(hooks) {
     state.hooks = hooks || {};
     if (!state.initialized) {
@@ -1371,6 +1434,9 @@
   global.WarehouseTrucks = {
     init: init,
     resetForShift: resetForShift,
+    exportState: exportState,
+    importState: importState,
+    relinkSpawnedPallets: relinkSpawnedPallets,
     generateDailySchedule: generateDailySchedule,
     getScheduleRows: getScheduleRows,
     getNonWarehouseQueue: getNonWarehouseQueue,

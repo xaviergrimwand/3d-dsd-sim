@@ -399,6 +399,17 @@
       return Boolean(uiState.terminalModalOpen || uiState.doorQueueModalOpen || uiState.bolModalOpen || isPhase2ModalOpen() || (window.DSDGame && window.DSDGame.isModalOpen()));
     }
 
+    function syncNightDropToolButtons() {
+      const scanBtn = document.getElementById('nd-key-scanner-btn');
+      const termBtn = document.getElementById('nd-key-terminal-btn');
+      if (scanBtn) {
+        scanBtn.classList.toggle('is-active', Boolean(uiState.scannerModalOpen));
+      }
+      if (termBtn) {
+        termBtn.classList.toggle('is-active', Boolean(uiState.terminalModalOpen));
+      }
+    }
+
     function syncPhase2ContainerClasses() {
       const p2Open = isPhase2ModalOpen() || uiState.doorQueueModalOpen;
       container.classList.toggle('phase2-open', p2Open);
@@ -412,6 +423,7 @@
         ndPanel.classList.toggle('docked-terminal', dockTerm);
         ndPanel.classList.toggle('docked-scanner', dockScan);
       }
+      syncNightDropToolButtons();
     }
 
     function isCarryingBackstockCase() {
@@ -775,7 +787,40 @@
       interactRaycaster.setFromCamera(isPointerLocked ? { x: 0, y: 0 } : pointerNDC, camera);
       interactRaycaster.far = 7.0;
 
-      // Daily Backroom Inventory Mode (Hand Scanner Option 3)
+      // Label Cases Mode (Hand Scanner Option 3 -> 1. LABEL CASES)
+      if (
+        uiState.scannerModalOpen &&
+        !uiState.overageDeliveryId &&
+        window.DSDReceipts &&
+        typeof window.DSDReceipts.isScannerLabelMode === 'function' &&
+        window.DSDReceipts.isScannerLabelMode() &&
+        window.BackstockRacks &&
+        typeof window.BackstockRacks.getLabelableRaycastMeshes === 'function'
+      ) {
+        const labelMeshes = window.BackstockRacks.getLabelableRaycastMeshes();
+        if (labelMeshes.length > 0) {
+          const labelHits = interactRaycaster.intersectObjects(labelMeshes, false);
+          if (labelHits.length > 0 && labelHits[0].object && labelHits[0].object.userData && labelHits[0].object.userData.backstockCaseRef) {
+            const caseRec = labelHits[0].object.userData.backstockCaseRef;
+            const res = window.DSDReceipts.scanBackstockCaseForLabel(caseRec);
+            if (res && res.ok && res.loaded) {
+              if (SoundSystem && typeof SoundSystem.playScanBeep === 'function') {
+                SoundSystem.playScanBeep();
+              }
+              scannerDevice.classList.add('scanning');
+              scannerLcd.classList.add('scan-flash');
+              if (scanPulseTimeout) clearTimeout(scanPulseTimeout);
+              scanPulseTimeout = setTimeout(() => {
+                scannerDevice.classList.remove('scanning');
+                scannerLcd.classList.remove('scan-flash');
+              }, 240);
+            }
+            return true;
+          }
+        }
+      }
+
+      // Daily Backroom Inventory Mode (Hand Scanner Option 3 -> 2. BACKROOM INVENTORY)
       if (
         uiState.scannerModalOpen &&
         !uiState.overageDeliveryId &&
@@ -1086,6 +1131,10 @@
         return;
       }
       if (window.DSDGame && window.DSDGame.isModalOpen()) {
+        if (e.code === 'Escape' && window.DSDMenuUI && typeof window.DSDMenuUI.togglePauseMenu === 'function') {
+          window.DSDMenuUI.togglePauseMenu();
+          e.preventDefault();
+        }
         return;
       }
       if (uiState.doorQueueModalOpen) {
@@ -1181,17 +1230,12 @@
         const ndOnlyOpen = !filingOrArchOpen && ndPanelEl && ndPanelEl.style.display === 'flex';
 
         if (ndOnlyOpen && e.code === 'KeyF') {
-          toggleScanner();
+          toggleScanner('nightdrop');
           e.preventDefault();
           return;
         }
         if (ndOnlyOpen && e.code === 'KeyT') {
-          const ndTermBtn = document.getElementById('nd-key-terminal-btn');
-          if (ndTermBtn) {
-            ndTermBtn.click();
-          } else {
-            openTerminal('create');
-          }
+          toggleTerminal('create');
           e.preventDefault();
           return;
         }
@@ -1262,9 +1306,15 @@
           e.preventDefault();
           return;
         }
-        // [+] / [NumpadAdd] / [End]: F5 FINAL
-        if (e.key === '+' || e.code === 'NumpadAdd' || e.code === 'End') {
+        // [F5] / [+] / [NumpadAdd] / [End]: F5 FINAL
+        if (e.code === 'F5' || e.key === '+' || e.code === 'NumpadAdd' || e.code === 'End') {
           handleScannerKeyAction('plus');
+          e.preventDefault();
+          return;
+        }
+        // [F6]: Print label / Print finalized receipt
+        if (e.code === 'F6') {
+          handleScannerKeyAction('print');
           e.preventDefault();
           return;
         }
@@ -1323,6 +1373,16 @@
             closeInvoice();
           } else if (uiState.terminalModalOpen) {
             closeTerminal();
+          } else if (uiState.doorQueueModalOpen) {
+            closeDoorQueueModal();
+          } else if (window.DSDReceipts && typeof window.DSDReceipts.isPhase2ModalOpen === 'function' && window.DSDReceipts.isPhase2ModalOpen()) {
+            if (window.DSDReceipts.closeNightDropPanel) window.DSDReceipts.closeNightDropPanel(true);
+            if (window.DSDReceipts.closeFilingOverlay) window.DSDReceipts.closeFilingOverlay(true);
+            if (window.DSDReceipts.closeInvoiceArchive) window.DSDReceipts.closeInvoiceArchive(true);
+            if (window.DSDReceipts.closeTrashCanDialog) window.DSDReceipts.closeTrashCanDialog(true);
+            if (window.DSDReceipts.closeHandReceiptDialog) window.DSDReceipts.closeHandReceiptDialog(true);
+          } else if (window.DSDMenuUI && typeof window.DSDMenuUI.togglePauseMenu === 'function') {
+            window.DSDMenuUI.togglePauseMenu();
           }
           break;
       }
@@ -1624,6 +1684,8 @@
 
       uiState.hoveredPhysicalBox = null;
       uiState.hoveredBoxMesh = null;
+      uiState.hoveredLabelCase = null;
+      uiState.hoveredLabelMesh = null;
       uiState.hoveredInventoryCase = null;
       uiState.hoveredInventoryMesh = null;
       uiState.hoveredSupplyCase = null;
@@ -1642,6 +1704,34 @@
       uiState.hoveredRecallTote = false;
       uiState.hoveredRecallBottomDock = false;
       uiState.hoveredRecallArrangeSpot = null;
+
+      // Raycast over Backstock Cases when Scanner Option 3 -> 1. LABEL CASES is active
+      const labelScannerActive = Boolean(
+        !carryingBackstock &&
+        !holdingClaimsItem &&
+        !holdingRecallTote &&
+        !arrangingRecallItem &&
+        !isBlockingModalOpen() &&
+        uiState.scannerModalOpen &&
+        !uiState.overageDeliveryId &&
+        window.DSDReceipts &&
+        typeof window.DSDReceipts.isScannerLabelMode === 'function' &&
+        window.DSDReceipts.isScannerLabelMode() &&
+        window.BackstockRacks &&
+        typeof window.BackstockRacks.getLabelableRaycastMeshes === 'function'
+      );
+      if (labelScannerActive) {
+        const labelMeshes = window.BackstockRacks.getLabelableRaycastMeshes();
+        if (labelMeshes.length > 0) {
+          interactRaycaster.setFromCamera(aimNDC, camera);
+          interactRaycaster.far = 7.0;
+          const labelHits = interactRaycaster.intersectObjects(labelMeshes, false);
+          if (labelHits.length > 0 && labelHits[0].object && labelHits[0].object.userData && labelHits[0].object.userData.backstockCaseRef) {
+            uiState.hoveredLabelMesh = labelHits[0].object;
+            uiState.hoveredLabelCase = uiState.hoveredLabelMesh.userData.backstockCaseRef;
+          }
+        }
+      }
 
       // Raycast over Backroom Inventory Cases (when Scanner Option 3 Inventory mode is active)
       const invScannerActive = Boolean(
@@ -1987,6 +2077,62 @@
               : (hb.notScannable
                 ? `PLU ${hb.code} · ${hb.name}${boxUnitTag} (KEY PLU)`
                 : `CLICK TO SCAN: ${hb.code} · ${hb.name}${boxUnitTag}`);
+          }
+        }
+      } else if (uiState.hoveredLabelCase && uiState.hoveredLabelMesh) {
+        const lc = uiState.hoveredLabelCase;
+        const lm = uiState.hoveredLabelMesh;
+        const wp = new THREE.Vector3();
+        const wq = new THREE.Quaternion();
+        lm.getWorldPosition(wp);
+        lm.getWorldQuaternion(wq);
+        const gp = (lm.geometry && lm.geometry.parameters) || { width: 0.34, height: 0.26, depth: 0.30 };
+        focusHighlightGroup.visible = true;
+        focusHighlightGroup.position.copy(wp);
+        focusHighlightGroup.quaternion.copy(wq);
+        focusHighlightGroup.scale.set(gp.width + 0.025, gp.height + 0.025, gp.depth + 0.025);
+
+        const isSupplyLc = Boolean(String(lc.deptNo || '') === '60' || String(lc.vendorNo || '') === '601' || lc.targetRackId === 'claims_steel');
+        const isPluLc = Boolean(lc.notScannable && !lc.labeled && !isSupplyLc);
+
+        if (isSupplyLc) {
+          crtMaskMat.color.setHex(0xf59e0b);
+        } else if (lc.labeled) {
+          crtMaskMat.color.setHex(0x22c55e);
+        } else if (isPluLc) {
+          crtMaskMat.color.setHex(0x4ade80);
+        } else {
+          crtMaskMat.color.setHex(0xfacc15);
+        }
+        crtMaskMat.opacity = lc.labeled ? 0.32 : pulse;
+        crtWireMat.opacity = Math.min(1.0, pulse + 0.35);
+        crtEdgeMat.opacity = Math.min(1.0, pulse + 0.45);
+
+        promptDoor.style.display = 'none';
+        promptSideDoor.style.display = 'none';
+        promptTerminal.style.display = 'none';
+        promptDesk.style.display = 'none';
+        promptPallet.style.display = 'none';
+        promptDriver.style.display = 'none';
+
+        if (boxHoverPill) {
+          positionBoxHoverPill(boxHoverPill, aimNDC, 260);
+          if (isSupplyLc) {
+            boxHoverPill.style.borderColor = '#f59e0b';
+            boxHoverPill.style.color = '#fef3c7';
+            boxHoverPill.textContent = `📦 DEPT 60 SUPPLY (${lc.code}) — STAYS WHITE (NO LABEL REQ)`;
+          } else if (lc.labeled) {
+            boxHoverPill.style.borderColor = '#22c55e';
+            boxHoverPill.style.color = '#86efac';
+            boxHoverPill.textContent = `🏷️ YELLOW UPC LABELED: ${lc.code} · ${lc.name} (${lc.unitsPerCase || 1}u)`;
+          } else if (isPluLc) {
+            boxHoverPill.style.borderColor = '#4ade80';
+            boxHoverPill.style.color = '#bbf7d0';
+            boxHoverPill.textContent = `PLU ${lc.code} · ${lc.name} (${lc.unitsPerCase || 1}u) — TYPE PLU + ENT + F6`;
+          } else {
+            boxHoverPill.style.borderColor = '#facc15';
+            boxHoverPill.style.color = '#fef9c3';
+            boxHoverPill.textContent = `CLICK TO PULL INFO: UPC ${lc.code} · ${lc.name} (${lc.unitsPerCase || 1}u)`;
           }
         }
       } else if (uiState.hoveredInventoryCase && uiState.hoveredInventoryMesh) {
@@ -3423,7 +3569,24 @@
         return 'supply';
       }
 
-      // Dry, Cooler (chilled), or Freezer (frozen) backstock cases open directly to Inventory mode (Option 3)
+      // Unlabeled overstock pallet case (excluding Dept 60): open directly to Label Cases (Option 3 -> 1)
+      if (!bc.placedOnRack && !bc.labeled && String(bc.deptNo || '') !== '60') {
+        return 'label-cases';
+      }
+
+      // Labeled case slotted in backroom steel: open directly to Audit Backroom (Option 3 -> 2)
+      const rackId = bc.placedRackId || (bc.rackSlot && bc.rackSlot.rackId);
+      const isBackroomSteel = Boolean(
+        bc.placedOnRack &&
+        window.BackstockRacks &&
+        typeof window.BackstockRacks.isInventoryEligibleRack === 'function' &&
+        window.BackstockRacks.isInventoryEligibleRack(rackId)
+      );
+      if (isBackroomSteel && bc.labeled) {
+        return 'inventory-audit';
+      }
+
+      // General backstock cases open to Backroom Inventory menu (Option 3)
       return 'inventory';
     }
 
@@ -3506,6 +3669,9 @@
         SoundSystem.playErrorBuzzer();
         return;
       }
+      if (uiState.terminalModalOpen) {
+        closeTerminal(true);
+      }
       const targetScannerScreen = resolveScannerOpenContext(openOpts);
       const claimsTargetInfo = (targetScannerScreen === 'damage') ? getHoveredClaimsScannerTarget() : null;
       const hoveredClaimsItemPrefill = (claimsTargetInfo && claimsTargetInfo.item && !claimsTargetInfo.item.claimed) ? claimsTargetInfo.item : null;
@@ -3561,7 +3727,8 @@
       updateScannerDisplay(false);
     }
 
-    function closeScanner() {
+    function closeScanner(silent) {
+      if (!uiState.scannerModalOpen) return;
       uiState.scannerModalOpen = false;
       player.scannerActive = false;
       scannerModalOverlay.classList.remove('active');
@@ -3576,7 +3743,7 @@
       }
       updateLockHintDisplay();
       syncPhase2ContainerClasses();
-      SoundSystem.playButtonClick();
+      if (!silent) SoundSystem.playButtonClick();
     }
 
     function toggleScanner(openOpts) {
@@ -3690,12 +3857,7 @@
         if (!window.DSDReceipts) return;
         const ndPanel = document.getElementById('night-drop-panel');
         const isOpen = ndPanel && ndPanel.style.display === 'flex';
-        if (isOpen && ndPanel.classList.contains('docked-terminal')) {
-          // Temporarily lift undocked view on narrow viewports or toggle closed
-          ndPanel.classList.remove('docked-terminal');
-          container.classList.remove('nightdrop-docked');
-          SoundSystem.playPaperRustle();
-        } else if (isOpen) {
+        if (isOpen) {
           window.DSDReceipts.closeNightDropPanel();
         } else {
           window.DSDReceipts.openNightDropPanel(window.innerWidth >= 1080);
@@ -3705,7 +3867,7 @@
 
     function openTerminal(initialScreen) {
       if (uiState.scannerModalOpen) {
-        closeScanner();
+        closeScanner(true);
       }
       uiState.terminalModalOpen = true;
       terminalModal.style.display = 'flex';
@@ -3720,16 +3882,24 @@
       SoundSystem.playScanBeep();
     }
 
-    function closeTerminal() {
+    function closeTerminal(silent) {
       if (!uiState.terminalModalOpen) return;
       uiState.terminalModalOpen = false;
       terminalModal.style.display = 'none';
       syncPhase2ContainerClasses();
       syncCrtMonitorDisplay();
-      SoundSystem.playButtonClick();
+      if (!silent) SoundSystem.playButtonClick();
     }
 
-    closeTerminalBtn.addEventListener('click', closeTerminal);
+    function toggleTerminal(initialScreen) {
+      if (uiState.terminalModalOpen) {
+        closeTerminal();
+      } else {
+        openTerminal(initialScreen);
+      }
+    }
+
+    closeTerminalBtn.addEventListener('click', () => closeTerminal());
 
     function handleFinalizeReceivingClick() {
       if (window.WarehouseTrucks && typeof window.WarehouseTrucks.getScheduleRows === 'function') {
@@ -4231,18 +4401,20 @@
       if (window.DSDGame) window.DSDGame.updateHud();
 
       updatePlayer(dt);
-      if (!isSystemPaused && jackDockedAtCharger && jackBattery < 100) {
-        jackBattery = Math.min(100, jackBattery + 1.2 * dt);
+      if (!isSystemPaused) {
+        if (jackDockedAtCharger && jackBattery < 100) {
+          jackBattery = Math.min(100, jackBattery + 1.2 * dt);
+        }
+        updateNearbyInteractions(dt);
+        DeliverySystem.update(dt);
+        if (window.BackstockRacks && typeof window.BackstockRacks.update === 'function') {
+          window.BackstockRacks.update(dt);
+        }
+        if (window.ClaimsTotes && typeof window.ClaimsTotes.update === 'function') {
+          window.ClaimsTotes.update(dt, player.position);
+        }
       }
       syncElectricJackBatteryVisuals(now);
-      updateNearbyInteractions(dt);
-      DeliverySystem.update(dt);
-      if (window.BackstockRacks && typeof window.BackstockRacks.update === 'function') {
-        window.BackstockRacks.update(dt);
-      }
-      if (window.ClaimsTotes && typeof window.ClaimsTotes.update === 'function') {
-        window.ClaimsTotes.update(dt, player.position);
-      }
       if (typeof topDrawerGroup !== 'undefined' && topDrawerGroup) {
         const targetSlideX = drawerState.topDrawerSlideOpen ? TOP_DRAWER_OPEN_X : 0;
         topDrawerGroup.position.x += (targetSlideX - topDrawerGroup.position.x) * Math.min(1, 6.5 * dt);
@@ -4324,6 +4496,247 @@
       });
     }
 
+    let campaignStarted = false;
+
+    function syncDoorMeshesImmediate() {
+      dockDoors.forEach((dd) => {
+        const easedProg = 0.5 - 0.5 * Math.cos((dd.currentProgress || 0) * Math.PI);
+        const openOffset = easedProg * (doorHeight - 0.2);
+        if (dd.curtainMesh) {
+          dd.curtainMesh.position.y = doorHeight / 2 + openOffset;
+          dd.curtainMesh.scale.y = Math.max(0.05, 1 - easedProg * 0.95);
+        }
+        if (dd.trailerGroup) {
+          dd.trailerGroup.visible = Boolean(dd.hasTrailer);
+          if (dd.whSemiGroup) dd.whSemiGroup.visible = (dd.trailerType !== 'vendor_truck');
+          if (dd.vendorSemiGroup) dd.vendorSemiGroup.visible = (dd.trailerType === 'vendor_truck');
+        }
+        if (dd.trailerDoorCurtain) {
+          const tH = dd.trailerDoorH || (doorHeight - 0.14);
+          const easedTD = 0.5 - 0.5 * Math.cos((dd.trailerDoorProgress || 0) * Math.PI);
+          dd.trailerDoorCurtain.position.y = tH / 2 + easedTD * (tH - 0.25);
+          dd.trailerDoorCurtain.scale.y = Math.max(0.05, 1 - easedTD * 0.94);
+        }
+      });
+      if (sideRollupDoor && sideRollupDoor.curtainMesh) {
+        const easedSide = 0.5 - 0.5 * Math.cos((sideRollupDoor.currentProgress || 0) * Math.PI);
+        sideRollupDoor.curtainMesh.position.y = sideRollupDoor.height / 2 + easedSide * (sideRollupDoor.height - 0.2);
+        sideRollupDoor.curtainMesh.scale.y = Math.max(0.05, 1 - easedSide * 0.95);
+      }
+      renderDoorLightsPanel();
+    }
+
+    function resetAllForFreshCampaign() {
+      DeliverySystem.cancelPendingArrivals();
+      DeliverySystem.clearAllSessions();
+      closeScanner();
+      closeInvoice();
+      closeWarehouseBol();
+      closeTerminal();
+      closeDoorQueueModal(true);
+
+      if (window.ShiftClock) window.ShiftClock.init();
+      if (window.ShiftStats) window.ShiftStats.resetDailyStats();
+
+      dockDoors.forEach((dd) => {
+        dd.isOpen = false;
+        dd.currentProgress = 0;
+        dd.timeOpen = 0;
+        dd.hasTrailer = false;
+        dd.trailerType = null;
+        dd.trailerDoorOpen = false;
+        dd.trailerDoorProgress = 0;
+      });
+      sideRollupDoor.isOpen = false;
+      sideRollupDoor.currentProgress = 0;
+      sideRollupDoor.timeOpen = 0;
+      drawerState.pendingArchiveOpen = false;
+      drawerState.pendingArchiveTimer = 0;
+      drawerState.topDrawerSlideOpen = false;
+
+      pallets.slice().forEach((p) => removePallet3D(p));
+      player.position.set(0, 1.65, ORIGIN_Z + 13 * TILE_SIZE);
+      player.yaw = 0;
+      player.pitch = 0;
+      player.hitchedPallet = null;
+      player.hasElectricJack = false;
+      if (hitchStatusCard) hitchStatusCard.style.display = 'none';
+
+      jackBattery = 100;
+      jackDockedAtCharger = true;
+      electricJackViewmodel.visible = false;
+      electricJackWorld.position.set(JACK_HOME_POS.x, 0, JACK_HOME_POS.z);
+      electricJackWorld.rotation.y = JACK_HOME_POS.yaw;
+      electricJackWorld.visible = true;
+      syncElectricJackBatteryVisuals();
+
+      if (window.WarehouseTrucks) {
+        window.WarehouseTrucks.resetForShift();
+        DELIVERY_MANIFEST.length = 0;
+        DELIVERY_MANIFEST.push(...window.WarehouseTrucks.getNonWarehouseQueue());
+      }
+      if (window.DSDReceipts) {
+        window.DSDReceipts.init({ preserveNone: false });
+      }
+      if (window.BackstockRacks) {
+        window.BackstockRacks.resetForShift();
+      }
+      if (window.ClaimsTotes) {
+        window.ClaimsTotes.resetForShift();
+      }
+      syncDoorMeshesImmediate();
+      updateStagedCounter();
+      renderPendingDeliveriesPanel();
+      syncCrtMonitorDisplay();
+    }
+
+    function exportWorldState() {
+      return {
+        player: {
+          x: Number(player.position.x) || 0,
+          y: Number(player.position.y) || 1.65,
+          z: Number(player.position.z) || 0,
+          yaw: Number(player.yaw) || 0,
+          pitch: Number(player.pitch) || 0,
+          hasElectricJack: Boolean(player.hasElectricJack),
+          hitchedPalletId: (player.hitchedPallet && player.hitchedPallet.data) ? (player.hitchedPallet.data.id || null) : null
+        },
+        electricJack: {
+          x: Number(electricJackWorld.position.x) || JACK_HOME_POS.x,
+          y: Number(electricJackWorld.position.y) || 0,
+          z: Number(electricJackWorld.position.z) || JACK_HOME_POS.z,
+          yaw: Number(electricJackWorld.rotation.y) || JACK_HOME_POS.yaw,
+          battery: Number(jackBattery),
+          dockedAtCharger: Boolean(jackDockedAtCharger)
+        },
+        sideRollupDoor: {
+          isOpen: Boolean(sideRollupDoor.isOpen),
+          currentProgress: Number(sideRollupDoor.currentProgress) || 0,
+          timeOpen: Number(sideRollupDoor.timeOpen) || 0
+        },
+        dockDoors: dockDoors.map((dd) => ({
+          id: dd.id,
+          isOpen: Boolean(dd.isOpen),
+          currentProgress: Number(dd.currentProgress) || 0,
+          timeOpen: Number(dd.timeOpen) || 0,
+          hasTrailer: Boolean(dd.hasTrailer),
+          trailerType: dd.trailerType || null,
+          trailerDoorOpen: Boolean(dd.trailerDoorOpen),
+          trailerDoorProgress: Number(dd.trailerDoorProgress) || 0
+        })),
+        drawerState: {
+          pendingArchiveOpen: Boolean(drawerState.pendingArchiveOpen),
+          pendingArchiveTimer: Number(drawerState.pendingArchiveTimer) || 0,
+          topDrawerSlideOpen: Boolean(drawerState.topDrawerSlideOpen)
+        },
+        pallets: pallets.map((p) => ({
+          data: JSON.parse(JSON.stringify(p.data || {}, (k, v) => (k === 'mesh' ? undefined : v))),
+          x: Number(p.position.x) || 0,
+          y: Number(p.position.y) || 0,
+          z: Number(p.position.z) || 0,
+          rotationY: p.mesh ? (Number(p.mesh.rotation.y) || 0) : 0
+        }))
+      };
+    }
+
+    function importWorldState(data) {
+      if (!data || typeof data !== 'object') return false;
+      campaignStarted = true;
+      DeliverySystem.cancelPendingArrivals();
+
+      if (uiState.scannerModalOpen) closeScanner();
+      if (uiState.overageDeliveryId && typeof exitOverageFlagMode === 'function') exitOverageFlagMode(true);
+      if (uiState.bolModalOpen) closeWarehouseBol();
+      if (uiState.invoiceModalOpen) closeInvoice();
+      if (uiState.terminalModalOpen) closeTerminal();
+      if (uiState.doorQueueModalOpen) closeDoorQueueModal(true);
+
+      player.hitchedPallet = null;
+      if (hitchStatusCard) hitchStatusCard.style.display = 'none';
+      pallets.slice().forEach((p) => removePallet3D(p));
+
+      const savedDoors = Array.isArray(data.dockDoors) ? data.dockDoors : [];
+      dockDoors.forEach((dd) => {
+        const sd = savedDoors.find((item) => item && item.id === dd.id);
+        if (sd) {
+          dd.isOpen = Boolean(sd.isOpen);
+          dd.currentProgress = Number(sd.currentProgress) || 0;
+          dd.timeOpen = Number(sd.timeOpen) || 0;
+          dd.hasTrailer = Boolean(sd.hasTrailer);
+          dd.trailerType = sd.trailerType || null;
+          dd.trailerDoorOpen = Boolean(sd.trailerDoorOpen);
+          dd.trailerDoorProgress = Number(sd.trailerDoorProgress) || 0;
+        }
+      });
+
+      if (data.sideRollupDoor && typeof data.sideRollupDoor === 'object') {
+        sideRollupDoor.isOpen = Boolean(data.sideRollupDoor.isOpen);
+        sideRollupDoor.currentProgress = Number(data.sideRollupDoor.currentProgress) || 0;
+        sideRollupDoor.timeOpen = Number(data.sideRollupDoor.timeOpen) || 0;
+      }
+
+      if (data.drawerState && typeof data.drawerState === 'object') {
+        drawerState.pendingArchiveOpen = Boolean(data.drawerState.pendingArchiveOpen);
+        drawerState.pendingArchiveTimer = Number(data.drawerState.pendingArchiveTimer) || 0;
+        drawerState.topDrawerSlideOpen = Boolean(data.drawerState.topDrawerSlideOpen);
+      }
+
+      const savedPallets = Array.isArray(data.pallets) ? data.pallets : [];
+      savedPallets.forEach((sp) => {
+        if (!sp || !sp.data) return;
+        const spec = JSON.parse(JSON.stringify(sp.data));
+        const created = createPallet3D(spec);
+        if (created) {
+          created.position.set(Number(sp.x) || 0, Number(sp.y) || 0, Number(sp.z) || 0);
+          if (created.mesh) {
+            created.mesh.position.copy(created.position);
+            created.mesh.rotation.y = Number(sp.rotationY) || 0;
+          }
+          created.data.status = spec.status || created.data.status;
+        }
+      });
+
+      const pl = data.player || {};
+      player.position.set(
+        Number.isFinite(Number(pl.x)) ? Number(pl.x) : 0,
+        Number.isFinite(Number(pl.y)) ? Number(pl.y) : 1.65,
+        Number.isFinite(Number(pl.z)) ? Number(pl.z) : (ORIGIN_Z + 13 * TILE_SIZE)
+      );
+      player.yaw = Number(pl.yaw) || 0;
+      player.pitch = Number(pl.pitch) || 0;
+      player.hasElectricJack = Boolean(pl.hasElectricJack);
+
+      const ej = data.electricJack || {};
+      jackBattery = Number.isFinite(Number(ej.battery)) ? Number(ej.battery) : 100;
+      jackDockedAtCharger = ej.dockedAtCharger !== undefined ? Boolean(ej.dockedAtCharger) : true;
+      electricJackWorld.position.set(
+        Number.isFinite(Number(ej.x)) ? Number(ej.x) : JACK_HOME_POS.x,
+        Number.isFinite(Number(ej.y)) ? Number(ej.y) : 0,
+        Number.isFinite(Number(ej.z)) ? Number(ej.z) : JACK_HOME_POS.z
+      );
+      electricJackWorld.rotation.y = Number.isFinite(Number(ej.yaw)) ? Number(ej.yaw) : JACK_HOME_POS.yaw;
+      electricJackWorld.visible = !player.hasElectricJack;
+      electricJackViewmodel.visible = player.hasElectricJack;
+
+      if (player.hasElectricJack && pl.hitchedPalletId) {
+        const hitched = pallets.find((p) => p && p.data && p.data.id === pl.hitchedPalletId);
+        if (hitched) {
+          player.hitchedPallet = hitched;
+          hitched.isHitched = true;
+          if (hitchStatusCard && typeof hitchPalletName !== 'undefined' && hitchPalletName) {
+            hitchPalletName.textContent = hitched.data.po || hitched.data.name || 'Pallet';
+            hitchStatusCard.style.display = 'flex';
+          }
+        }
+      }
+
+      camera.position.copy(player.position);
+      camera.rotation.set(player.pitch, player.yaw, 0, 'YXZ');
+      syncElectricJackBatteryVisuals();
+      syncDoorMeshesImmediate();
+      return true;
+    }
+
     if (window.DSDGame) {
       window.DSDGame.init({
         showAlert: showAlert,
@@ -4331,6 +4744,28 @@
         playDoorAlarm: () => SoundSystem.playDoorWarningAlarm(),
         playSuccessChime: () => SoundSystem.playSuccessChime(),
         playButtonClick: () => SoundSystem.playButtonClick(),
+        onNewGame: () => {
+          if (campaignStarted) {
+            resetAllForFreshCampaign();
+          }
+          campaignStarted = true;
+          DeliverySystem.startShiftArrivals(1200);
+          if (window.SaveSystem && typeof window.SaveSystem.triggerAutosave === 'function') {
+            setTimeout(() => window.SaveSystem.triggerAutosave('new_game'), 1600);
+          }
+        },
+        onMenuStateChange: (menuFlags) => {
+          const anyOverlay = Boolean(menuFlags && (menuFlags.mainMenuOpen || menuFlags.systemMenuOpen || menuFlags.saveLoadModalOpen || menuFlags.infoModalOpen || menuFlags.shiftSummaryOpen));
+          container.classList.toggle('main-menu-open', Boolean(menuFlags && menuFlags.mainMenuOpen));
+          container.classList.toggle('system-menu-open', Boolean(menuFlags && (menuFlags.systemMenuOpen || menuFlags.saveLoadModalOpen || menuFlags.infoModalOpen)));
+          if (anyOverlay && document.exitPointerLock) {
+            try { document.exitPointerLock(); } catch (_) {}
+          }
+          updateLockHintDisplay();
+          if (window.DSDMenuUI && typeof window.DSDMenuUI.syncOverlaysFromGame === 'function') {
+            window.DSDMenuUI.syncOverlaysFromGame();
+          }
+        },
         getUnfinishedWork: () => {
           const insideSessions = DeliverySystem.sessions.filter((s) => s.state !== 'LEAVING');
           const whSummary = (window.WarehouseTrucks && typeof window.WarehouseTrucks.getUnfinishedSummary === 'function')
@@ -4472,6 +4907,7 @@
         isScannerNearDelivery: () => isNearActiveDelivery(),
         isScannerFocusedOnDelivery: () => isScannerFocusedOnDelivery(),
         getHoveredBox: () => uiState.hoveredPhysicalBox,
+        getHoveredLabelCase: () => uiState.hoveredLabelCase,
         isPalletTarget: () => false,
         onDeliveryRefused: (d) => {
           DeliverySystem.handleDeliveryRefused(d);
@@ -4511,8 +4947,12 @@
         onFinalizeReceiving: () => handleFinalizeReceivingClick(),
         onCloseTerminal: () => closeTerminal(),
         onOpenTerminalScreen: (scr) => openTerminal(scr || 'menu'),
+        onToggleTerminalScreen: (scr) => toggleTerminal(scr || 'create'),
+        isTerminalOpen: () => Boolean(uiState.terminalModalOpen),
         onOpenScanner: (ctx) => openScanner(ctx),
+        onToggleScanner: (ctx) => toggleScanner(ctx),
         onCloseScanner: () => closeScanner(),
+        isScannerOpen: () => Boolean(uiState.scannerModalOpen),
         onDeskStateChanged: (info) => {
           if (!info) return;
           if (typeof invoicePaper !== 'undefined' && invoicePaper) {
@@ -4544,12 +4984,47 @@
           window.DSDReceipts.updateTerminalClock(snap);
         }
         syncCrtMonitorDisplay(snap);
+        if (window.SaveSystem && snap && snap.minute % 5 === 0) {
+          window.SaveSystem.triggerAutosave('minute_5');
+        }
       });
     }
     renderPendingDeliveriesPanel();
     updateStagedCounter();
 
-    DeliverySystem.init();
+    if (window.SaveSystem && typeof window.SaveSystem.init === 'function') {
+      window.SaveSystem.init({
+        canAutosave: () => Boolean(
+          campaignStarted &&
+          window.DSDGame &&
+          (!window.DSDGame.isMainMenuOpen || !window.DSDGame.isMainMenuOpen()) &&
+          (!window.DSDGame.isShiftSummaryOpen || !window.DSDGame.isShiftSummaryOpen()) &&
+          (!window.ShiftClock || !window.ShiftClock.isShiftOver())
+        ),
+        exportWorldState: exportWorldState,
+        importWorldState: importWorldState,
+        exportDeliveryState: () => DeliverySystem.exportState(),
+        importDeliveryState: (dState) => DeliverySystem.importState(dState),
+        relinkPallets: () => {
+          if (window.WarehouseTrucks && typeof window.WarehouseTrucks.relinkSpawnedPallets === 'function') {
+            window.WarehouseTrucks.relinkSpawnedPallets(pallets);
+          }
+        },
+        onAfterLoad: () => {
+          campaignStarted = true;
+          updateStagedCounter();
+          renderPendingDeliveriesPanel();
+          syncCrtMonitorDisplay();
+          updateLockHintDisplay();
+          showNotification('📂 Shift progress loaded!', 3200);
+        }
+      });
+    }
+
+    if (window.DSDMenuUI && typeof window.DSDMenuUI.init === 'function') {
+      window.DSDMenuUI.init();
+    }
+    container.classList.toggle('main-menu-open', Boolean(window.DSDGame && window.DSDGame.isMainMenuOpen && window.DSDGame.isMainMenuOpen()));
     syncCrtMonitorDisplay();
 
     requestAnimationFrame((now) => {

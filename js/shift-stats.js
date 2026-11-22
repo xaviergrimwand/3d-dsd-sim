@@ -266,6 +266,37 @@
     };
   }
 
+  function exportState() {
+    return {
+      stats: Object.assign({}, stats),
+      receiptCounters: Object.assign({}, receiptCounters)
+    };
+  }
+
+  function importState(data) {
+    if (!data || typeof data !== 'object') return false;
+    const empty = createEmptyStats();
+    const srcStats = (data.stats && typeof data.stats === 'object') ? data.stats : {};
+    Object.keys(empty).forEach((k) => {
+      if (typeof empty[k] === 'boolean') {
+        empty[k] = Boolean(srcStats[k]);
+      } else {
+        empty[k] = Number.isFinite(Number(srcStats[k])) ? Number(srcStats[k]) : empty[k];
+      }
+    });
+    stats = empty;
+    receiptCounters = {};
+    if (data.receiptCounters && typeof data.receiptCounters === 'object') {
+      Object.keys(data.receiptCounters).forEach((deptKey) => {
+        const val = parseInt(data.receiptCounters[deptKey], 10);
+        if (!Number.isNaN(val) && val >= 0) {
+          receiptCounters[String(deptKey)] = val;
+        }
+      });
+    }
+    return true;
+  }
+
   global.ShiftStats = {
     generateReceiptNumber: generateReceiptNumber,
     resetDailyStats: resetDailyStats,
@@ -274,7 +305,9 @@
     getStats: getStats,
     getLiveScore: getLiveScore,
     evaluateRank: evaluateRank,
-    computeShiftSummary: computeShiftSummary
+    computeShiftSummary: computeShiftSummary,
+    exportState: exportState,
+    importState: importState
   };
 })(window);
 

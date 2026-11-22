@@ -1538,11 +1538,20 @@
 
     deskGroup.add(pedestal);
 
-    // South Side Desk Legs & Kneehole Open Space
-    [[-0.55, 0.98], [0.55, 0.98]].forEach(lp => {
+    // Desk Corner Legs (South Kneehole Side + North File Cabinet Side)
+    [[-0.55, 0.98], [0.55, 0.98], [-0.55, -1.00], [0.55, -1.00]].forEach(lp => {
       const leg = new THREE.Mesh(new THREE.BoxGeometry(0.09, 1.01, 0.09), woodMat);
       leg.position.set(lp[0], 0.505, lp[1]);
+      leg.userData.isDeskLeg = true;
       deskGroup.add(leg);
+    });
+
+    // Inner Pedestal Cabinet Floor Support Feet (prevents floating 4cm gap on kneehole side)
+    [[-0.52, -0.31], [0.52, -0.31]].forEach(fp => {
+      const foot = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.05, 0.08), woodMat);
+      foot.position.set(fp[0], 0.025, fp[1]);
+      foot.userData.isDeskLeg = true;
+      deskGroup.add(foot);
     });
 
     // Rear Kneehole Modesty Panel
