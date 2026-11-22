@@ -149,11 +149,78 @@
 
     const camera = new THREE.PerspectiveCamera(72, window.innerWidth / window.innerHeight, 0.1, 1000);
 
-    const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+    const GFX_STORAGE_KEY = 'dsd_sim_gfx_v1';
+    const gfxSettings = { quality: 'balanced', showFps: false };
+    try {
+      const savedGfx = global.localStorage && global.localStorage.getItem(GFX_STORAGE_KEY);
+      if (savedGfx) {
+        const parsedGfx = JSON.parse(savedGfx);
+        if (parsedGfx && ['fast', 'balanced', 'high'].includes(parsedGfx.quality)) {
+          gfxSettings.quality = parsedGfx.quality;
+        }
+        if (parsedGfx && typeof parsedGfx.showFps === 'boolean') {
+          gfxSettings.showFps = parsedGfx.showFps;
+        }
+      }
+    } catch (_) { }
+
+    function saveGfxSettings() {
+      try {
+        if (global.localStorage) {
+          global.localStorage.setItem(GFX_STORAGE_KEY, JSON.stringify(gfxSettings));
+        }
+      } catch (_) { }
+    }
+
+    function getTargetPixelRatio() {
+      const dpr = window.devicePixelRatio || 1;
+      if (gfxSettings.quality === 'fast') return 1;
+      if (gfxSettings.quality === 'high') return Math.min(dpr, 1.5);
+      return Math.min(dpr, 1.25);
+    }
+
+    const renderer = new THREE.WebGLRenderer({
+      antialias: gfxSettings.quality !== 'fast',
+      powerPreference: 'high-performance'
+    });
+    renderer.setPixelRatio(getTargetPixelRatio());
     renderer.setSize(window.innerWidth, window.innerHeight);
     renderer.shadowMap.enabled = false;
     container.appendChild(renderer.domElement);
+
+    const liveFpsEl = document.createElement('div');
+    liveFpsEl.id = 'live-fps-hud';
+    liveFpsEl.style.display = gfxSettings.showFps ? 'block' : 'none';
+    container.appendChild(liveFpsEl);
+
+    const fpsMetrics = { fps: 0, avgMs: 16.7 };
+    let fpsFrameCount = 0;
+    let fpsWorkAccumMs = 0;
+    let fpsWindowStartMs = performance.now();
+
+    global.DSDGraphics = {
+      getSettings: () => Object.assign({}, gfxSettings),
+      getMetrics: () => Object.assign({}, fpsMetrics),
+      setQuality: (q) => {
+        if (!['fast', 'balanced', 'high'].includes(q)) return gfxSettings;
+        gfxSettings.quality = q;
+        saveGfxSettings();
+        renderer.setPixelRatio(getTargetPixelRatio());
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        return gfxSettings;
+      },
+      cycleQuality: () => {
+        const order = ['balanced', 'fast', 'high'];
+        const next = order[(order.indexOf(gfxSettings.quality) + 1) % order.length];
+        return global.DSDGraphics.setQuality(next);
+      },
+      toggleFpsHud: () => {
+        gfxSettings.showFps = !gfxSettings.showFps;
+        saveGfxSettings();
+        liveFpsEl.style.display = gfxSettings.showFps ? 'block' : 'none';
+        return gfxSettings.showFps;
+      }
+    };
 
     const world = global.WarehouseWorld.buildFacilityScene(scene, {
       onOpenTerminal: () => openTerminal(),
@@ -321,16 +388,22 @@
 
     let jackBattery = 100;
     let jackDockedAtCharger = true;
+    let lastJackGaugeSyncMs = -1;
 
-    function syncElectricJackBatteryVisuals(nowMs) {
-      if (electricJackViewmodel && typeof electricJackViewmodel.updateBatteryGauge === 'function') {
+    function syncElectricJackBatteryVisuals(nowMs, forceSync) {
+      const nowTick = nowMs || performance.now();
+      if (!forceSync && lastJackGaugeSyncMs >= 0 && (nowTick - lastJackGaugeSyncMs) < 160) {
+        return;
+      }
+      lastJackGaugeSyncMs = nowTick;
+      if (electricJackViewmodel && electricJackViewmodel.visible && typeof electricJackViewmodel.updateBatteryGauge === 'function') {
         electricJackViewmodel.updateBatteryGauge(jackBattery);
       }
-      if (electricJackWorld && typeof electricJackWorld.updateBatteryGauge === 'function') {
+      if (electricJackWorld && electricJackWorld.visible && typeof electricJackWorld.updateBatteryGauge === 'function') {
         electricJackWorld.updateBatteryGauge(jackBattery);
       }
       if (batteryCharger) {
-        const blinkOn = Math.floor((nowMs || performance.now()) / 550) % 2 === 0;
+        const blinkOn = Math.floor(nowTick / 550) % 2 === 0;
         batteryCharger.update({
           docked: jackDockedAtCharger,
           batteryPct: jackDockedAtCharger ? jackBattery : 0,
@@ -1784,6 +1857,37 @@
 
     scene.add(focusHighlightGroup);
 
+    const reticle = document.getElementById('reticle');
+    const boxHoverPill = document.getElementById('box-hover-pill');
+
+    function setElDisp(el, disp) {
+      if (el && el.style.display !== disp) {
+        el.style.display = disp;
+      }
+    }
+
+    function setElText(el, txt) {
+      if (el && el.textContent !== txt) {
+        el.textContent = txt;
+      }
+    }
+
+    function setReticleActive(active) {
+      const flag = Boolean(active);
+      if (reticle && reticle.classList && reticle.classList.contains('active') !== flag) {
+        reticle.classList.toggle('active', flag);
+      }
+    }
+
+    function hideOtherPrompts(exceptEl) {
+      if (exceptEl !== promptDoor) setElDisp(promptDoor, 'none');
+      if (exceptEl !== promptSideDoor) setElDisp(promptSideDoor, 'none');
+      if (exceptEl !== promptTerminal) setElDisp(promptTerminal, 'none');
+      if (exceptEl !== promptDesk) setElDisp(promptDesk, 'none');
+      if (exceptEl !== promptPallet) setElDisp(promptPallet, 'none');
+      if (exceptEl !== promptDriver) setElDisp(promptDriver, 'none');
+    }
+
     function updateNearbyInteractions(dt) {
       if (lookTouchId !== null && lookTouchMaxMove < 10) {
         lookTouchHeldMs += (dt || 0.016) * 1000;
@@ -2125,16 +2229,15 @@
         window.BackstockRacks.hideGhostPreview();
       }
 
-      if (renderer && renderer.domElement) {
-        renderer.domElement.style.cursor = (uiState.hoveredPhysicalBox || uiState.hoveredInventoryCase || uiState.hoveredSupplyCase || uiState.hoveredBackstockCase || uiState.hoveredBackstockTarget || uiState.hoveredClaimsTote || uiState.hoveredClaimsItem || uiState.hoveredClaimsReceptacle || uiState.hoveredRecallItem || uiState.hoveredRecallTote || uiState.hoveredRecallBottomDock || uiState.hoveredRecallArrangeSpot) ? 'pointer' : '';
+      const nextCursor = (uiState.hoveredPhysicalBox || uiState.hoveredInventoryCase || uiState.hoveredSupplyCase || uiState.hoveredBackstockCase || uiState.hoveredBackstockTarget || uiState.hoveredClaimsTote || uiState.hoveredClaimsItem || uiState.hoveredClaimsReceptacle || uiState.hoveredRecallItem || uiState.hoveredRecallTote || uiState.hoveredRecallBottomDock || uiState.hoveredRecallArrangeSpot) ? 'pointer' : '';
+      if (renderer && renderer.domElement && lastCanvasCursor !== nextCursor) {
+        lastCanvasCursor = nextCursor;
+        renderer.domElement.style.cursor = nextCursor;
       }
 
       // 2. Pulse Animation: Oscillating old-school CRT green phosphor glow
       const now = performance.now() * 0.007; // ~1.1 Hz pulse
       const pulse = 0.32 + 0.18 * Math.sin(now); // sweeps smoothly between 0.14 and 0.50
-
-      const reticle = document.getElementById('reticle');
-      const boxHoverPill = document.getElementById('box-hover-pill');
 
       if (!uiState.hoveredClaimsTote && !(uiState.hoveredClaimsReceptacle && uiState.hoveredClaimsReceptacle.toteRec) && window.ClaimsTotes && typeof window.ClaimsTotes.setHoveredTote === 'function') {
         window.ClaimsTotes.setHoveredTote(null, 0);
@@ -2710,7 +2813,7 @@
           boxHoverPill.textContent = '🧺 [E / CLICK] PICK UP RECALL TOTE';
         }
       } else if (focusedInteractible) {
-        if (boxHoverPill) boxHoverPill.style.display = 'none';
+        setElDisp(boxHoverPill, 'none');
         focusHighlightGroup.visible = true;
         if (focusedInteractible.boxQuaternion) {
           focusHighlightGroup.quaternion.copy(focusedInteractible.boxQuaternion);
@@ -2727,24 +2830,16 @@
         crtWireMat.opacity = Math.min(1.0, pulse + 0.35);
         crtEdgeMat.opacity = Math.min(1.0, pulse + 0.45);
 
-        reticle.classList.add('active');
+        setReticleActive(true);
 
         if (focusedInteractible.type === 'dock_button' || focusedInteractible.type === 'side_door_button') {
-          promptDoor.style.display = 'block';
-          promptDoor.textContent = focusedInteractible.getPrompt();
-          promptSideDoor.style.display = 'none';
-          promptTerminal.style.display = 'none';
-          promptDesk.style.display = 'none';
-          promptPallet.style.display = 'none';
-          promptDriver.style.display = 'none';
+          setElDisp(promptDoor, 'block');
+          setElText(promptDoor, focusedInteractible.getPrompt());
+          hideOtherPrompts(promptDoor);
         } else if (focusedInteractible.type === 'terminal') {
-          promptTerminal.style.display = 'block';
-          promptTerminal.textContent = focusedInteractible.getPrompt();
-          promptDoor.style.display = 'none';
-          promptSideDoor.style.display = 'none';
-          promptDesk.style.display = 'none';
-          promptPallet.style.display = 'none';
-          promptDriver.style.display = 'none';
+          setElDisp(promptTerminal, 'block');
+          setElText(promptTerminal, focusedInteractible.getPrompt());
+          hideOtherPrompts(promptTerminal);
         } else if (
           focusedInteractible.type === 'desk_papers' ||
           focusedInteractible.type === 'filing_folder' ||
@@ -2752,76 +2847,75 @@
           focusedInteractible.type === 'printer' ||
           focusedInteractible.type === 'trash_can'
         ) {
-          promptDesk.style.display = 'block';
-          promptDesk.textContent = focusedInteractible.getPrompt();
-          promptDoor.style.display = 'none';
-          promptSideDoor.style.display = 'none';
-          promptTerminal.style.display = 'none';
-          promptPallet.style.display = 'none';
-          promptDriver.style.display = 'none';
+          setElDisp(promptDesk, 'block');
+          setElText(promptDesk, focusedInteractible.getPrompt());
+          hideOtherPrompts(promptDesk);
         } else if (focusedInteractible.type === 'driver') {
-          promptDriver.style.display = 'block';
-          promptDriver.textContent = focusedInteractible.getPrompt();
-          promptDoor.style.display = 'none';
-          promptSideDoor.style.display = 'none';
-          promptTerminal.style.display = 'none';
-          promptDesk.style.display = 'none';
-          promptPallet.style.display = 'none';
+          setElDisp(promptDriver, 'block');
+          setElText(promptDriver, focusedInteractible.getPrompt());
+          hideOtherPrompts(promptDriver);
         } else if (focusedInteractible.type === 'electric_jack') {
-          promptPallet.style.display = 'block';
-          promptPallet.textContent = focusedInteractible.getPrompt();
-          promptDoor.style.display = 'none';
-          promptSideDoor.style.display = 'none';
-          promptTerminal.style.display = 'none';
-          promptDesk.style.display = 'none';
-          promptDriver.style.display = 'none';
+          setElDisp(promptPallet, 'block');
+          setElText(promptPallet, focusedInteractible.getPrompt());
+          hideOtherPrompts(promptPallet);
         } else if (focusedInteractible.type === 'pallet') {
-          promptPallet.style.display = 'block';
-          if (!player.hasElectricJack) {
-            promptPallet.textContent = '[Space] Electric Jack Required to Move Pallet';
-          } else {
-            promptPallet.textContent = focusedInteractible.getPrompt();
-          }
-          promptDoor.style.display = 'none';
-          promptSideDoor.style.display = 'none';
-          promptTerminal.style.display = 'none';
-          promptDesk.style.display = 'none';
-          promptDriver.style.display = 'none';
+          setElDisp(promptPallet, 'block');
+          setElText(
+            promptPallet,
+            !player.hasElectricJack ? '[Space] Electric Jack Required to Move Pallet' : focusedInteractible.getPrompt()
+          );
+          hideOtherPrompts(promptPallet);
         }
       } else {
-        if (boxHoverPill) boxHoverPill.style.display = 'none';
+        setElDisp(boxHoverPill, 'none');
         focusHighlightGroup.visible = false;
-        promptDoor.style.display = 'none';
-        promptSideDoor.style.display = 'none';
-        promptTerminal.style.display = 'none';
-        promptDesk.style.display = 'none';
-        promptDriver.style.display = 'none';
 
         if (carryingBackstock) {
           const held = window.BackstockRacks.getHeldCase();
-          reticle.classList.remove('active');
-          promptPallet.style.display = 'block';
-          promptPallet.textContent = `📦 Carrying: ${held ? held.name : 'Case'} (${held ? held.unitsPerCase + 'u' : ''}) — Aim at Steel Shelf & Click / [E] to Place`;
+          setReticleActive(false);
+          hideOtherPrompts(promptPallet);
+          setElDisp(promptPallet, 'block');
+          setElText(promptPallet, `📦 Carrying: ${held ? held.name : 'Case'} (${held ? held.unitsPerCase + 'u' : ''}) — Aim at Steel Shelf & Click / [E] to Place`);
         } else if (player.hitchedPallet) {
-          reticle.classList.add('active');
-          promptPallet.style.display = 'block';
-          promptPallet.textContent = `[Space] Lower & Drop Pallet (${player.hitchedPallet.data.po})`;
+          setReticleActive(true);
+          hideOtherPrompts(promptPallet);
+          setElDisp(promptPallet, 'block');
+          setElText(promptPallet, `[Space] Lower & Drop Pallet (${player.hitchedPallet.data.po})`);
         } else if (player.hasElectricJack) {
-          reticle.classList.remove('active');
-          promptPallet.style.display = 'block';
-          promptPallet.textContent = '[Space] Drop / Park Electric Jack';
+          setReticleActive(false);
+          hideOtherPrompts(promptPallet);
+          setElDisp(promptPallet, 'block');
+          setElText(promptPallet, '[Space] Drop / Park Electric Jack');
         } else {
-          reticle.classList.remove('active');
-          promptPallet.style.display = 'none';
+          setReticleActive(false);
+          hideOtherPrompts(null);
         }
       }
 
       // Action button stack: Scanner [F] on all devices; context action buttons (Use / Jack / Scan) on touch devices only
       if (mobileBtnDock) {
+        const setBtnState = (el, label) => {
+          if (!el) return;
+          const d = label ? 'inline-flex' : 'none';
+          if (el._lastDisp !== d) {
+            el._lastDisp = d;
+            el.style.display = d;
+          }
+          if (label && el._lastTxt !== label) {
+            el._lastTxt = label;
+            el.textContent = label;
+          }
+        };
         if (isBlockingModalOpen()) {
-          mobileBtnDock.style.display = 'none';
+          if (mobileBtnDock._lastDisp !== 'none') {
+            mobileBtnDock._lastDisp = 'none';
+            mobileBtnDock.style.display = 'none';
+          }
         } else {
-          mobileBtnDock.style.display = 'flex';
+          if (mobileBtnDock._lastDisp !== 'flex') {
+            mobileBtnDock._lastDisp = 'flex';
+            mobileBtnDock.style.display = 'flex';
+          }
           let useLabel = '';
           let jackLabel = '';
           let caseScanLabel = '';
@@ -2962,22 +3056,10 @@
             scanLabel = uiState.scannerModalOpen ? 'Close Scan' : 'Scanner';
           }
 
-          if (btnTouchDoor) {
-            btnTouchDoor.style.display = useLabel ? 'inline-flex' : 'none';
-            if (useLabel) btnTouchDoor.textContent = useLabel;
-          }
-          if (btnTouchAction) {
-            btnTouchAction.style.display = jackLabel ? 'inline-flex' : 'none';
-            if (jackLabel) btnTouchAction.textContent = jackLabel;
-          }
-          if (btnTouchCaseScan) {
-            btnTouchCaseScan.style.display = caseScanLabel ? 'inline-flex' : 'none';
-            if (caseScanLabel) btnTouchCaseScan.textContent = caseScanLabel;
-          }
-          if (btnTouchScan) {
-            btnTouchScan.style.display = scanLabel ? 'inline-flex' : 'none';
-            if (scanLabel) btnTouchScan.textContent = scanLabel;
-          }
+          setBtnState(btnTouchDoor, useLabel);
+          setBtnState(btnTouchAction, jackLabel);
+          setBtnState(btnTouchCaseScan, caseScanLabel);
+          setBtnState(btnTouchScan, scanLabel);
         }
       }
 
@@ -2997,10 +3079,13 @@
         }
 
         // Cosine ease-in-out for realistic motor start, steady travel, and braking
-        const easedProg = 0.5 - 0.5 * Math.cos(dd.currentProgress * Math.PI);
-        const openOffset = easedProg * (doorHeight - 0.2);
-        dd.curtainMesh.position.y = doorHeight / 2 + openOffset;
-        dd.curtainMesh.scale.y = Math.max(0.05, 1 - easedProg * 0.95);
+        if (dd._lastCurtainProg !== dd.currentProgress) {
+          dd._lastCurtainProg = dd.currentProgress;
+          const easedProg = 0.5 - 0.5 * Math.cos(dd.currentProgress * Math.PI);
+          const openOffset = easedProg * (doorHeight - 0.2);
+          dd.curtainMesh.position.y = doorHeight / 2 + openOffset;
+          dd.curtainMesh.scale.y = Math.max(0.05, 1 - easedProg * 0.95);
+        }
 
         // Sync 3D trailer & semi cab variant visibility strictly with docked state
         if (dd.trailerGroup) {
@@ -3058,7 +3143,8 @@
         } else if (dd.trailerDoorProgress > targetTrailerProg) {
           dd.trailerDoorProgress = Math.max(targetTrailerProg, dd.trailerDoorProgress - (dt / 1.4));
         }
-        if (dd.trailerDoorCurtain) {
+        if (dd.trailerDoorCurtain && dd._lastTrailerCurtainProg !== dd.trailerDoorProgress) {
+          dd._lastTrailerCurtainProg = dd.trailerDoorProgress;
           const tH = dd.trailerDoorH || (doorHeight - 0.14);
           const easedTD = 0.5 - 0.5 * Math.cos(dd.trailerDoorProgress * Math.PI);
           dd.trailerDoorCurtain.position.y = tH / 2 + easedTD * (tH - 0.25);
@@ -3075,8 +3161,15 @@
         }
 
         // Any docked trailer or remaining bay pallets keeps the dock active (never an empty-door red warning)
-        const uncollectedPallets = pallets.filter(p => p.data.truck === dd.id && p.data.status === 'UNLOADED');
-        if ((dd.hasTrailer || uncollectedPallets.length > 0) && !bayHasDriverPresent) {
+        let hasUncollectedPallet = false;
+        for (let pi = 0; pi < pallets.length; pi++) {
+          const p = pallets[pi];
+          if (p && p.data && p.data.truck === dd.id && p.data.status === 'UNLOADED') {
+            hasUncollectedPallet = true;
+            break;
+          }
+        }
+        if ((dd.hasTrailer || hasUncollectedPallet) && !bayHasDriverPresent) {
           bayHasTruckWaiting = true;
         }
         const bayHasDeliveryOrTrailer = Boolean(dd.hasTrailer || bayHasDriverPresent || bayHasTruckWaiting);
@@ -3134,22 +3227,19 @@
         sideRollupDoor.currentProgress = Math.max(targetSideProg, sideRollupDoor.currentProgress - (dt / SIDE_DOOR_DURATION));
       }
 
-      const easedSideProg = 0.5 - 0.5 * Math.cos(sideRollupDoor.currentProgress * Math.PI);
-      const sideOpenOffset = easedSideProg * (sideRollupDoor.height - 0.2);
-      sideRollupDoor.curtainMesh.position.y = sideRollupDoor.height / 2 + sideOpenOffset;
-      sideRollupDoor.curtainMesh.scale.y = Math.max(0.05, 1 - easedSideProg * 0.95);
+      if (sideRollupDoor._lastCurtainProg !== sideRollupDoor.currentProgress) {
+        sideRollupDoor._lastCurtainProg = sideRollupDoor.currentProgress;
+        const easedSideProg = 0.5 - 0.5 * Math.cos(sideRollupDoor.currentProgress * Math.PI);
+        const sideOpenOffset = easedSideProg * (sideRollupDoor.height - 0.2);
+        sideRollupDoor.curtainMesh.position.y = sideRollupDoor.height / 2 + sideOpenOffset;
+        sideRollupDoor.curtainMesh.scale.y = Math.max(0.05, 1 - easedSideProg * 0.95);
+      }
 
-      const sideHasVendorWaiting = (
-        typeof DeliverySystem !== 'undefined' &&
-        DeliverySystem &&
-        DeliverySystem.getWaitingOutsideSessions().length > 0
-      );
-
-      const sideHasDriverWaitingExit = (
-        typeof DeliverySystem !== 'undefined' &&
-        DeliverySystem &&
-        DeliverySystem.getWaitingExitSessions().length > 0
-      );
+      const dsSessions = (typeof DeliverySystem !== 'undefined' && DeliverySystem && Array.isArray(DeliverySystem.sessions))
+        ? DeliverySystem.sessions
+        : null;
+      const sideHasVendorWaiting = Boolean(dsSessions && dsSessions.some((s) => s && s.state === 'OUTSIDE_WAITING'));
+      const sideHasDriverWaitingExit = Boolean(dsSessions && dsSessions.some((s) => s && s.state === 'WAITING_EXIT'));
 
       const sideHasDriverPresent = (
         typeof DeliverySystem !== 'undefined' &&
@@ -3209,14 +3299,17 @@
       }
 
       function applyLensLitState(lens, halo, lit, litHex, dimHex) {
+        const isLit = Boolean(lit);
+        if (lens && lens._lastLit === isLit) return;
+        if (lens) lens._lastLit = isLit;
         if (lens && lens.material) {
-          if (lens.material.color) lens.material.color.setHex(lit ? litHex : dimHex);
+          if (lens.material.color) lens.material.color.setHex(isLit ? litHex : dimHex);
           if (lens.material.emissive && typeof lens.material.emissive.setHex === 'function') {
-            lens.material.emissive.setHex(lit ? litHex : 0x000000);
+            lens.material.emissive.setHex(isLit ? litHex : 0x000000);
           }
-          lens.material.emissiveIntensity = lit ? 1.65 : 0;
+          lens.material.emissiveIntensity = isLit ? 1.65 : 0;
         }
-        if (halo) halo.visible = Boolean(lit);
+        if (halo) halo.visible = isLit;
       }
 
       function setBeaconSignals(doorObj, activeChannel, isLit, beaconHex) {
@@ -3411,7 +3504,7 @@
       jackDockedAtCharger = false;
       electricJackWorld.visible = false;
       electricJackViewmodel.visible = true;
-      syncElectricJackBatteryVisuals();
+      syncElectricJackBatteryVisuals(undefined, true);
       SoundSystem.playHydraulicLift();
       showNotification('⚡ Operating Electric Pallet Jack — Move with WASD, [Space] to Hitch Pallet or Drop Jack');
     }
@@ -3491,8 +3584,9 @@
           }
         }
 
-        syncElectricJackBatteryVisuals();
-        SoundSystem.playDropSound();
+        syncElectricJackBatteryVisuals(undefined, true);
+        if (SoundSystem.playChargerPlug) SoundSystem.playChargerPlug();
+        else SoundSystem.playDropSound();
         const displayPct = jackBattery >= 99.99 ? 100 : Math.max(0, Math.min(99, Math.floor(jackBattery)));
         if (displayPct < 100) {
           showNotification(`⚡ Electric Pallet Jack plugged in & charging (${displayPct}%)`);
@@ -3548,7 +3642,7 @@
       electricJackWorld.rotation.y = dropYaw;
       electricJackWorld.visible = true;
       jackDockedAtCharger = false;
-      syncElectricJackBatteryVisuals();
+      syncElectricJackBatteryVisuals(undefined, true);
 
       SoundSystem.playDropSound();
       showNotification('⚡ Electric Pallet Jack parked');
@@ -3641,6 +3735,7 @@
       hitchStatusCard.style.display = 'flex';
       hitchPalletName.textContent = pallet.data.name;
       jackBattery = Math.max(5, jackBattery - 0.2);
+      if (SoundSystem.playHitchSound) SoundSystem.playHitchSound();
       SoundSystem.playHydraulicLift();
       showNotification(`⚡ Hitched ${pallet.data.po}: ${pallet.data.name} (Forks raised)`);
     }
@@ -4077,7 +4172,8 @@
         window.DSDReceipts.openTerminalScreen(initialScreen || 'menu');
       }
       syncPhase2ContainerClasses();
-      SoundSystem.playScanBeep();
+      if (SoundSystem.playKeypadBeep) SoundSystem.playKeypadBeep('terminal');
+      else SoundSystem.playButtonClick();
     }
 
     function closeTerminal(silent) {
@@ -4250,10 +4346,28 @@
     // --- PLAYER & PALLET UPDATE LOOP ---
     const VIEWMODEL_BASE_Y = -0.32;
     let viewmodelBob = 0;
-    let lastMotorHumTime = 0;
+    let wasAudioPaused = true;
+
+    function resolvePlayerAudioZone() {
+      const g = worldToGrid(player.position.x, player.position.z);
+      const t = getTileType(g.col, g.row);
+      if (t === 'F') return 'freezer';
+      if (t === 'C') return 'cooler';
+      if (t === 'H') return 'hallway';
+      if (t === 'T' || player.position.z < doorZ) return 'trailer';
+      return 'dock';
+    }
 
     function updatePlayer(dt) {
-      if (isBlockingModalOpen()) return;
+      const sysPaused = Boolean(window.DSDGame && typeof window.DSDGame.isSystemPaused === 'function' && window.DSDGame.isSystemPaused());
+      if (sysPaused || isBlockingModalOpen()) {
+        if (!wasAudioPaused && SoundSystem && typeof SoundSystem.stopAmbientLoops === 'function') {
+          SoundSystem.stopAmbientLoops();
+        }
+        wasAudioPaused = true;
+        return;
+      }
+      wasAudioPaused = false;
 
       let forwardInput = 0;
       let strafeInput = 0;
@@ -4304,51 +4418,63 @@
           viewmodelBob += dt * currentSpeed * 6.5;
           electricJackViewmodel.position.y = VIEWMODEL_BASE_Y + Math.sin(viewmodelBob) * 0.012;
           electricJackViewmodel.position.x = Math.cos(viewmodelBob * 0.5) * 0.008;
-
-          if (performance.now() - lastMotorHumTime > 240) {
-            SoundSystem.playElectricHum();
-            lastMotorHumTime = performance.now();
-          }
         } else {
           electricJackViewmodel.position.y = VIEWMODEL_BASE_Y;
           electricJackViewmodel.position.x = 0;
         }
       }
 
+      if (SoundSystem && typeof SoundSystem.updateMotionAudio === 'function') {
+        SoundSystem.updateMotionAudio(dt, {
+          paused: false,
+          moving: inputLen > 0.01,
+          speed: currentSpeed * inputLen,
+          hasElectricJack: player.hasElectricJack,
+          hitchedPallet: Boolean(player.hitchedPallet),
+          zone: resolvePlayerAudioZone()
+        });
+      }
+
       positionHitchedPallet();
 
       camera.position.copy(player.position);
-      const euler = new THREE.Euler(player.pitch, player.yaw, 0, 'YXZ');
-      camera.quaternion.setFromEuler(euler);
+      if (playerEuler) {
+        playerEuler.set(player.pitch, player.yaw, 0, 'YXZ');
+        camera.quaternion.setFromEuler(playerEuler);
+      } else {
+        const euler = new THREE.Euler(player.pitch, player.yaw, 0, 'YXZ');
+        camera.quaternion.setFromEuler(euler);
+      }
     }
 
     // --- MINIMAP RENDERING ---
-    function renderMinimap() {
-      const cw = minimapCanvas.width;
-      const ch = minimapCanvas.height;
+    let minimapBgCanvas = null;
+    let minimapBgKey = '';
+    let lastMinimapDrawMs = -1;
+    let lastDoorLightsSyncMs = -1;
+    let lastHudSyncMs = -1;
+    let lastCanvasCursor = '';
+    const playerEuler = (typeof THREE.Euler === 'function') ? new THREE.Euler(0, 0, 0, 'YXZ') : null;
+
+    function buildMinimapStaticBg(cw, ch) {
+      if (!minimapBgCanvas) {
+        minimapBgCanvas = document.createElement('canvas');
+      }
+      if (minimapBgCanvas.width !== cw) minimapBgCanvas.width = cw;
+      if (minimapBgCanvas.height !== ch) minimapBgCanvas.height = ch;
+      const bgCtx = minimapBgCanvas.getContext('2d');
+      if (!bgCtx) return;
+
       const cellW = cw / COLS;
       const cellH = ch / ROWS;
-
-      minimapCtx.clearRect(0, 0, cw, ch);
+      bgCtx.clearRect(0, 0, cw, ch);
 
       for (let r = 0; r < ROWS; r++) {
         for (let c = 0; c < COLS; c++) {
           const type = DOCK_LAYOUT[r].charAt(c);
           if (r < 10) {
-            const bay = dockDoors.find((dd) => c >= dd.colStart && c <= dd.colEnd);
-            const trailerRows = (bay && bay.trailerType === 'vendor_truck') ? 6 : 10;
-            const startRow = 10 - trailerRows;
-            if (bay && bay.hasTrailer && r >= startRow) {
-              minimapCtx.fillStyle = '#9c6644';
-              minimapCtx.fillRect(c * cellW, r * cellH, cellW, cellH);
-              minimapCtx.strokeStyle = 'rgba(0, 0, 0, 0.25)';
-              minimapCtx.lineWidth = 0.5;
-              minimapCtx.strokeRect(c * cellW, r * cellH, cellW, cellH);
-            } else {
-              // Empty outdoor yard (no trailer docked at this bay/row)
-              minimapCtx.fillStyle = '#0f172a';
-              minimapCtx.fillRect(c * cellW, r * cellH, cellW, cellH);
-            }
+            bgCtx.fillStyle = '#0f172a';
+            bgCtx.fillRect(c * cellW, r * cellH, cellW, cellH);
             continue;
           }
 
@@ -4358,32 +4484,74 @@
           else if (type === 'F') color = '#0284c7';
           else if (type === 'C') color = '#7dd3fc';
 
-          minimapCtx.fillStyle = color;
-          minimapCtx.fillRect(c * cellW, r * cellH, cellW, cellH);
-
-          minimapCtx.strokeStyle = 'rgba(0, 0, 0, 0.22)';
-          minimapCtx.lineWidth = 0.5;
-          minimapCtx.strokeRect(c * cellW, r * cellH, cellW, cellH);
+          bgCtx.fillStyle = color;
+          bgCtx.fillRect(c * cellW, r * cellH, cellW, cellH);
+          bgCtx.strokeStyle = 'rgba(0, 0, 0, 0.22)';
+          bgCtx.lineWidth = 0.5;
+          bgCtx.strokeRect(c * cellW, r * cellH, cellW, cellH);
         }
       }
 
-      // Outline docked trailers cleanly (10 rows for warehouse, 6 rows for vendor) and draw North headwall along row 10
+      bgCtx.fillStyle = '#dc2626';
+      bgCtx.fillRect(0, 10 * cellH - 1.5, cw, 2);
+
+      if (Array.isArray(steelRacks)) {
+        const totalWorldW = COLS * TILE_SIZE;
+        const totalWorldH = ROWS * TILE_SIZE;
+        steelRacks.forEach((rk) => {
+          const b = rk.bounds;
+          const rx = ((b.minX - ORIGIN_X) / totalWorldW) * cw;
+          const rz = ((b.minZ - ORIGIN_Z) / totalWorldH) * ch;
+          const rw = ((b.maxX - b.minX) / totalWorldW) * cw;
+          const rh = ((b.maxZ - b.minZ) / totalWorldH) * ch;
+          bgCtx.fillStyle = 'rgba(15, 23, 42, 0.72)';
+          bgCtx.fillRect(rx, rz, rw, rh);
+          bgCtx.strokeStyle = rk.accentCss || '#ea580c';
+          bgCtx.lineWidth = 1.2;
+          bgCtx.strokeRect(rx + 0.5, rz + 0.5, Math.max(2, rw - 1), Math.max(2, rh - 1));
+        });
+      }
+      minimapBgKey = `${cw}x${ch}`;
+    }
+
+    function renderMinimap() {
+      const cw = minimapCanvas.width;
+      const ch = minimapCanvas.height;
+      const cellW = cw / COLS;
+      const cellH = ch / ROWS;
+
+      if (!minimapBgCanvas || minimapBgKey !== `${cw}x${ch}`) {
+        buildMinimapStaticBg(cw, ch);
+      }
+
+      minimapCtx.clearRect(0, 0, cw, ch);
+      if (minimapBgCanvas) {
+        minimapCtx.drawImage(minimapBgCanvas, 0, 0);
+      }
+
+      // Draw docked trailers in rows 0..9 + outline
       dockDoors.forEach((dd) => {
         if (dd.hasTrailer) {
           const trailerRows = (dd.trailerType === 'vendor_truck') ? 6 : 10;
           const startRow = 10 - trailerRows;
+          const rx = dd.colStart * cellW;
+          const ry = startRow * cellH;
+          const rw = 2 * cellW;
+          const rh = trailerRows * cellH;
+          minimapCtx.fillStyle = '#9c6644';
+          minimapCtx.fillRect(rx, ry, rw, rh);
+          minimapCtx.strokeStyle = 'rgba(0, 0, 0, 0.25)';
+          minimapCtx.lineWidth = 0.5;
+          for (let r = startRow; r < 10; r++) {
+            for (let c = dd.colStart; c <= dd.colEnd; c++) {
+              minimapCtx.strokeRect(c * cellW, r * cellH, cellW, cellH);
+            }
+          }
           minimapCtx.strokeStyle = '#cbd5e1';
           minimapCtx.lineWidth = 1;
-          minimapCtx.strokeRect(
-            dd.colStart * cellW + 0.5,
-            startRow * cellH + 0.5,
-            2 * cellW - 1,
-            trailerRows * cellH - 1
-          );
+          minimapCtx.strokeRect(rx + 0.5, ry + 0.5, rw - 1, rh - 1);
         }
       });
-      minimapCtx.fillStyle = '#dc2626';
-      minimapCtx.fillRect(0, 10 * cellH - 1.5, cw, 2);
 
       // Draw dock doors with live beacon status matching 2D DSD tutorial signals
       dockDoors.forEach(dd => {
@@ -4399,24 +4567,6 @@
       const sdx = 11 * cellW - 3.5;
       minimapCtx.fillStyle = sideRollupDoor.beaconColor || (sideRollupDoor.isOpen ? '#f59e0b' : '#22c55e');
       minimapCtx.fillRect(sdx, sdy - 4.5, 3.5, 9);
-
-      // Draw 2-tier Backstock & Claims Steel Racks on minimap
-      if (Array.isArray(steelRacks)) {
-        const totalWorldW = COLS * TILE_SIZE;
-        const totalWorldH = ROWS * TILE_SIZE;
-        steelRacks.forEach((rk) => {
-          const b = rk.bounds;
-          const rx = ((b.minX - ORIGIN_X) / totalWorldW) * cw;
-          const rz = ((b.minZ - ORIGIN_Z) / totalWorldH) * ch;
-          const rw = ((b.maxX - b.minX) / totalWorldW) * cw;
-          const rh = ((b.maxZ - b.minZ) / totalWorldH) * ch;
-          minimapCtx.fillStyle = 'rgba(15, 23, 42, 0.72)';
-          minimapCtx.fillRect(rx, rz, rw, rh);
-          minimapCtx.strokeStyle = rk.accentCss || '#ea580c';
-          minimapCtx.lineWidth = 1.2;
-          minimapCtx.strokeRect(rx + 0.5, rz + 0.5, Math.max(2, rw - 1), Math.max(2, rh - 1));
-        });
-      }
 
       // Draw Backstock Overstock Staging Pallets near each Steel Rack on minimap
       if (Array.isArray(overstockPallets)) {
@@ -4617,7 +4767,10 @@
       } else {
         wallClock.update();
       }
-      if (window.DSDGame) window.DSDGame.updateHud();
+      if (window.DSDGame && (lastHudSyncMs < 0 || (now - lastHudSyncMs) >= 100)) {
+        lastHudSyncMs = now;
+        window.DSDGame.updateHud();
+      }
 
       updatePlayer(dt);
       if (!isSystemPaused) {
@@ -4651,9 +4804,34 @@
         }
       }
       if (player.scannerActive) updateScannerDisplay();
-      renderDoorLightsPanel();
-      renderMinimap();
+      if (!lastDoorLightsSyncMs || lastDoorLightsSyncMs < 0 || (now - lastDoorLightsSyncMs) >= 80) {
+        lastDoorLightsSyncMs = now;
+        renderDoorLightsPanel();
+      }
+      if (!lastMinimapDrawMs || lastMinimapDrawMs < 0 || (now - lastMinimapDrawMs) >= 50) {
+        lastMinimapDrawMs = now;
+        renderMinimap();
+      }
       renderer.render(scene, camera);
+
+      const frameWorkMs = performance.now() - now;
+      fpsFrameCount += 1;
+      fpsWorkAccumMs += frameWorkMs;
+      const elapsedFpsMs = now - fpsWindowStartMs;
+      if (elapsedFpsMs >= 500) {
+        fpsMetrics.fps = Math.round((fpsFrameCount * 1000) / Math.max(1, elapsedFpsMs));
+        fpsMetrics.avgMs = fpsWorkAccumMs / Math.max(1, fpsFrameCount);
+        fpsFrameCount = 0;
+        fpsWorkAccumMs = 0;
+        fpsWindowStartMs = now;
+        if (gfxSettings.showFps) {
+          liveFpsEl.textContent = `${fpsMetrics.fps} FPS · ${fpsMetrics.avgMs.toFixed(1)}ms (${gfxSettings.quality.toUpperCase()})`;
+        }
+        const pauseFpsEl = document.getElementById('pause-fps-val');
+        if (pauseFpsEl && isSystemPaused) {
+          pauseFpsEl.textContent = `${fpsMetrics.fps} FPS · ${fpsMetrics.avgMs.toFixed(1)}ms`;
+        }
+      }
     }
 
     if (window.WarehouseTrucks) {
@@ -4680,6 +4858,7 @@
         showAlert: showAlert,
         playSuccess: () => SoundSystem.playSuccessChime(),
         playError: () => SoundSystem.playErrorBuzzer(),
+        playTruckDockBrake: () => { if (SoundSystem.playTruckDockBrake) SoundSystem.playTruckDockBrake(); },
         onScheduleUpdated: () => {
           renderPendingDeliveriesPanel();
           updateStagedCounter();
@@ -4793,7 +4972,7 @@
       electricJackWorld.position.set(JACK_HOME_POS.x, 0, JACK_HOME_POS.z);
       electricJackWorld.rotation.y = JACK_HOME_POS.yaw;
       electricJackWorld.visible = true;
-      syncElectricJackBatteryVisuals();
+      syncElectricJackBatteryVisuals(undefined, true);
 
       if (window.WarehouseTrucks) {
         window.WarehouseTrucks.resetForShift();
@@ -4963,7 +5142,7 @@
 
       camera.position.copy(player.position);
       camera.rotation.set(player.pitch, player.yaw, 0, 'YXZ');
-      syncElectricJackBatteryVisuals();
+      syncElectricJackBatteryVisuals(undefined, true);
       syncDoorMeshesImmediate();
       return true;
     }
@@ -4991,7 +5170,7 @@
           container.classList.toggle('main-menu-open', Boolean(menuFlags && menuFlags.mainMenuOpen));
           container.classList.toggle('system-menu-open', Boolean(menuFlags && (menuFlags.systemMenuOpen || menuFlags.saveLoadModalOpen || menuFlags.infoModalOpen)));
           if (anyOverlay && document.exitPointerLock) {
-            try { document.exitPointerLock(); } catch (_) {}
+            try { document.exitPointerLock(); } catch (_) { }
           }
           updateLockHintDisplay();
           if (window.DSDMenuUI && typeof window.DSDMenuUI.syncOverlaysFromGame === 'function') {
@@ -5040,7 +5219,7 @@
           electricJackWorld.position.set(JACK_HOME_POS.x, 0, JACK_HOME_POS.z);
           electricJackWorld.rotation.y = JACK_HOME_POS.yaw;
           electricJackWorld.visible = true;
-          syncElectricJackBatteryVisuals();
+          syncElectricJackBatteryVisuals(undefined, true);
           DeliverySystem.clearAllSessions();
           const nextShiftSupplyOrders = (window.DSDReceipts && typeof window.DSDReceipts.consumePendingSupplyOrdersForNextShift === 'function')
             ? window.DSDReceipts.consumePendingSupplyOrdersForNextShift()
@@ -5181,7 +5360,8 @@
         },
         onReceiptPrinted: () => {
           if (typeof triggerPrinterPrint === 'function') triggerPrinterPrint();
-          if (SoundSystem.playPaperRustle) SoundSystem.playPaperRustle();
+          if (SoundSystem.playPrinterPrint) SoundSystem.playPrinterPrint();
+          else if (SoundSystem.playPaperRustle) SoundSystem.playPaperRustle();
           DeliverySystem.updateDeliveryHud();
           syncCrtMonitorDisplay();
         },
@@ -5223,7 +5403,10 @@
         onPhase2ModalChange: () => {
           syncPhase2ContainerClasses();
         },
-        playBeep: () => SoundSystem.playButtonClick(),
+        playBeep: (kind) => (SoundSystem.playKeypadBeep
+          ? SoundSystem.playKeypadBeep(kind || (uiState.terminalModalOpen ? 'terminal' : 'scanner'))
+          : SoundSystem.playButtonClick()),
+        playLabel: () => (SoundSystem.playLabelApply ? SoundSystem.playLabelApply() : SoundSystem.playSuccessChime()),
         playError: () => SoundSystem.playErrorBuzzer(),
         playSuccess: () => SoundSystem.playSuccessChime(),
         playPaper: () => SoundSystem.playPaperRustle(),

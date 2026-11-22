@@ -83,113 +83,131 @@
     if (!valEl) return;
     let done = false;
     let remaining = 0;
+    let text = '';
     if (isFlag) {
       done = Boolean(count);
       remaining = done ? 0 : 1;
-      valEl.textContent = done ? 'Y' : 'N';
+      text = done ? 'Y' : 'N';
     } else {
       remaining = Math.max(0, Number(count) || 0);
       done = remaining === 0;
-      valEl.textContent = done ? '✓' : String(remaining);
+      text = done ? '✓' : String(remaining);
     }
-    valEl.dataset.count = String(remaining);
-    const cell = valEl.closest ? valEl.closest('.rem-cell') : valEl.parentElement;
-    if (cell) cell.classList.toggle('is-done', done);
+    const remStr = String(remaining);
+    if (valEl.dataset.count !== remStr || valEl.textContent !== text) {
+      valEl.textContent = text;
+      valEl.dataset.count = remStr;
+      const cell = valEl.closest ? valEl.closest('.rem-cell') : valEl.parentElement;
+      if (cell) cell.classList.toggle('is-done', done);
+    }
   }
 
-  function updateHud() {
+  let lastHudTimeKey = '';
+  let lastHudStatsKey = '';
+
+  function updateHud(force) {
     if (!global.ShiftClock || !global.ShiftStats) return;
     const snap = global.ShiftClock.getTimeSnapshot();
     const st = global.ShiftStats.getStats();
     const score = global.ShiftStats.getLiveScore();
     const d = state.dom;
 
-    if (d.clockTime) {
-      d.clockTime.textContent = snap.formatted12h;
-      d.clockTime.style.color = snap.afterNoon ? '#f59e0b' : '#38bdf8';
-    }
-    if (d.clockDate) {
-      d.clockDate.textContent = snap.dateLabel + ' · DAY ' + snap.workdayIndex + '/21';
-    }
-    if (d.rdcHourMain) {
-      const h12 = snap.hour12 || 6;
-      if (d.rdcLeadZero) {
-        d.rdcLeadZero.style.visibility = h12 < 10 ? 'visible' : 'hidden';
-        d.rdcLeadZero.style.width = h12 < 10 ? 'auto' : '0px';
+    const colonOn = (Math.floor(Date.now() / 500) % 2 === 0);
+    const pctInt = Math.round((snap.progressPct || 0) * 100);
+    const timeKey = `${snap.formatted12h}|${snap.dateLabel}|${snap.workdayIndex}|${pctInt}|${colonOn ? 1 : 0}|${snap.afterNoon ? 1 : 0}|${snap.shiftEnded ? 1 : 0}`;
+    if (force || timeKey !== lastHudTimeKey) {
+      lastHudTimeKey = timeKey;
+      if (d.clockTime) {
+        d.clockTime.textContent = snap.formatted12h;
+        d.clockTime.style.color = snap.afterNoon ? '#f59e0b' : '#38bdf8';
       }
-      d.rdcHourMain.textContent = String(h12);
+      if (d.clockDate) {
+        d.clockDate.textContent = snap.dateLabel + ' · DAY ' + snap.workdayIndex + '/21';
+      }
+      if (d.rdcHourMain) {
+        const h12 = snap.hour12 || 6;
+        if (d.rdcLeadZero) {
+          d.rdcLeadZero.style.visibility = h12 < 10 ? 'visible' : 'hidden';
+          d.rdcLeadZero.style.width = h12 < 10 ? 'auto' : '0px';
+        }
+        d.rdcHourMain.textContent = String(h12);
+      }
+      if (d.rdcMinute) {
+        d.rdcMinute.textContent = String(snap.minute).padStart(2, '0');
+      }
+      if (d.rdcColon) {
+        d.rdcColon.style.opacity = colonOn ? '1' : '0.28';
+      }
+      if (d.rdcIndAm) d.rdcIndAm.classList.toggle('on', snap.amPm === 'AM');
+      if (d.rdcIndPm) d.rdcIndPm.classList.toggle('on', snap.amPm === 'PM');
+      if (d.rdcProgress) {
+        d.rdcProgress.style.width = pctInt + '%';
+      }
+      if (d.rdcDow) d.rdcDow.textContent = snap.dayName || 'MON';
+      if (d.rdcMonDay) d.rdcMonDay.textContent = (snap.monthName || 'JAN') + ' ' + (snap.dayOfMonth || '01');
+      if (d.rdcYear) d.rdcYear.textContent = String(snap.year || 1996);
+      if (d.endShiftBtn) {
+        d.endShiftBtn.style.display = (snap.afterNoon && !snap.shiftEnded) ? 'inline-block' : 'none';
+      }
     }
-    if (d.rdcMinute) {
-      d.rdcMinute.textContent = String(snap.minute).padStart(2, '0');
-    }
-    if (d.rdcColon) {
-      d.rdcColon.style.opacity = (Math.floor(Date.now() / 500) % 2 === 0) ? '1' : '0.28';
-    }
-    if (d.rdcIndAm) d.rdcIndAm.classList.toggle('on', snap.amPm === 'AM');
-    if (d.rdcIndPm) d.rdcIndPm.classList.toggle('on', snap.amPm === 'PM');
-    if (d.rdcProgress) {
-      d.rdcProgress.style.width = Math.round((snap.progressPct || 0) * 100) + '%';
-    }
-    if (d.rdcDow) d.rdcDow.textContent = snap.dayName || 'MON';
-    if (d.rdcMonDay) d.rdcMonDay.textContent = (snap.monthName || 'JAN') + ' ' + (snap.dayOfMonth || '01');
-    if (d.rdcYear) d.rdcYear.textContent = String(snap.year || 1996);
 
-    if (d.statNd) d.statNd.textContent = String(Number(st.nightDropsProcessed) || 0);
-    if (d.statSd) d.statSd.textContent = String(Number(st.vendorsProcessed) || 0);
-    if (d.statVt) d.statVt.textContent = String(Number(st.trucksProcessed) || 0);
-    if (d.statWh) d.statWh.textContent = String(Number(st.warehouseTrucksProcessed) || 0);
-    if (d.statTs) d.statTs.textContent = String(Number(st.tasksCompleted) || 0);
-    if (d.scoreValue) {
-      d.scoreValue.textContent = (score < 0 ? '-' : '') + Math.abs(score);
-      d.scoreValue.style.color = score < 0 ? '#ef4444' : '#22c55e';
+    const rows = (global.WarehouseTrucks && typeof global.WarehouseTrucks.getScheduleRows === 'function')
+      ? global.WarehouseTrucks.getScheduleRows()
+      : [];
+    let remSd = 0;
+    let remVt = 0;
+    let remWh = 0;
+    for (let i = 0; i < rows.length; i++) {
+      const r = rows[i];
+      if (!r || r.completed || r.refused) continue;
+      if (r.type === 'sidedoor') remSd += 1;
+      else if (r.type === 'vendor_truck') remVt += 1;
+      else if (r.type === 'warehouse') remWh += 1;
     }
-    if (d.remTotal || d.remSd || d.remVt || d.remWh || d.remTs || d.remCl || d.remOs || d.remInv || d.remFile) {
-      const rows = (global.WarehouseTrucks && typeof global.WarehouseTrucks.getScheduleRows === 'function')
-        ? global.WarehouseTrucks.getScheduleRows()
-        : [];
-      let remSd = 0;
-      let remVt = 0;
-      let remWh = 0;
-      for (let i = 0; i < rows.length; i++) {
-        const r = rows[i];
-        if (!r || r.completed || r.refused) continue;
-        if (r.type === 'sidedoor') remSd += 1;
-        else if (r.type === 'vendor_truck') remVt += 1;
-        else if (r.type === 'warehouse') remWh += 1;
+    const remTs = (global.DSDReceipts && typeof global.DSDReceipts.getPendingHomeOfficeTaskCount === 'function')
+      ? global.DSDReceipts.getPendingHomeOfficeTaskCount()
+      : 0;
+    const remCl = (global.ClaimsTotes && typeof global.ClaimsTotes.getRemainingClaimsCount === 'function')
+      ? global.ClaimsTotes.getRemainingClaimsCount()
+      : 0;
+    const remOs = (global.BackstockRacks && typeof global.BackstockRacks.getUnslottedOverstockCount === 'function')
+      ? global.BackstockRacks.getUnslottedOverstockCount()
+      : 0;
+    const invDone = Boolean(st.backstockInventoried);
+    const fileDone = Boolean(st.filingDone);
+    const remTotal = remSd + remVt + remWh + remTs + remCl + remOs + (invDone ? 0 : 1) + (fileDone ? 0 : 1);
+
+    const statsKey = `${st.nightDropsProcessed}|${st.vendorsProcessed}|${st.trucksProcessed}|${st.warehouseTrucksProcessed}|${st.tasksCompleted}|${score}|${remSd}|${remVt}|${remWh}|${remTs}|${remCl}|${remOs}|${invDone ? 1 : 0}|${fileDone ? 1 : 0}`;
+    if (force || statsKey !== lastHudStatsKey) {
+      lastHudStatsKey = statsKey;
+      if (d.statNd) d.statNd.textContent = String(Number(st.nightDropsProcessed) || 0);
+      if (d.statSd) d.statSd.textContent = String(Number(st.vendorsProcessed) || 0);
+      if (d.statVt) d.statVt.textContent = String(Number(st.trucksProcessed) || 0);
+      if (d.statWh) d.statWh.textContent = String(Number(st.warehouseTrucksProcessed) || 0);
+      if (d.statTs) d.statTs.textContent = String(Number(st.tasksCompleted) || 0);
+      if (d.scoreValue) {
+        d.scoreValue.textContent = (score < 0 ? '-' : '') + Math.abs(score);
+        d.scoreValue.style.color = score < 0 ? '#ef4444' : '#22c55e';
       }
-      const remTs = (global.DSDReceipts && typeof global.DSDReceipts.getPendingHomeOfficeTaskCount === 'function')
-        ? global.DSDReceipts.getPendingHomeOfficeTaskCount()
-        : 0;
-      const remCl = (global.ClaimsTotes && typeof global.ClaimsTotes.getRemainingClaimsCount === 'function')
-        ? global.ClaimsTotes.getRemainingClaimsCount()
-        : 0;
-      const remOs = (global.BackstockRacks && typeof global.BackstockRacks.getUnslottedOverstockCount === 'function')
-        ? global.BackstockRacks.getUnslottedOverstockCount()
-        : 0;
-      const invDone = Boolean(st.backstockInventoried);
-      const fileDone = Boolean(st.filingDone);
-      const remTotal = remSd + remVt + remWh + remTs + remCl + remOs + (invDone ? 0 : 1) + (fileDone ? 0 : 1);
-      updateRemainingCell(d.remSd, remSd, false);
-      updateRemainingCell(d.remVt, remVt, false);
-      updateRemainingCell(d.remWh, remWh, false);
-      updateRemainingCell(d.remTs, remTs, false);
-      updateRemainingCell(d.remCl, remCl, false);
-      updateRemainingCell(d.remOs, remOs, false);
-      updateRemainingCell(d.remInv, invDone, true);
-      updateRemainingCell(d.remFile, fileDone, true);
-      if (d.remTotal) {
-        d.remTotal.textContent = String(remTotal);
+      if (d.remTotal || d.remSd || d.remVt || d.remWh || d.remTs || d.remCl || d.remOs || d.remInv || d.remFile) {
+        updateRemainingCell(d.remSd, remSd, false);
+        updateRemainingCell(d.remVt, remVt, false);
+        updateRemainingCell(d.remWh, remWh, false);
+        updateRemainingCell(d.remTs, remTs, false);
+        updateRemainingCell(d.remCl, remCl, false);
+        updateRemainingCell(d.remOs, remOs, false);
+        updateRemainingCell(d.remInv, invDone, true);
+        updateRemainingCell(d.remFile, fileDone, true);
+        if (d.remTotal) {
+          d.remTotal.textContent = String(remTotal);
+        }
+        if (d.remPill) {
+          d.remPill.classList.toggle('is-all-clear', remTotal === 0);
+        }
+        if (d.remPillLbl) {
+          d.remPillLbl.textContent = remTotal === 0 ? '✓ CLEAR' : 'LEFT';
+        }
       }
-      if (d.remPill) {
-        d.remPill.classList.toggle('is-all-clear', remTotal === 0);
-      }
-      if (d.remPillLbl) {
-        d.remPillLbl.textContent = remTotal === 0 ? '✓ CLEAR' : 'LEFT';
-      }
-    }
-    if (d.endShiftBtn) {
-      // Matches 2D game: END DAY button unlocks starting at 12:00 PM
-      d.endShiftBtn.style.display = (snap.afterNoon && !snap.shiftEnded) ? 'inline-block' : 'none';
     }
     if (typeof state.hooks.onHudUpdate === 'function') {
       state.hooks.onHudUpdate(snap, st, score);
@@ -255,7 +273,7 @@
     global.ShiftClock.setPaused(true);
 
     if (document.exitPointerLock) {
-      try { document.exitPointerLock(); } catch (_) {}
+      try { document.exitPointerLock(); } catch (_) { }
     }
 
     const unfinished = Object.assign(
@@ -476,7 +494,7 @@
       bindEvents();
     }
     syncClockPauseFlag();
-    updateHud();
+    updateHud(true);
   }
 
   function registerResetHandler(fn) {
@@ -554,7 +572,7 @@
       global.ShiftClock.setPaused(false);
     }
     syncClockPauseFlag();
-    updateHud();
+    updateHud(true);
   }
 
   function returnToMainMenu() {
@@ -585,7 +603,7 @@
       global.ShiftClock.setPaused(false);
     }
     syncClockPauseFlag();
-    updateHud();
+    updateHud(true);
   }
 
   global.DSDGame = {

@@ -28,6 +28,12 @@
     dom.btnPauseSave = document.getElementById('btn-pause-save');
     dom.btnPauseLoad = document.getElementById('btn-pause-load');
     dom.btnReturnMain = document.getElementById('btn-pause-main-menu');
+    dom.btnPauseMute = document.getElementById('btn-pause-mute');
+    dom.pauseVolSlider = document.getElementById('pause-vol-slider');
+    dom.pauseVolVal = document.getElementById('pause-vol-val');
+    dom.btnPauseGfx = document.getElementById('btn-pause-gfx');
+    dom.pauseFpsVal = document.getElementById('pause-fps-val');
+    dom.btnPauseFpsHud = document.getElementById('btn-pause-fps-hud');
 
     dom.saveLoadModal = document.getElementById('save-load-modal');
     dom.slmTitle = document.getElementById('slm-title');
@@ -87,6 +93,34 @@
     }
   }
 
+  function syncAudioControls() {
+    if (!global.SoundSystem || typeof global.SoundSystem.getSettings !== 'function') return;
+    const s = global.SoundSystem.getSettings();
+    if (dom.btnPauseMute) {
+      dom.btnPauseMute.textContent = s.muted ? '🔇 MUTED' : '🔊 SOUND: ON';
+      dom.btnPauseMute.classList.toggle('muted', Boolean(s.muted));
+    }
+    if (dom.pauseVolSlider) {
+      const pct = Math.round((Number(s.masterVolume) || 0) * 100);
+      dom.pauseVolSlider.value = String(pct);
+      if (dom.pauseVolVal) dom.pauseVolVal.textContent = pct + '%';
+    }
+    if (global.DSDGraphics && typeof global.DSDGraphics.getSettings === 'function') {
+      const gs = global.DSDGraphics.getSettings();
+      if (dom.btnPauseGfx) {
+        dom.btnPauseGfx.textContent = '🖥️ GFX: ' + String(gs.quality || 'balanced').toUpperCase();
+      }
+      if (dom.btnPauseFpsHud) {
+        dom.btnPauseFpsHud.textContent = gs.showFps ? 'FPS HUD: ON' : 'FPS HUD: OFF';
+        dom.btnPauseFpsHud.classList.toggle('active', Boolean(gs.showFps));
+      }
+      if (dom.pauseFpsVal && typeof global.DSDGraphics.getMetrics === 'function') {
+        const m = global.DSDGraphics.getMetrics();
+        dom.pauseFpsVal.textContent = m && m.fps > 0 ? `${m.fps} FPS · ${m.avgMs.toFixed(1)}ms` : '-- FPS';
+      }
+    }
+  }
+
   function syncOverlaysFromGame() {
     const g = global.DSDGame;
     if (!g) return;
@@ -123,6 +157,7 @@
       dom.mainLoadBadge.textContent = hasSave ? 'READY' : 'EMPTY';
       dom.mainLoadBadge.classList.toggle('has-save', hasSave);
     }
+    syncAudioControls();
   }
 
   function setStatusMessage(msg, isError) {
@@ -368,6 +403,46 @@
           global.DSDGame.returnToMainMenu();
         }
         syncOverlaysFromGame();
+      });
+    }
+
+    if (dom.btnPauseMute) {
+      dom.btnPauseMute.addEventListener('click', () => {
+        if (global.SoundSystem && typeof global.SoundSystem.toggleMute === 'function') {
+          global.SoundSystem.toggleMute();
+          syncAudioControls();
+          playClick();
+        }
+      });
+    }
+
+    if (dom.pauseVolSlider) {
+      dom.pauseVolSlider.addEventListener('input', () => {
+        if (global.SoundSystem && typeof global.SoundSystem.setSettings === 'function') {
+          const v = Math.max(0, Math.min(1, Number(dom.pauseVolSlider.value) / 100));
+          global.SoundSystem.setSettings({ masterVolume: v, muted: v === 0 ? true : false });
+          syncAudioControls();
+        }
+      });
+    }
+
+    if (dom.btnPauseGfx) {
+      dom.btnPauseGfx.addEventListener('click', () => {
+        if (global.DSDGraphics && typeof global.DSDGraphics.cycleQuality === 'function') {
+          global.DSDGraphics.cycleQuality();
+          syncAudioControls();
+          playClick();
+        }
+      });
+    }
+
+    if (dom.btnPauseFpsHud) {
+      dom.btnPauseFpsHud.addEventListener('click', () => {
+        if (global.DSDGraphics && typeof global.DSDGraphics.toggleFpsHud === 'function') {
+          global.DSDGraphics.toggleFpsHud();
+          syncAudioControls();
+          playClick();
+        }
       });
     }
 

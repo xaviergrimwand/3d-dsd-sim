@@ -92,9 +92,7 @@ canvas {
 }
 
 .hud-card {
-  background: rgba(15, 23, 42, 0.88);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
+  background: rgba(15, 23, 42, 0.93);
   border: 1px solid rgba(255, 255, 255, 0.15);
   border-radius: 10px;
   padding: 8px 16px;
@@ -4171,9 +4169,12 @@ tr.inv-short-pickable:hover {
 /* Night Drop & Pinned Document Desk Tray Panel */
 #night-drop-panel {
   position: absolute;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
+  top: 0;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  margin: auto;
+  height: fit-content;
   width: min(94vw, 660px);
   max-height: 88vh;
   background: linear-gradient(180deg, #0f172a 0%, #111827 100%);
@@ -4210,7 +4211,11 @@ tr.inv-short-pickable:hover {
 
 @media (min-width: 1080px) {
   #night-drop-panel.docked-terminal {
+    top: 50%;
+    bottom: auto;
     left: 16px;
+    right: auto;
+    margin: 0;
     transform: translateY(-50%);
     width: min(460px, calc(100vw - 764px));
   }
@@ -4227,7 +4232,11 @@ tr.inv-short-pickable:hover {
 
 @media (min-width: 820px) {
   #night-drop-panel.docked-scanner {
+    top: 50%;
+    bottom: auto;
     left: 16px;
+    right: auto;
+    margin: 0;
     transform: translateY(-50%);
     width: min(460px, 46vw);
   }
@@ -4244,7 +4253,10 @@ tr.inv-short-pickable:hover {
 @media (max-width: 819px) {
   #night-drop-panel.docked-scanner {
     top: 56px;
+    bottom: auto;
     left: 50%;
+    right: auto;
+    margin: 0;
     transform: translateX(-50%);
     max-height: 44vh;
   }
@@ -4547,22 +4559,14 @@ tr.inv-short-pickable:hover {
   transition: transform 0.14s ease, box-shadow 0.14s ease, border-color 0.14s ease, filter 0.14s ease;
 }
 
-.filing-mini-doc:nth-child(odd) {
-  transform: rotate(-0.35deg);
-}
-
-.filing-mini-doc:nth-child(even) {
-  transform: rotate(0.32deg);
-}
-
 .filing-mini-doc:hover {
-  transform: translateY(-2px) rotate(0deg);
+  transform: translateY(-2px);
   box-shadow: 0 10px 22px rgba(0, 0, 0, 0.62);
   z-index: 2;
 }
 
 .filing-mini-doc.selected {
-  transform: translateY(-3px) rotate(0deg) scale(1.012);
+  transform: translateY(-2px);
   outline: 2.5px solid #facc15;
   outline-offset: 2px;
   box-shadow: 0 12px 26px rgba(250, 204, 21, 0.28);
@@ -4570,7 +4574,7 @@ tr.inv-short-pickable:hover {
 }
 
 .filing-mini-doc.drag-over {
-  transform: translateY(-2px) rotate(0deg) scale(1.015);
+  transform: translateY(-2px);
   outline: 2.5px dashed #38bdf8;
   outline-offset: 2px;
   box-shadow: 0 12px 26px rgba(56, 189, 248, 0.34);
@@ -4762,7 +4766,6 @@ tr.inv-short-pickable:hover {
   border-right: 1px solid #cbd5e1;
   padding: 8px 25px;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.55);
-  text-shadow: 0.25px 0 0 rgba(17, 24, 39, 0.2);
   background-image:
     radial-gradient(circle at 10px 9px, #1e293b 2px, transparent 2.2px),
     radial-gradient(circle at calc(100% - 10px) 9px, #1e293b 2px, transparent 2.2px),
@@ -6194,6 +6197,110 @@ tr.inv-short-pickable:hover {
 
 .pause-actions {
   max-width: 100%;
+}
+
+.pause-audio-row {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 9px 12px;
+  border-radius: 10px;
+  background: rgba(15, 23, 42, 0.72);
+  border: 1px solid rgba(148, 163, 184, 0.25);
+}
+
+.pause-audio-btn {
+  padding: 5px 10px;
+  border-radius: 7px;
+  border: 1px solid rgba(74, 222, 128, 0.45);
+  background: rgba(20, 83, 45, 0.45);
+  color: #bbf7d0;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.4px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.pause-audio-btn.muted {
+  border-color: rgba(248, 113, 113, 0.5);
+  background: rgba(127, 29, 29, 0.45);
+  color: #fecaca;
+}
+
+.pause-vol-wrap {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  font-weight: 800;
+  color: #cbd5e1;
+  flex: 1;
+  justify-content: flex-end;
+}
+
+.pause-vol-wrap input[type="range"] {
+  width: 96px;
+  accent-color: #f59e0b;
+  cursor: pointer;
+}
+
+#pause-vol-val {
+  min-width: 34px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  color: #fde68a;
+}
+
+.pause-gfx-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.pause-fps-pill {
+  font-family: "Courier New", Courier, monospace;
+  font-size: 11px;
+  font-weight: 800;
+  color: #38bdf8;
+  font-variant-numeric: tabular-nums;
+}
+
+.pause-mini-btn {
+  padding: 4px 8px;
+  border-radius: 6px;
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  background: rgba(30, 41, 59, 0.8);
+  color: #cbd5e1;
+  font-size: 10px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.pause-mini-btn.active {
+  border-color: rgba(56, 189, 248, 0.6);
+  background: rgba(12, 74, 110, 0.55);
+  color: #bae6fd;
+}
+
+#live-fps-hud {
+  position: fixed;
+  bottom: 8px;
+  left: 8px;
+  z-index: 45;
+  padding: 3px 7px;
+  border-radius: 6px;
+  background: rgba(15, 23, 42, 0.86);
+  border: 1px solid rgba(56, 189, 248, 0.35);
+  color: #38bdf8;
+  font-family: "Courier New", Courier, monospace;
+  font-size: 11px;
+  font-weight: 800;
+  pointer-events: none;
+  font-variant-numeric: tabular-nums;
+  display: none;
 }
 
 /* Save / Load Slot Modal & Tutorial/About Info Modal */

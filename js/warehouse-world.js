@@ -213,6 +213,134 @@
       uvAttr.needsUpdate = true;
     }
 
+    function mergeStaticGroupByMaterial(rootGroup, skipSet) {
+      if (
+        !rootGroup ||
+        typeof THREE.Matrix4 !== 'function' ||
+        typeof THREE.Matrix3 !== 'function' ||
+        typeof THREE.BufferGeometry !== 'function' ||
+        typeof THREE.BufferAttribute !== 'function'
+      ) {
+        return;
+      }
+      const skip = skipSet || null;
+      rootGroup.updateMatrixWorld(true);
+      const invRoot = new THREE.Matrix4().copy(rootGroup.matrixWorld).invert();
+      const relMat = new THREE.Matrix4();
+      const normalMat = new THREE.Matrix3();
+      const tmpPos = new THREE.Vector3();
+      const tmpNorm = new THREE.Vector3();
+
+      const buckets = new Map();
+      const toRemove = [];
+
+      function walk(node) {
+        if (!node || !node.visible) return;
+        if (skip && skip.has(node)) return;
+        if (node.isMesh) {
+          const mat = node.material;
+          const geom = node.geometry;
+          if (
+            mat &&
+            !Array.isArray(mat) &&
+            mat.visible !== false &&
+            geom &&
+            geom.attributes &&
+            geom.attributes.position
+          ) {
+            relMat.multiplyMatrices(invRoot, node.matrixWorld);
+            normalMat.getNormalMatrix(relMat);
+            const srcGeom = geom.index ? geom.toNonIndexed() : geom;
+            const posAttr = srcGeom.attributes.position;
+            const normAttr = srcGeom.attributes.normal;
+            const uvAttr = srcGeom.attributes.uv;
+            const vCount = posAttr.count;
+            if (vCount > 0) {
+              let bucket = buckets.get(mat);
+              if (!bucket) {
+                bucket = { material: mat, meshes: [], totalVerts: 0 };
+                buckets.set(mat, bucket);
+              }
+              bucket.meshes.push({ node, geom, srcGeom, ownedNonIndexed: srcGeom !== geom, relMat: relMat.clone(), normalMat: normalMat.clone(), posAttr, normAttr, uvAttr, vCount });
+              bucket.totalVerts += vCount;
+              toRemove.push(node);
+            } else if (srcGeom !== geom) {
+              srcGeom.dispose();
+            }
+          }
+          return;
+        }
+        const children = node.children;
+        for (let i = 0; i < children.length; i++) {
+          walk(children[i]);
+        }
+      }
+
+      walk(rootGroup);
+
+      buckets.forEach((bucket) => {
+        if (bucket.meshes.length <= 1) {
+          // Only 1 mesh for this material; keep it untouched (just clean temp non-indexed clone)
+          const single = bucket.meshes[0];
+          if (single && single.ownedNonIndexed) single.srcGeom.dispose();
+          const rIdx = single ? toRemove.indexOf(single.node) : -1;
+          if (rIdx !== -1) toRemove.splice(rIdx, 1);
+          return;
+        }
+        const positions = new Float32Array(bucket.totalVerts * 3);
+        const normals = new Float32Array(bucket.totalVerts * 3);
+        const uvs = new Float32Array(bucket.totalVerts * 2);
+        let vOffset = 0;
+
+        for (let m = 0; m < bucket.meshes.length; m++) {
+          const item = bucket.meshes[m];
+          const pAttr = item.posAttr;
+          const nAttr = item.normAttr;
+          const uAttr = item.uvAttr;
+          const count = item.vCount;
+          for (let i = 0; i < count; i++) {
+            const o3 = (vOffset + i) * 3;
+            const o2 = (vOffset + i) * 2;
+            tmpPos.fromBufferAttribute(pAttr, i).applyMatrix4(item.relMat);
+            positions[o3] = tmpPos.x;
+            positions[o3 + 1] = tmpPos.y;
+            positions[o3 + 2] = tmpPos.z;
+            if (nAttr) {
+              tmpNorm.fromBufferAttribute(nAttr, i).applyMatrix3(item.normalMat).normalize();
+              normals[o3] = tmpNorm.x;
+              normals[o3 + 1] = tmpNorm.y;
+              normals[o3 + 2] = tmpNorm.z;
+            } else {
+              normals[o3 + 1] = 1;
+            }
+            if (uAttr) {
+              uvs[o2] = uAttr.getX(i);
+              uvs[o2 + 1] = uAttr.getY(i);
+            }
+          }
+          vOffset += count;
+          if (item.ownedNonIndexed) item.srcGeom.dispose();
+        }
+
+        const merged = new THREE.BufferGeometry();
+        merged.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+        merged.setAttribute('normal', new THREE.BufferAttribute(normals, 3));
+        merged.setAttribute('uv', new THREE.BufferAttribute(uvs, 2));
+        merged.computeBoundingSphere();
+
+        const mergedMesh = new THREE.Mesh(merged, bucket.material);
+        rootGroup.add(mergedMesh);
+      });
+
+      for (let i = 0; i < toRemove.length; i++) {
+        const mNode = toRemove[i];
+        if (mNode.parent) mNode.parent.remove(mNode);
+        if (mNode.geometry && typeof mNode.geometry.dispose === 'function') {
+          mNode.geometry.dispose();
+        }
+      }
+    }
+
     // Dedicated helper for authentic cylindrical warehouse safety bollards with rounded dome caps
     function createRoundedBollard(radius = 0.14, height = 1.35) {
       const bGroup = new THREE.Group();
@@ -292,6 +420,7 @@
         tileMeshGroup.add(ceilTile);
       }
     }
+    mergeStaticGroupByMaterial(tileMeshGroup);
 
     // ==========================================
     // PERIMETER OUTER WALLS, OUTDOOR YARD APRON & SIDE DOOR CUTOUT
@@ -603,6 +732,8 @@
       lockKnob.position.set(0.042, -0.089, 0.094);
       station.add(lockKnob);
 
+      mergeStaticGroupByMaterial(station, new Set([openBtn.plungerGroup, closeBtn.plungerGroup, pilotJewel]));
+
       return {
         group: station,
         openBtnGroup: openBtn.plungerGroup,
@@ -751,6 +882,11 @@
       fixture.add(amberBay.bay);
       fixture.add(greenBay.bay);
 
+      mergeStaticGroupByMaterial(
+        fixture,
+        new Set([redBay.lens, redBay.halo, amberBay.lens, amberBay.halo, greenBay.lens, greenBay.halo])
+      );
+
       return {
         group: fixture,
         redLens: redBay.lens,
@@ -869,7 +1005,8 @@
             dd.stationCtrl.pressTarget = dd.isOpen ? 'open' : 'close';
             dd.stationCtrl.pressAnim = 1.0;
           }
-          SoundSystem.playButtonClick();
+          if (SoundSystem.playWallSwitch) SoundSystem.playWallSwitch();
+          else SoundSystem.playButtonClick();
           const remainingTravel = (dd.isOpen ? (1.0 - dd.currentProgress) : dd.currentProgress);
           const motorTime = Math.max(0.3, remainingTravel * DOCK_DOOR_DURATION);
           SoundSystem.playDoorMotor(motorTime);
@@ -998,10 +1135,15 @@
         tRoof.position.set(0, TRUCK_CEILING_H, -vLen / 2);
         vGroup.add(tRoof);
 
-        const tLight = new THREE.PointLight(0xffedd5, 0.38, 12, 1.5);
-        tLight.position.set(0, TRUCK_CEILING_H - 0.3, -vLen / 2);
-        vGroup.add(tLight);
-        vGroup.userData.trailerLight = tLight;
+        // Self-lit cargo dome ceiling strip replaces per-trailer PointLight to keep fragment shader light count minimal
+        const tDomeStrip = new THREE.Mesh(
+          new THREE.PlaneGeometry(0.42, vLen * 0.72),
+          new THREE.MeshBasicMaterial({ color: 0xffedd5 })
+        );
+        tDomeStrip.rotation.x = Math.PI / 2;
+        tDomeStrip.position.set(0, TRUCK_CEILING_H - 0.015, -vLen / 2);
+        vGroup.add(tDomeStrip);
+        vGroup.userData.trailerLight = null;
 
         // Exterior livery panels wrapping sides slightly outside interior sidewalls so adjacent open bays see livery
         const sideSkinMat = new THREE.MeshStandardMaterial({
@@ -1162,6 +1304,7 @@
           vGroup.add(marker);
         });
 
+        mergeStaticGroupByMaterial(vGroup);
         return vGroup;
       }
 
@@ -1190,6 +1333,7 @@
         scene.add(guide);
       });
 
+      mergeStaticGroupByMaterial(group, new Set([curtain, station.group, beacon.group]));
       scene.add(group);
     });
 
@@ -1318,6 +1462,7 @@
     const trussL = 16.8; // Covers rows 10 to 16 (Z: 0 to 16.8)
     const trussDepth = 1.0;
     const trussY = DOCK_CEILING_H - trussDepth / 2 - 0.05;
+    const ceilingSteelGroup = new THREE.Group();
 
     colXPositions.forEach(cx => {
       const trussGroup = new THREE.Group();
@@ -1358,15 +1503,18 @@
         trussGroup.add(vertStrut);
       }
 
-      scene.add(trussGroup);
+      ceilingSteelGroup.add(trussGroup);
     });
 
     // Longitudinal cross-girders connecting the 5 trusses along the ceiling
     [2.4, 6.0, 9.6, 13.2, 15.8].forEach(zPos => {
       const crossGirder = new THREE.Mesh(new THREE.BoxGeometry(totalW - 0.2, 0.18, 0.18), matSteel);
       crossGirder.position.set(0, DOCK_CEILING_H - 0.55, zPos);
-      scene.add(crossGirder);
+      ceilingSteelGroup.add(crossGirder);
     });
+
+    mergeStaticGroupByMaterial(ceilingSteelGroup);
+    scene.add(ceilingSteelGroup);
 
     // ==========================================
     // SUSPENDED INDUSTRIAL FLUORESCENT LIGHT FIXTURES
@@ -1387,6 +1535,7 @@
     const emissiveTubeMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
     const fixtureBodyMat = new THREE.MeshStandardMaterial({ color: 0x334155, roughness: 0.5 });
     const cableMat = new THREE.MeshBasicMaterial({ color: 0x64748b });
+    const ceilingFixturesGroup = new THREE.Group();
 
     lightFixturePositions.forEach(pos => {
       const fixtureGroup = new THREE.Group();
@@ -1412,11 +1561,21 @@
         fixtureGroup.add(cable);
       });
 
-      const spot = new THREE.PointLight(0xfff8ee, 0.9, 15, 1.5);
-      spot.position.set(0, -0.25, 0);
-      fixtureGroup.add(spot);
+      ceilingFixturesGroup.add(fixtureGroup);
+    });
 
-      scene.add(fixtureGroup);
+    mergeStaticGroupByMaterial(ceilingFixturesGroup);
+    scene.add(ceilingFixturesGroup);
+
+    // Consolidated dock & staging lights tuned to original industrial brightness without overexposing surfaces
+    [
+      { x: -6.2, z: 2.2 },
+      { x: 6.2, z: 2.2 },
+      { x: 0.0, z: 8.6 }
+    ].forEach((lp) => {
+      const spot = new THREE.PointLight(0xfff8ee, 0.85, 16, 1.6);
+      spot.position.set(lp.x, 5.05, lp.z);
+      scene.add(spot);
     });
 
     // ==========================================
@@ -1646,7 +1805,8 @@
           sideRollupDoor.stationCtrl.pressTarget = sideRollupDoor.isOpen ? 'open' : 'close';
           sideRollupDoor.stationCtrl.pressAnim = 1.0;
         }
-        SoundSystem.playButtonClick();
+        if (SoundSystem.playWallSwitch) SoundSystem.playWallSwitch();
+        else SoundSystem.playButtonClick();
         const remainingTravel = (sideRollupDoor.isOpen ? (1.0 - sideRollupDoor.currentProgress) : sideRollupDoor.currentProgress);
         const motorTime = Math.max(0.3, remainingTravel * SIDE_DOOR_DURATION);
         SoundSystem.playDoorMotor(motorTime);
@@ -1701,6 +1861,7 @@
     thresholdLine.position.set(-0.05, 0.015, 0);
     sideRollupGroup.add(thresholdLine);
 
+    mergeStaticGroupByMaterial(sideRollupGroup, new Set([sideCurtain, sideStation.group, sideBeacon.group]));
     scene.add(sideRollupGroup);
 
     // ==========================================
@@ -1809,7 +1970,8 @@
         drawerState.pendingArchiveOpen = true;
         drawerState.pendingArchiveTimer = 0;
         if (typeof SoundSystem !== 'undefined') {
-          if (SoundSystem.playButtonClick) SoundSystem.playButtonClick();
+          if (SoundSystem.playMetalClang) SoundSystem.playMetalClang();
+          else if (SoundSystem.playButtonClick) SoundSystem.playButtonClick();
           if (SoundSystem.playPaperRustle) SoundSystem.playPaperRustle();
         }
       }
@@ -2348,6 +2510,7 @@
       },
       interact: () => {
         if (document.exitPointerLock) document.exitPointerLock();
+        if (typeof SoundSystem !== 'undefined' && SoundSystem.playMetalClang) SoundSystem.playMetalClang();
         if (window.DSDReceipts && typeof window.DSDReceipts.openTrashCanDialog === 'function') {
           window.DSDReceipts.openTrashCanDialog();
         }
@@ -2356,6 +2519,10 @@
     interactibles.push(trashCanInteractible);
     trashCanHitbox.userData.interactible = trashCanInteractible;
 
+    mergeStaticGroupByMaterial(
+      deskGroup,
+      new Set([topDrawerGroup, screenMesh, powerLed, printerPaperStrip, printerTrayOutput, printHead, printerOnlineLed, invoicePaper])
+    );
     scene.add(deskGroup);
 
     // 7. OVERHEAD FLUORESCENT SHOP LIGHT FIXTURE (With Industrial Cantilever Wall Support Fixtures)
@@ -2719,36 +2886,35 @@
 
     // Overhead Fluorescent Strip Fixtures & Lighting in both N-S and E-W Hallway legs
     const matHallLamp = new THREE.MeshBasicMaterial({ color: 0xfffaed });
+    const hallFixturesGroup = new THREE.Group();
     [southDividingZ + 2.4, southDividingZ + 6.4, southDividingZ + 10.4, hallEndZ - 2.2].forEach((lz) => {
       const hood = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.07, 1.35), matSteelFrame);
       hood.position.set(hallCenterX, COLD_CEILING_H - 0.04, lz);
-      scene.add(hood);
+      hallFixturesGroup.add(hood);
       [-0.07, 0.07].forEach((lxOff) => {
         const tube = new THREE.Mesh(new THREE.CylinderGeometry(0.016, 0.016, 1.25, 10), matHallLamp);
         tube.rotation.x = Math.PI / 2;
         tube.position.set(hallCenterX + lxOff, COLD_CEILING_H - 0.08, lz);
-        scene.add(tube);
+        hallFixturesGroup.add(tube);
       });
     });
     [7.2, 1.2, -4.8, -10.2].forEach((lx) => {
       const hood = new THREE.Mesh(new THREE.BoxGeometry(1.35, 0.07, 0.28), matSteelFrame);
       hood.position.set(lx, COLD_CEILING_H - 0.04, hallWestCenterZ);
-      scene.add(hood);
+      hallFixturesGroup.add(hood);
       [-0.07, 0.07].forEach((lzOff) => {
         const tube = new THREE.Mesh(new THREE.CylinderGeometry(0.016, 0.016, 1.25, 10), matHallLamp);
         tube.rotation.z = Math.PI / 2;
         tube.position.set(lx, COLD_CEILING_H - 0.08, hallWestCenterZ + lzOff);
-        scene.add(tube);
+        hallFixturesGroup.add(tube);
       });
     });
-    const hallwayPointLight = new THREE.PointLight(0xffedd5, 0.95, 16, 1.4);
-    hallwayPointLight.position.set(hallCenterX, 3.6, southDividingZ + 6.4);
+    mergeStaticGroupByMaterial(hallFixturesGroup);
+    scene.add(hallFixturesGroup);
+
+    const hallwayPointLight = new THREE.PointLight(0xffedd5, 0.88, 20, 1.5);
+    hallwayPointLight.position.set(hallCenterX - 2.0, 3.6, hallWestCenterZ - 1.5);
     scene.add(hallwayPointLight);
-    [2.0, -8.0].forEach((lpx) => {
-      const westHallLight = new THREE.PointLight(0xffedd5, 0.90, 16, 1.4);
-      westHallLight.position.set(lpx, 3.6, hallWestCenterZ);
-      scene.add(westHallLight);
-    });
 
     // Bank of 3 Industrial Steel Employee Lockers at South End (facing North)
     const lockerGroup = new THREE.Group();
@@ -3349,6 +3515,7 @@
         }
       }
 
+      mergeStaticGroupByMaterial(rackGroup);
       scene.add(rackGroup);
 
       const bounds = isNS
@@ -4253,7 +4420,7 @@
       rCtx.textBaseline = 'middle';
       rCtx.fillText('RECALL', 512, 152);
       const recallTagTex = new THREE.CanvasTexture(recallCanvas);
-      recallTagTex.anisotropy = 16;
+      recallTagTex.anisotropy = 4;
       recallTagTex.generateMipmaps = false;
       recallTagTex.minFilter = THREE.LinearFilter;
       recallTagTex.magFilter = THREE.LinearFilter;
@@ -4309,27 +4476,23 @@
     const recallCart = createThreeTierStockingCart3D(10.20, 11.80, 0);
 
 
-    const hemiLight = new THREE.HemisphereLight(0xf8fafc, 0x1e293b, 0.6);
+    const hemiLight = new THREE.HemisphereLight(0xf8fafc, 0x1e293b, 0.58);
     scene.add(hemiLight);
 
-    const ambientLight = new THREE.AmbientLight(0xffffff, 0.35);
+    const ambientLight = new THREE.AmbientLight(0xffffff, 0.34);
     scene.add(ambientLight);
 
     // Freezer blue lighting
-    const freezerLight = new THREE.PointLight(0x38bdf8, 1.0, 14, 1.4);
+    const freezerLight = new THREE.PointLight(0x38bdf8, 0.95, 14, 1.4);
     freezerLight.position.set(gridToWorld(2, 19.5).x, COLD_CEILING_H - 0.4, gridToWorld(2, 19.5).z);
     scene.add(freezerLight);
 
     // Cooler crisp cyan lighting
-    const coolerLight = new THREE.PointLight(0xbae6fd, 1.0, 14, 1.4);
+    const coolerLight = new THREE.PointLight(0xbae6fd, 0.95, 14, 1.4);
     coolerLight.position.set(gridToWorld(7, 19.5).x, COLD_CEILING_H - 0.4, gridToWorld(7, 19.5).z);
     scene.add(coolerLight);
 
-    // Trailer interior lights live inside each dd.trailerGroup (hidden when no trailer is docked)
-
-    const outdoorLight = new THREE.PointLight(0xfef08a, 0.9, 14, 1.5);
-    outdoorLight.position.set(sideRollupDoor.worldX + 2.5, 3.5, sideRollupDoor.worldZ);
-    scene.add(outdoorLight);
+    // Trailer interior lighting uses self-lit cargo strips; outdoor yard relies on hemisphere + ambient light
 
 
     return {

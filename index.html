@@ -14,16 +14,16 @@
   <script src="./js/warehouse-trucks.js?v=20261122i"></script>
   <script src="./js/backstock-racks.js?v=20261122i"></script>
   <script src="./js/claims-totes.js?v=20261122i"></script>
-  <script src="./js/sound-system.js?v=20261122i"></script>
-  <script src="./js/warehouse-textures.js?v=20261122i"></script>
-  <script src="./js/warehouse-world.js?v=20261122i"></script>
-  <script src="./js/warehouse-models.js?v=20261122i"></script>
-  <script src="./js/delivery-system.js?v=20261122i"></script>
-  <script src="./js/save-system.js?v=20261122i"></script>
-  <script src="./js/menu-ui.js?v=20261122i"></script>
-  <script src="./game.js?v=20261122i"></script>
-  <script src="./js/dock-runtime.js?v=20261122j"></script>
-  <link rel="stylesheet" href="./css/styles.css?v=20261122j">
+  <script src="./js/sound-system.js?v=20261122q"></script>
+  <script src="./js/warehouse-textures.js?v=20261122q"></script>
+  <script src="./js/warehouse-world.js?v=20261122q"></script>
+  <script src="./js/warehouse-models.js?v=20261122q"></script>
+  <script src="./js/delivery-system.js?v=20261122q"></script>
+  <script src="./js/save-system.js?v=20261122q"></script>
+  <script src="./js/menu-ui.js?v=20261122q"></script>
+  <script src="./game.js?v=20261122q"></script>
+  <script src="./js/dock-runtime.js?v=20261122q"></script>
+  <link rel="stylesheet" href="./css/styles.css?v=20261122q">
 </head>
 
 <body>
@@ -882,6 +882,21 @@
             <span>Return to Main Menu</span>
             <span class="menu-badge">EXIT</span>
           </button>
+        </div>
+        <div class="pause-audio-row" aria-label="Audio Settings">
+          <button id="btn-pause-mute" class="pause-audio-btn" type="button">🔊 SOUND: ON</button>
+          <label class="pause-vol-wrap">
+            <span>VOL</span>
+            <input id="pause-vol-slider" type="range" min="0" max="100" value="85">
+            <span id="pause-vol-val">85%</span>
+          </label>
+        </div>
+        <div class="pause-audio-row pause-gfx-row" aria-label="Graphics & Performance">
+          <button id="btn-pause-gfx" class="pause-audio-btn" type="button">🖥️ GFX: BALANCED</button>
+          <div class="pause-gfx-right">
+            <span id="pause-fps-val" class="pause-fps-pill">-- FPS</span>
+            <button id="btn-pause-fps-hud" class="pause-mini-btn" type="button">FPS HUD: OFF</button>
+          </div>
         </div>
       </div>
     </div>

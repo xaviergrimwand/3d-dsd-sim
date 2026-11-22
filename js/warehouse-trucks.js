@@ -954,6 +954,7 @@
       dd.hasTrailer = true;
       dd.trailerType = 'warehouse';
     }
+    if (typeof state.hooks.playTruckDockBrake === 'function') state.hooks.playTruckDockBrake();
 
     loadWarehouseTrailer(truck);
     truck.status = 'UNLOADING';
@@ -1134,9 +1135,13 @@
 
     const docks = state.hooks.dockDoors || [];
     const dd = docks.find((d) => d.id === delivery.dockBay);
+    const wasEmptyBay = Boolean(dd && !dd.hasTrailer);
     if (dd) {
       dd.hasTrailer = true;
       dd.trailerType = 'vendor_truck';
+    }
+    if (wasEmptyBay && typeof state.hooks.playTruckDockBrake === 'function') {
+      state.hooks.playTruckDockBrake();
     }
 
     const pallets = state.hooks.pallets || [];

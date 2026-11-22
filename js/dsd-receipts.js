@@ -205,8 +205,16 @@
     return global.ShiftStats || null;
   }
 
-  function playBeep() {
-    if (typeof state.hooks.playBeep === 'function') state.hooks.playBeep();
+  function playBeep(kind) {
+    if (typeof state.hooks.playBeep === 'function') state.hooks.playBeep(kind);
+  }
+
+  function playLabel() {
+    if (typeof state.hooks.playLabel === 'function') {
+      state.hooks.playLabel();
+    } else {
+      playSuccess();
+    }
   }
 
   function playError() {
@@ -3410,7 +3418,7 @@
           lbl.lastScannedLabel = '';
           lbl.qtyPerCase = 0;
           lbl.isPluCase = false;
-          playSuccess();
+          playLabel();
           setScannerMessage(res.wasPlu ? 'PRINTED YELLOW UPC!' : 'YELLOW LABEL PRINTED', 'ok');
           notify('🏷️ Printed yellow UPC label for ' + res.caseRec.name + (res.wasPlu ? ' (PLU -> UPC).' : '.'), 2400);
         }
