@@ -214,6 +214,7 @@ function renderInvoiceDocument(delivery, docTab) {
     invDocTabs.querySelectorAll('[data-inv-tab]').forEach((btn) => {
       btn.addEventListener('click', () => {
         if (btn.disabled) return;
+        SoundSystem.playPaperRustle();
         renderInvoiceDocument(delivery, btn.getAttribute('data-inv-tab'));
       });
     });
@@ -951,10 +952,21 @@ function togglePendingDeliveriesPanel() {
   if (!pendingDeliveriesPanel || !pendingToggleBtn) return;
   const collapsed = pendingDeliveriesPanel.classList.toggle('collapsed');
   pendingToggleBtn.textContent = collapsed ? '[+]' : '[–]';
+  SoundSystem.playButtonClick();
 }
 
 if (pendingToggleBtn && pendingDeliveriesPanel) {
-  pendingToggleBtn.addEventListener('click', togglePendingDeliveriesPanel);
+  pendingToggleBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    togglePendingDeliveriesPanel();
+  });
+  const pdHeader = pendingDeliveriesPanel.querySelector('.pd-header');
+  if (pdHeader) {
+    pdHeader.addEventListener('click', (e) => {
+      if (e.target && e.target.closest && e.target.closest('#pending-toggle-btn')) return;
+      togglePendingDeliveriesPanel();
+    });
+  }
 }
 
 function renderPendingDeliveriesPanel() {
@@ -2205,16 +2217,19 @@ function openDoorQueueModal(clickedSession) {
   SoundSystem.playButtonClick();
 }
 
-function closeDoorQueueModal() {
+function closeDoorQueueModal(silent) {
+  const wasOpen = uiState.doorQueueModalOpen;
   uiState.doorQueueModalOpen = false;
   if (doorQueueModal) doorQueueModal.classList.remove('active');
   hooks.syncPhase2ContainerClasses();
+  if (wasOpen && !silent) {
+    SoundSystem.playButtonClick();
+  }
 }
 
 if (dqCloseBtn) {
   dqCloseBtn.addEventListener('click', () => {
     closeDoorQueueModal();
-    SoundSystem.playButtonClick();
   });
 }
 if (dqToggleAllBtn) {
@@ -2232,7 +2247,7 @@ if (dqToggleAllBtn) {
 if (dqLetSelectedBtn) {
   dqLetSelectedBtn.addEventListener('click', () => {
     const ids = Array.from(DeliverySystem.selectedWaitingIds);
-    closeDoorQueueModal();
+    closeDoorQueueModal(true);
     DeliverySystem.letSelectedIn(ids);
     SoundSystem.playSuccessChime();
   });
@@ -2240,7 +2255,7 @@ if (dqLetSelectedBtn) {
 if (dqLetAllBtn) {
   dqLetAllBtn.addEventListener('click', () => {
     const ids = DeliverySystem.getWaitingOutsideSessions().map((s) => s.delivery.id);
-    closeDoorQueueModal();
+    closeDoorQueueModal(true);
     DeliverySystem.letSelectedIn(ids);
     SoundSystem.playSuccessChime();
   });

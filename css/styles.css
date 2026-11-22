@@ -67,7 +67,7 @@ canvas {
   align-items: center;
   gap: 12px;
   pointer-events: none;
-  z-index: 15;
+  z-index: 25;
 }
 
 #hitch-status-card {
@@ -87,6 +87,8 @@ canvas {
 #hud-clock-card #end-shift-btn {
   padding: 3px 7px;
   font-size: 10px;
+  pointer-events: auto;
+  touch-action: manipulation;
 }
 
 .hud-card {
@@ -3683,7 +3685,7 @@ tr.inv-short-pickable:hover {
   border-radius: 10px;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.55);
   backdrop-filter: blur(8px);
-  z-index: 16;
+  z-index: 25;
   overflow: hidden;
   font-family: "Courier New", Courier, monospace;
   color: #e2e8f0;
@@ -3706,6 +3708,10 @@ tr.inv-short-pickable:hover {
   font-weight: 800;
   letter-spacing: 0.7px;
   color: #38bdf8;
+  cursor: pointer;
+  touch-action: manipulation;
+  user-select: none;
+  -webkit-user-select: none;
 }
 
 #pending-toggle-btn {
@@ -3713,10 +3719,16 @@ tr.inv-short-pickable:hover {
   border: 1px solid rgba(148, 163, 184, 0.35);
   color: #cbd5e1;
   border-radius: 4px;
-  padding: 1px 6px;
-  font-size: 10px;
+  min-width: 30px;
+  min-height: 26px;
+  padding: 3px 8px;
+  font-size: 11px;
   font-weight: 800;
   cursor: pointer;
+  touch-action: manipulation;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 
 #pending-deliveries-list {

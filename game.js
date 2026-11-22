@@ -15,6 +15,7 @@
       showNotification: null,
       playDoorAlarm: null,
       playSuccessChime: null,
+      playButtonClick: null,
       getUnfinishedWork: null,
       onResetShift: []
     },
@@ -182,6 +183,9 @@
   }
 
   function startNextShift() {
+    if (typeof state.hooks.playButtonClick === 'function') {
+      state.hooks.playButtonClick();
+    }
     const advanced = global.ShiftClock.advanceWorkday();
     if (!advanced) {
       if (typeof state.hooks.showNotification === 'function') {
@@ -252,6 +256,7 @@
       if (hooks.showNotification) state.hooks.showNotification = hooks.showNotification;
       if (hooks.playDoorAlarm) state.hooks.playDoorAlarm = hooks.playDoorAlarm;
       if (hooks.playSuccessChime) state.hooks.playSuccessChime = hooks.playSuccessChime;
+      if (hooks.playButtonClick) state.hooks.playButtonClick = hooks.playButtonClick;
       if (hooks.getUnfinishedWork) state.hooks.getUnfinishedWork = hooks.getUnfinishedWork;
       if (typeof hooks.onResetShift === 'function') state.hooks.onResetShift.push(hooks.onResetShift);
     }

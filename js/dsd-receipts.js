@@ -171,6 +171,7 @@
       playBeep: null,
       playError: null,
       playSuccess: null,
+      playPaper: null,
       showNotification: null,
       showAlert: null,
       renderScannerFallback: null
@@ -199,6 +200,10 @@
 
   function playSuccess() {
     if (typeof state.hooks.playSuccess === 'function') state.hooks.playSuccess();
+  }
+
+  function playPaper() {
+    if (typeof state.hooks.playPaper === 'function') state.hooks.playPaper();
   }
 
   function notify(msg, duration) {
@@ -1374,11 +1379,12 @@
     return true;
   }
 
-  function closeTrashCanDialog() {
+  function closeTrashCanDialog(silent) {
     if (!state.trashModalOpen) return;
     state.trashModalOpen = false;
     const modalEl = document.getElementById('trash-receipt-modal');
     if (modalEl) modalEl.classList.remove('active');
+    if (!silent) playBeep();
     if (typeof state.hooks.onPhase2ModalChange === 'function') state.hooks.onPhase2ModalChange();
   }
 
@@ -1402,7 +1408,7 @@
     state.printedSlips = kept;
     state.activeSlipIndex = kept.length > 0 ? Math.min(Math.max(0, state.activeSlipIndex), kept.length - 1) : -1;
     state.selectedTrashSlipIds.clear();
-    closeTrashCanDialog();
+    closeTrashCanDialog(true);
     renderPrintedReceiptHud();
 
     if (typeof state.hooks.onReceiptDiscarded === 'function') state.hooks.onReceiptDiscarded(discarded);
@@ -1554,7 +1560,7 @@
     return true;
   }
 
-  function closeHandReceiptDialog() {
+  function closeHandReceiptDialog(silent) {
     if (!state.handModalOpen) return;
     state.handModalOpen = false;
     state.handTargetDelivery = null;
@@ -1562,6 +1568,7 @@
     state.handStatusError = '';
     const modalEl = document.getElementById('hand-receipt-modal');
     if (modalEl) modalEl.classList.remove('active');
+    if (!silent) playBeep();
     if (typeof state.hooks.onPhase2ModalChange === 'function') state.hooks.onPhase2ModalChange();
   }
 
@@ -1621,7 +1628,7 @@
 
     const cb = state.handOnComplete;
     state.selectedHandSlipIds.clear();
-    closeHandReceiptDialog();
+    closeHandReceiptDialog(true);
     renderPrintedReceiptHud();
 
     if (typeof state.hooks.onReceiptHanded === 'function') state.hooks.onReceiptHanded(res);
@@ -7547,6 +7554,7 @@
 
   function openNightDropPanel(dockedBesideTerminal) {
     if (state.nightDropInvoices.length === 0 && state.pinnedArchiveItems.length === 0) {
+      playBeep();
       notify('📥 Inbox tray is empty — all Night Drop invoices are keyed and nothing is pinned.');
       return false;
     }
@@ -7557,17 +7565,20 @@
       panel.style.display = 'flex';
     }
     renderNightDropPanel();
+    playPaper();
     notifyPhase2ModalChange();
     return true;
   }
 
-  function closeNightDropPanel() {
+  function closeNightDropPanel(silent) {
+    if (!state.nightDropPanelOpen) return;
     state.nightDropPanelOpen = false;
     const panel = document.getElementById('night-drop-panel');
     if (panel) {
       panel.style.display = 'none';
       panel.classList.remove('docked-terminal');
     }
+    if (!silent) playBeep();
     notifyPhase2ModalChange();
   }
 
@@ -7747,7 +7758,7 @@
         playBeep();
         notifyDeskStateChanged();
         if (state.nightDropInvoices.length === 0) {
-          closeNightDropPanel();
+          closeNightDropPanel(true);
         } else {
           renderNightDropPanel();
         }
@@ -8015,13 +8026,16 @@
     const overlay = document.getElementById('filing-overlay');
     if (overlay) overlay.style.display = 'flex';
     populateFilingCards();
+    playPaper();
     notifyPhase2ModalChange();
   }
 
   function closeFilingOverlay() {
+    if (!state.filingOpen) return;
     state.filingOpen = false;
     const overlay = document.getElementById('filing-overlay');
     if (overlay) overlay.style.display = 'none';
+    playBeep();
     notifyPhase2ModalChange();
   }
 
@@ -8671,14 +8685,17 @@
     const overlay = document.getElementById('invoice-archive-overlay');
     if (overlay) overlay.style.display = 'flex';
     renderInvoiceArchive();
+    playPaper();
     notifyDeskStateChanged();
     notifyPhase2ModalChange();
   }
 
   function closeInvoiceArchive() {
+    if (!state.archiveOpen) return;
     state.archiveOpen = false;
     const overlay = document.getElementById('invoice-archive-overlay');
     if (overlay) overlay.style.display = 'none';
+    playBeep();
     notifyDeskStateChanged();
     notifyPhase2ModalChange();
   }
@@ -9118,7 +9135,6 @@
       if (ndClose && !ndClose._dsdBound) {
         ndClose._dsdBound = true;
         ndClose.addEventListener('click', () => {
-          playBeep();
           closeNightDropPanel();
         });
       }
@@ -9131,7 +9147,6 @@
       if (filingCloseBtn && !filingCloseBtn._dsdBound) {
         filingCloseBtn._dsdBound = true;
         filingCloseBtn.addEventListener('click', () => {
-          playBeep();
           closeFilingOverlay();
         });
       }
@@ -9139,7 +9154,6 @@
       if (archiveCloseBtn && !archiveCloseBtn._dsdBound) {
         archiveCloseBtn._dsdBound = true;
         archiveCloseBtn.addEventListener('click', () => {
-          playBeep();
           closeInvoiceArchive();
         });
       }
@@ -9148,7 +9162,6 @@
       if (trmCloseBtn && !trmCloseBtn._dsdBound) {
         trmCloseBtn._dsdBound = true;
         trmCloseBtn.addEventListener('click', () => {
-          playBeep();
           closeTrashCanDialog();
         });
       }
@@ -9178,7 +9191,6 @@
       if (hrmCloseBtn && !hrmCloseBtn._dsdBound) {
         hrmCloseBtn._dsdBound = true;
         hrmCloseBtn.addEventListener('click', () => {
-          playBeep();
           closeHandReceiptDialog();
         });
       }
@@ -9221,7 +9233,7 @@
             e.stopPropagation();
             if (!isTouch && (Date.now() - lastTermTouchTime < 420)) return;
             if (isTouch) lastTermTouchTime = Date.now();
-            handleTerminalKey('SWITCH_MODE');
+            if (!handleTerminalKey('SWITCH_MODE')) playBeep();
             return;
           }
           const btn = e.target.closest('[data-tkey]');
@@ -9230,7 +9242,7 @@
           e.stopPropagation();
           if (!isTouch && (Date.now() - lastTermTouchTime < 420)) return;
           if (isTouch) lastTermTouchTime = Date.now();
-          handleTerminalKey(btn.getAttribute('data-tkey'));
+          if (!handleTerminalKey(btn.getAttribute('data-tkey'))) playBeep();
         };
         termKeypadSection.addEventListener('touchstart', (e) => onTermKeypadInput(e, true), { passive: false });
         termKeypadSection.addEventListener('mousedown', (e) => onTermKeypadInput(e, false));

@@ -3694,6 +3694,7 @@
           // Temporarily lift undocked view on narrow viewports or toggle closed
           ndPanel.classList.remove('docked-terminal');
           container.classList.remove('nightdrop-docked');
+          SoundSystem.playPaperRustle();
         } else if (isOpen) {
           window.DSDReceipts.closeNightDropPanel();
         } else {
@@ -3716,13 +3717,16 @@
         window.DSDReceipts.openTerminalScreen(initialScreen || 'menu');
       }
       syncPhase2ContainerClasses();
+      SoundSystem.playScanBeep();
     }
 
     function closeTerminal() {
+      if (!uiState.terminalModalOpen) return;
       uiState.terminalModalOpen = false;
       terminalModal.style.display = 'none';
       syncPhase2ContainerClasses();
       syncCrtMonitorDisplay();
+      SoundSystem.playButtonClick();
     }
 
     closeTerminalBtn.addEventListener('click', closeTerminal);
@@ -4326,6 +4330,7 @@
         showNotification: showNotification,
         playDoorAlarm: () => SoundSystem.playDoorWarningAlarm(),
         playSuccessChime: () => SoundSystem.playSuccessChime(),
+        playButtonClick: () => SoundSystem.playButtonClick(),
         getUnfinishedWork: () => {
           const insideSessions = DeliverySystem.sessions.filter((s) => s.state !== 'LEAVING');
           const whSummary = (window.WarehouseTrucks && typeof window.WarehouseTrucks.getUnfinishedSummary === 'function')
@@ -4525,6 +4530,7 @@
         playBeep: () => SoundSystem.playButtonClick(),
         playError: () => SoundSystem.playErrorBuzzer(),
         playSuccess: () => SoundSystem.playSuccessChime(),
+        playPaper: () => SoundSystem.playPaperRustle(),
         showNotification: showNotification,
         showAlert: showAlert
       });
