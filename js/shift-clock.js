@@ -13,7 +13,7 @@
       shiftStartHour: 6,
       shiftDurationHours: 8,
       timeSpeedMultiplier: 1,
-      msPerGameMinute: 4000,
+      msPerGameMinute: 6000,
       deliveryCutoffHour: 12,
       startDate: { month: 1, day: 1, year: 1996 },
       endCampaignDate: { month: 2, day: 1, year: 1996 }
@@ -199,7 +199,7 @@
     }
     const cfg = getConfig();
     const safeDt = Math.max(0, Math.min(Number(dtSeconds) || 0, 0.25));
-    const realSecPerGameMinute = (cfg.msPerGameMinute || 4000) / (1000 * (cfg.timeSpeedMultiplier || 1));
+    const realSecPerGameMinute = (cfg.msPerGameMinute || 6000) / (1000 * (cfg.timeSpeedMultiplier || 1));
     if (realSecPerGameMinute <= 0) return;
 
     state.gameMinuteProgress += safeDt / realSecPerGameMinute;

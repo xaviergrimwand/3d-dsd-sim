@@ -9,7 +9,7 @@
     shiftStartHour: 6,
     shiftDurationHours: 8,
     timeSpeedMultiplier: 1,
-    msPerGameMinute: 4000,
+    msPerGameMinute: 6000,
     deliveryCutoffHour: 12,
     minWarehouseTrucksPerDay: 1,
     maxWarehouseTrucksPerDay: 2,
