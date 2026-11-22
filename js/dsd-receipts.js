@@ -8361,19 +8361,20 @@
     const stats = getStats();
     if (stats) stats.setFlag('filingDone', true);
 
-    // Build Today's Archived Day Entry (Archive index 0)
+    // Build Today's Archived Day Entry (Archive index 0), grouping invoice + credit memo per delivery
     const snap = clock ? clock.getTimeSnapshot() : { dateLabel: 'FEB 1, 1996' };
-    const vendorFolders = state.filingInvoices.map((inv) => {
-      const linkedRecs = state.filingReceipts.filter((r) => r.linkedToKey === inv.key);
+    const vendorFolders = [];
+    const folderByDeliveryId = {};
+
+    const buildArchivedItems = (inv, linkedRecs) => {
       const netReceived = {};
       linkedRecs.forEach((r) => {
         (r.items || []).forEach((it) => {
           netReceived[it.code] = (netReceived[it.code] || 0) + (Number(it.qty) || 0);
         });
       });
-
       let anyShort = false;
-      const archivedItems = (inv.items || []).map((it) => {
+      const items = (inv.items || []).map((it) => {
         const received = netReceived[it.code] !== undefined ? netReceived[it.code] : 0;
         const isShort = inv.docType === 'invoice' && received < it.qty;
         if (isShort) anyShort = true;
@@ -8386,18 +8387,39 @@
           archivedShort: isShort
         };
       });
+      return { items, anyShort };
+    };
 
-      return {
+    state.filingInvoices.forEach((inv) => {
+      const linkedRecs = state.filingReceipts.filter((r) => r.linkedToKey === inv.key);
+      if (inv.docType === 'credit' && inv.deliveryId && folderByDeliveryId[inv.deliveryId]) {
+        const parentFolder = folderByDeliveryId[inv.deliveryId];
+        parentFolder.creditDoc = {
+          docNo: inv.docNo,
+          items: (inv.items || []).map((it) => Object.assign({}, it)),
+          totalAmount: inv.totalAmount
+        };
+        parentFolder.receipts = parentFolder.receipts.concat(linkedRecs);
+        return;
+      }
+
+      const built = buildArchivedItems(inv, linkedRecs);
+      const folder = {
         vendorName: inv.vendorName,
         vendorNo: inv.vendorNo,
         deptNo: inv.deptNo,
         invoiceNo: inv.docNo,
         docType: inv.docType,
-        hasShort: anyShort,
-        items: archivedItems,
+        hasShort: built.anyShort,
+        items: built.items,
         totalAmount: inv.totalAmount,
-        receipts: linkedRecs
+        creditDoc: null,
+        receipts: linkedRecs.slice()
       };
+      if (inv.deliveryId && inv.docType === 'invoice') {
+        folderByDeliveryId[inv.deliveryId] = folder;
+      }
+      vendorFolders.push(folder);
     });
 
     if (state.archiveData.length > 0 && state.archiveData[0].isToday) {
@@ -8914,9 +8936,15 @@
       '</div>'
     ) : '';
 
+    const targetInvNo = padDigits(currentVendor.invoiceNo, 6);
+    const targetCredNo = currentVendor.creditDoc ? padDigits(currentVendor.creditDoc.docNo, 6) : '';
+    const existingRecNos = new Set((currentVendor.receipts || []).map((r) => r && r.receiptNumber));
     const todaysMatching = state.processedReceipts.filter((r) => {
       if (!r || r.voided || isPreviousDayReceipt(r) || !r.finalized) return false;
-      return padDigits(r.invoiceNo, 6) === padDigits(currentVendor.invoiceNo, 6) &&
+      if (existingRecNos.has(r.receiptNumber)) return false;
+      const recInv = padDigits(r.invoiceNo, 6);
+      const matchesInv = recInv === targetInvNo || (targetCredNo && recInv === targetCredNo);
+      return matchesInv &&
         padDigits(r.vendorNo, 3) === padDigits(currentVendor.vendorNo, 3) &&
         padDigits(r.deptNo, 2) === padDigits(currentVendor.deptNo, 2);
     });
@@ -8924,14 +8952,22 @@
     const allArchiveAndCorrectionReceipts = (currentVendor.receipts || []).map((rec) => ({ rec: rec, isCorrectionToday: false }))
       .concat(todaysMatching.map((rec) => ({ rec: rec, isCorrectionToday: true })));
 
-    const missingReceiptNoticeHtml = allArchiveAndCorrectionReceipts.length === 0
-      ? '<div class="arch-doc-group" style="margin-top:12px;"><div class="arch-doc-tray" style="background:#450a0a; border:2px dashed #ef4444; color:#fecaca; padding:12px; text-align:center; font-weight:800;">⚠️ NO RECEIVING RECEIPT FOUND ON FILE FOR INVOICE #' + escapeHtml(currentVendor.invoiceNo) + '</div></div>'
-      : '';
+    const isCreditReceiptEntry = (entry) => {
+      const rec = entry && entry.rec;
+      if (!rec) return false;
+      if (rec.type === 'credit') return true;
+      return Boolean(targetCredNo && padDigits(rec.invoiceNo, 6) === targetCredNo);
+    };
 
-    const receiptsHtml = missingReceiptNoticeHtml + allArchiveAndCorrectionReceipts.map((entry) => {
+    const invoiceReceiptEntries = allArchiveAndCorrectionReceipts.filter((entry) => !isCreditReceiptEntry(entry));
+    const creditReceiptEntries = allArchiveAndCorrectionReceipts.filter((entry) => isCreditReceiptEntry(entry));
+    const hasHistoricalInvoiceRcpt = invoiceReceiptEntries.some((e) => !e.isCorrectionToday);
+    const hasHistoricalCreditRcpt = creditReceiptEntries.some((e) => !e.isCorrectionToday);
+
+    const renderArchiveReceiptGroup = (entry, hasHistoricalInCat) => {
       const rec = entry.rec;
       const isCorrectionToday = entry.isCorrectionToday;
-      const isCred = rec.type === 'credit';
+      const isCred = isCreditReceiptEntry(entry);
       const refDocNo = rec.invoiceNo || (isCred && currentVendor.creditDoc ? currentVendor.creditDoc.docNo : currentVendor.invoiceNo);
       const rcptTime = rec.time || currentVendor.time || '';
       let rcptUnits = 0;
@@ -8957,17 +8993,17 @@
       const rcptTotal = rec.totalAmount !== undefined ? Number(rec.totalAmount) : rcptSum;
       const rcptTotalStr = rcptTotal < 0 ? '-$' + Math.abs(rcptTotal).toFixed(2) : formatMoney(rcptTotal);
       const corrBadge = isCorrectionToday
-        ? (' <span style="background:' + ((currentVendor.receipts || []).length === 0 ? '#0369a1' : '#15803d') + '; color:#fff; padding:1px 6px; border-radius:2px; font-size:9px; font-weight:800; margin-left:6px;">' + ((currentVendor.receipts || []).length === 0 ? 'ADDED RECEIPT (TODAY)' : 'CORRECTION (TODAY)') + '</span>')
+        ? (' <span style="background:' + (!hasHistoricalInCat ? '#0369a1' : '#15803d') + '; color:#fff; padding:1px 6px; border-radius:2px; font-size:9px; font-weight:800; margin-left:6px;">' + (!hasHistoricalInCat ? 'ADDED RECEIPT (TODAY)' : 'CORRECTION (TODAY)') + '</span>')
         : '';
       return '<div class="arch-doc-group ' + (isCred ? 'cat-credit-rcpt' : 'cat-receipt') + '">' +
         '<div class="arch-cat-bar">' +
         '<div class="arch-cat-tab">' +
-        '<span>' + (isCred ? 'CREDIT RECEIPT' : 'RECEIVING RECEIPT') + '</span>' +
+        '<span>' + (isCred ? 'CREDIT MEMO RECEIPT' : 'INVOICE RECEIPT') + '</span>' +
         '<span class="arch-cat-tab-num">#' + escapeHtml(rec.receiptNumber) + '</span>' +
         corrBadge +
         '</div>' +
         '<div class="arch-cat-meta">' +
-        '<span>INV #' + escapeHtml(refDocNo) + (rcptTime ? ' · ' + escapeHtml(rcptTime) : '') + '</span>' +
+        '<span>' + (isCred ? 'CRED #' : 'INV #') + escapeHtml(refDocNo) + (rcptTime ? ' · ' + escapeHtml(rcptTime) : '') + '</span>' +
         '</div>' +
         '</div>' +
         '<div class="arch-doc-tray">' +
@@ -9002,13 +9038,21 @@
         '</div>' +
         '</div>' +
         '</div>';
-    }).join('');
+    };
+
+    const missingReceiptNoticeHtml = invoiceReceiptEntries.length === 0
+      ? '<div class="arch-doc-group" style="margin-top:12px;"><div class="arch-doc-tray" style="background:#450a0a; border:2px dashed #ef4444; color:#fecaca; padding:12px; text-align:center; font-weight:800;">⚠️ NO INVOICE RECEIPT FOUND ON FILE FOR INVOICE #' + escapeHtml(currentVendor.invoiceNo) + '</div></div>'
+      : '';
+
+    const invoiceReceiptsHtml = missingReceiptNoticeHtml +
+      invoiceReceiptEntries.map((entry) => renderArchiveReceiptGroup(entry, hasHistoricalInvoiceRcpt)).join('');
+    const creditReceiptsHtml = creditReceiptEntries.map((entry) => renderArchiveReceiptGroup(entry, hasHistoricalCreditRcpt)).join('');
 
     viewer.innerHTML =
       '<div class="arch-doc-group cat-invoice">' +
       '<div class="arch-cat-bar">' +
       '<div class="arch-cat-tab">' +
-      '<span>PAPER INVOICE</span>' +
+      '<span>INVOICE</span>' +
       '<span class="arch-cat-tab-num">#' + escapeHtml(currentVendor.invoiceNo) + '</span>' +
       '</div>' +
       '<div class="arch-cat-meta">' +
@@ -9066,8 +9110,9 @@
       '</div>' +
       '</div>' +
       '</div>' +
+      invoiceReceiptsHtml +
       creditHtml +
-      receiptsHtml;
+      creditReceiptsHtml;
 
     const pinInvBtn = document.getElementById('arch-pin-inv-btn');
     if (pinInvBtn) {
