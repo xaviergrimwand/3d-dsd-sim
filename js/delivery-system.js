@@ -1020,17 +1020,39 @@
         });
         if (barSummaryEl) {
           barSummaryEl.classList.remove('is-urgent', 'is-arrived');
+          let summaryText = 'No pending deliveries';
+          let summaryDelivery = null;
           if (lateCount > 0 && firstLate) {
-            barSummaryEl.textContent = `${lateCount} LATE · ${firstLate.carrier || 'TRUCK'}`;
+            summaryText = `${lateCount} LATE · ${firstLate.carrier || 'TRUCK'}`;
+            summaryDelivery = firstLate;
             barSummaryEl.classList.add('is-urgent');
           } else if (firstArrived) {
-            barSummaryEl.textContent = `AT DOOR · ${firstArrived.carrier || 'DELIVERY'}`;
+            summaryText = `AT DOOR · ${firstArrived.carrier || 'DELIVERY'}`;
+            summaryDelivery = firstArrived;
             barSummaryEl.classList.add('is-arrived');
           } else if (visible.length > 0) {
             const nxt = visible[0];
-            barSummaryEl.textContent = `NEXT ${nxt.etaText || '6:00 AM'} · ${nxt.carrier || 'DELIVERY'}`;
+            summaryText = `NEXT ${nxt.etaText || '6:00 AM'} · ${nxt.carrier || 'DELIVERY'}`;
+            summaryDelivery = nxt;
+          }
+          const barIcoEl = barSummaryEl.querySelector('.pd-bar-ico');
+          const barTxtEl = barSummaryEl.querySelector('.pd-bar-txt');
+          if (barIcoEl && barTxtEl) {
+            if (summaryDelivery && summaryDelivery.type) {
+              const svgMarkup = getDeliveryTypeSvg(summaryDelivery.type);
+              if (barIcoEl.dataset.delivType !== summaryDelivery.type) {
+                barIcoEl.dataset.delivType = summaryDelivery.type;
+                barIcoEl.innerHTML = svgMarkup;
+              }
+              barIcoEl.classList.add('active');
+            } else {
+              barIcoEl.dataset.delivType = '';
+              barIcoEl.innerHTML = '';
+              barIcoEl.classList.remove('active');
+            }
+            barTxtEl.textContent = summaryText;
           } else {
-            barSummaryEl.textContent = 'No pending deliveries';
+            barSummaryEl.textContent = summaryText;
           }
         }
         if (alertDotEl) {

@@ -10,20 +10,20 @@
   <script src="./js/shift-clock.js?v=20261122i"></script>
   <script src="./js/shift-stats.js?v=20261122i"></script>
   <script src="./js/hud-messages.js?v=20261122i"></script>
-  <script src="./js/dsd-receipts.js?v=20261122i"></script>
-  <script src="./js/warehouse-trucks.js?v=20261122i"></script>
+  <script src="./js/dsd-receipts.js?v=20261122w"></script>
+  <script src="./js/warehouse-trucks.js?v=20261122w"></script>
   <script src="./js/backstock-racks.js?v=20261122i"></script>
   <script src="./js/claims-totes.js?v=20261122i"></script>
   <script src="./js/sound-system.js?v=20261122q"></script>
   <script src="./js/warehouse-textures.js?v=20261122q"></script>
   <script src="./js/warehouse-world.js?v=20261122q"></script>
   <script src="./js/warehouse-models.js?v=20261122q"></script>
-  <script src="./js/delivery-system.js?v=20261122q"></script>
-  <script src="./js/save-system.js?v=20261122q"></script>
+  <script src="./js/delivery-system.js?v=20261122u"></script>
+  <script src="./js/save-system.js?v=20261122w"></script>
   <script src="./js/menu-ui.js?v=20261122q"></script>
   <script src="./game.js?v=20261122q"></script>
-  <script src="./js/dock-runtime.js?v=20261122q"></script>
-  <link rel="stylesheet" href="./css/styles.css?v=20261122q">
+  <script src="./js/dock-runtime.js?v=20261122x"></script>
+  <link rel="stylesheet" href="./css/styles.css?v=20261122z">
 </head>
 
 <body>
@@ -70,8 +70,11 @@
             </div>
           </div>
           <div class="dlp-sd-queue-row">
-            <span id="dlp-sd-queue-txt">SD Queue: 0</span>
-            <span id="dlp-wh-driver-tag" class="crt-dir-tag crt-dir-tag-vendor dlp-wh-tag">WH DRIVER</span>
+            <span id="dlp-wh-driver-tag" class="crt-dir-tag dlp-wh-tag">WH DRIVER</span>
+            <span class="dlp-sd-queue-group" title="Side Door Queue" aria-label="Side Door Queue">
+              <span class="dlp-sd-ico" aria-hidden="true"><svg viewBox="0 0 20 16" fill="currentColor"><path d="M10.2 1.2H18.6V14.8H12V13.2H17V2.8H11.8V5.1H10.2V1.2z"/><circle cx="7.6" cy="3.4" r="1.6"/><path d="M6.2 5.7h2.4l-.8 4.1H5.5l.7-4.1z"/><path d="M3.1 8.8l2.5-2.1 2.2-.3 2.5 1.8M2.9 14.1l2.1-2.6 1.5-2.1 2.2 1.9.8 2.8" fill="none" stroke="currentColor" stroke-width="1.65" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+              <span id="dlp-sd-queue-txt" class="dlp-sd-val">0</span>
+            </span>
           </div>
         </div>
         <button id="end-shift-btn" type="button">END SHIFT</button>
@@ -203,7 +206,7 @@
     <div id="pending-deliveries-panel" class="collapsed">
       <div class="pd-header" title="Collapse or expand schedule [P]">
         <span class="pd-title-txt">PENDING DELIVERIES (0)</span>
-        <span class="pd-bar-summary">No pending deliveries</span>
+        <span class="pd-bar-summary"><span class="pd-bar-ico" aria-hidden="true"></span><span class="pd-bar-txt">No pending deliveries</span></span>
         <span class="pd-alert-dot"></span>
         <button id="pending-toggle-btn" type="button" aria-label="Toggle Pending Deliveries">▼</button>
       </div>

@@ -1362,9 +1362,21 @@
     if (typeof state.hooks.onScheduleUpdated === 'function') state.hooks.onScheduleUpdated();
   }
 
+  function cloneTruckData(val, extraSkipKeys) {
+    if (global.SaveSystem && typeof global.SaveSystem.cloneCleanData === 'function') {
+      return global.SaveSystem.cloneCleanData(val, extraSkipKeys);
+    }
+    const skip = extraSkipKeys ? new Set(extraSkipKeys) : null;
+    return JSON.parse(JSON.stringify(val, (k, v) => {
+      if (skip && skip.has(k)) return undefined;
+      if (v && typeof v === 'object' && (v.isObject3D || v.isMesh || v.isGroup || v.isMaterial || v.isTexture)) return undefined;
+      return v;
+    }));
+  }
+
   function exportState() {
     const cleanSchedule = (state.schedule || []).map((entry) => {
-      const copy = JSON.parse(JSON.stringify(entry, (k, v) => (k === 'spawnedPallets' || k === 'mesh' ? undefined : v)));
+      const copy = cloneTruckData(entry, ['spawnedPallets', 'mesh']);
       copy.spawnedPallets = [];
       return copy;
     });
@@ -1415,7 +1427,7 @@
     state.priorityWarnedDeliveryIds = Object.assign({}, data.priorityWarnedDeliveryIds || {});
     state.schedule = Array.isArray(data.schedule)
       ? data.schedule.map((e) => {
-        const cloned = JSON.parse(JSON.stringify(e));
+        const cloned = cloneTruckData(e);
         cloned.spawnedPallets = [];
         return cloned;
       })

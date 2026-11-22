@@ -4736,7 +4736,7 @@
         const hasWh = waiting.some((s) => s && s.delivery && s.delivery.type === 'warehouse');
         if (sdQueueTxtEl && lastSdQueueCount !== count) {
           lastSdQueueCount = count;
-          sdQueueTxtEl.textContent = `SD Queue: ${count}`;
+          sdQueueTxtEl.textContent = String(count);
         }
         if (whDriverTagEl && lastSdHasWh !== hasWh) {
           lastSdHasWh = hasWh;
@@ -5034,7 +5034,9 @@
           topDrawerSlideOpen: Boolean(drawerState.topDrawerSlideOpen)
         },
         pallets: pallets.map((p) => ({
-          data: JSON.parse(JSON.stringify(p.data || {}, (k, v) => (k === 'mesh' ? undefined : v))),
+          data: (window.SaveSystem && typeof window.SaveSystem.cloneCleanData === 'function')
+            ? window.SaveSystem.cloneCleanData(p.data || {}, ['mesh'])
+            : JSON.parse(JSON.stringify(p.data || {}, (k, v) => (k === 'mesh' ? undefined : v))),
           x: Number(p.position.x) || 0,
           y: Number(p.position.y) || 0,
           z: Number(p.position.z) || 0,
@@ -5094,7 +5096,9 @@
       const savedPallets = Array.isArray(data.pallets) ? data.pallets : [];
       savedPallets.forEach((sp) => {
         if (!sp || !sp.data) return;
-        const spec = JSON.parse(JSON.stringify(sp.data));
+        const spec = (window.SaveSystem && typeof window.SaveSystem.cloneCleanData === 'function')
+          ? window.SaveSystem.cloneCleanData(sp.data)
+          : JSON.parse(JSON.stringify(sp.data));
         const created = createPallet3D(spec);
         if (created) {
           created.position.set(Number(sp.x) || 0, Number(sp.y) || 0, Number(sp.z) || 0);

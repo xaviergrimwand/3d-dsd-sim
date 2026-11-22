@@ -6865,9 +6865,11 @@
     const shuffled = candidates.slice().sort(() => Math.random() - 0.5);
     const taskCount = Math.min(desiredCount, shuffled.length);
 
-    // First task starts immediately at 6:00 AM (360); remaining tasks arrive across morning window up to 11:25 AM (<= 690)
+    // First task arrives 1 minute into the shift (6:01 AM) so it populates the Message Log; remaining tasks arrive across morning window up to 11:25 AM (<= 690)
+    const shiftStartMin = (Number(cfg.shiftStartHour) || 6) * 60;
+    const firstTaskMin = shiftStartMin + 1;
     const maxReleaseMin = Math.min(685, cutoffMinute - 5);
-    const releaseMinutes = [360];
+    const releaseMinutes = [firstTaskMin];
     for (let i = 1; i < taskCount; i++) {
       releaseMinutes.push(375 + Math.floor(Math.random() * Math.max(1, maxReleaseMin - 375 + 1)));
     }
@@ -6880,7 +6882,7 @@
       const rec = pick.primaryRec;
       const invNo = padDigits(v.invoiceNo, 6);
       const isInitialShiftTask = state.homeOfficeTasks.length === 0;
-      const releaseMin = isInitialShiftTask ? 360 : releaseMinutes[Math.min(i, releaseMinutes.length - 1)];
+      const releaseMin = isInitialShiftTask ? firstTaskMin : releaseMinutes[Math.min(i, releaseMinutes.length - 1)];
 
       const roll = Math.random();
       const taskType = roll < 0.35 ? 'shortage' : (roll < 0.65 ? 'overage' : 'receipt_not_found');
@@ -6936,7 +6938,7 @@
           targetDelta: diff,
           releaseMinute: releaseMin,
           releaseTimeLabel: formatMinute12h(releaseMin),
-          released: isInitialShiftTask,
+          released: false,
           status: 'pending',
           failReason: '',
           feedbackMsg: '',
@@ -6977,7 +6979,7 @@
           targetDelta: -overDiff,
           releaseMinute: releaseMin,
           releaseTimeLabel: formatMinute12h(releaseMin),
-          released: isInitialShiftTask,
+          released: false,
           status: 'pending',
           failReason: '',
           feedbackMsg: '',
@@ -7011,7 +7013,7 @@
           expectedItems: isDnr ? [] : expectedItems,
           releaseMinute: releaseMin,
           releaseTimeLabel: formatMinute12h(releaseMin),
-          released: isInitialShiftTask,
+          released: false,
           status: 'pending',
           failReason: '',
           feedbackMsg: '',
@@ -9568,6 +9570,9 @@
   function deepCloneData(val) {
     if (val === undefined) return undefined;
     if (val === null || typeof val !== 'object') return val;
+    if (global.SaveSystem && typeof global.SaveSystem.cloneCleanData === 'function') {
+      return global.SaveSystem.cloneCleanData(val);
+    }
     return JSON.parse(JSON.stringify(val));
   }
 

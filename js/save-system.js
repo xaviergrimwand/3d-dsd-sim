@@ -88,9 +88,83 @@
     };
   }
 
+  const DEFAULT_SKIP_KEYS = new Set([
+    'mesh', 'spawnedPallets', 'driver', 'cart', 'creditTote', 'vendorJack',
+    'hitchedPallet', 'heldCase', 'heldItem', 'interactible', 'hitbox',
+    'cargoGroup', 'userData', 'parent', 'children', 'material', 'geometry'
+  ]);
+
+  function isNonSerializableRuntimeObj(val) {
+    if (!val || typeof val !== 'object') return false;
+    if (
+      val.isObject3D || val.isMesh || val.isGroup || val.isScene ||
+      val.isLight || val.isCamera || val.isMaterial || val.isBufferGeometry ||
+      val.isGeometry || val.isTexture
+    ) {
+      return true;
+    }
+    if (typeof global.Node !== 'undefined' && val instanceof global.Node) return true;
+    if (val === global || (typeof global.Window !== 'undefined' && val instanceof global.Window)) return true;
+    return false;
+  }
+
+  /**
+   * Deep-clones plain JSON-compatible data while skipping runtime/Three.js objects
+   * and breaking circular references without invoking Object3D.prototype.toJSON().
+   */
+  function cloneCleanData(val, extraSkipKeys) {
+    const skipSet = Array.isArray(extraSkipKeys) && extraSkipKeys.length > 0
+      ? new Set([...DEFAULT_SKIP_KEYS, ...extraSkipKeys])
+      : DEFAULT_SKIP_KEYS;
+    const seen = new WeakSet();
+
+    function walk(node) {
+      if (node === null || node === undefined) return node === null ? null : undefined;
+      const t = typeof node;
+      if (t === 'string' || t === 'boolean') return node;
+      if (t === 'number') return Number.isFinite(node) ? node : null;
+      if (t === 'function' || t === 'symbol' || t === 'bigint') return undefined;
+      if (node instanceof Date) return Number.isNaN(node.getTime()) ? null : node.toISOString();
+      if (isNonSerializableRuntimeObj(node)) return undefined;
+      if (seen.has(node)) return undefined;
+
+      seen.add(node);
+      try {
+        if (Array.isArray(node)) {
+          const outArr = new Array(node.length);
+          for (let i = 0; i < node.length; i++) {
+            const item = walk(node[i]);
+            outArr[i] = item === undefined ? null : item;
+          }
+          return outArr;
+        }
+        if (node instanceof Set || node instanceof Map) {
+          return {};
+        }
+        const outObj = {};
+        const keys = Object.keys(node);
+        for (let i = 0; i < keys.length; i++) {
+          const k = keys[i];
+          if (skipSet.has(k)) continue;
+          const v = node[k];
+          if (isNonSerializableRuntimeObj(v)) continue;
+          const cloned = walk(v);
+          if (cloned !== undefined) {
+            outObj[k] = cloned;
+          }
+        }
+        return outObj;
+      } finally {
+        seen.delete(node);
+      }
+    }
+
+    return walk(val);
+  }
+
   function buildSavePayload(slotId) {
     const cfg = getSlotConfig(slotId);
-    const modules = {
+    const modules = cloneCleanData({
       clock: global.ShiftClock && typeof global.ShiftClock.exportState === 'function' ? global.ShiftClock.exportState() : null,
       stats: global.ShiftStats && typeof global.ShiftStats.exportState === 'function' ? global.ShiftStats.exportState() : null,
       trucks: global.WarehouseTrucks && typeof global.WarehouseTrucks.exportState === 'function' ? global.WarehouseTrucks.exportState() : null,
@@ -99,7 +173,7 @@
       receipts: global.DSDReceipts && typeof global.DSDReceipts.exportState === 'function' ? global.DSDReceipts.exportState() : null,
       delivery: typeof state.hooks.exportDeliveryState === 'function' ? state.hooks.exportDeliveryState() : null,
       world: typeof state.hooks.exportWorldState === 'function' ? state.hooks.exportWorldState() : null
-    };
+    });
 
     return {
       schemaVersion: SCHEMA_VERSION,
@@ -379,6 +453,7 @@
 
   global.SaveSystem = {
     SCHEMA_VERSION: SCHEMA_VERSION,
+    cloneCleanData: cloneCleanData,
     init: init,
     buildSavePayload: buildSavePayload,
     saveGame: saveGame,
