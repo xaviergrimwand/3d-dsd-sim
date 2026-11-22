@@ -100,9 +100,13 @@
       (navigator.maxTouchPoints > 0) ||
       (window.matchMedia && window.matchMedia('(pointer: coarse)').matches) ||
       (typeof lib !== 'undefined' && lib.shouldUseTouchControls && lib.shouldUseTouchControls());
+    let usingTouchAim = isTouchDevice;
+    let lastTouchInteractionMs = 0;
 
     function activateTouchControls() {
       isTouchDevice = true;
+      usingTouchAim = true;
+      lastTouchInteractionMs = Date.now();
       if (joystickZone) joystickZone.style.display = 'block';
       if (touchWalkZone) touchWalkZone.style.display = 'block';
       if (touchLookZone) touchLookZone.style.display = 'block';
@@ -114,7 +118,14 @@
       activateTouchControls();
     }
 
-    window.addEventListener('touchstart', activateTouchControls, { passive: true, once: true });
+    window.addEventListener('touchstart', () => {
+      lastTouchInteractionMs = Date.now();
+      if (!isTouchDevice) {
+        activateTouchControls();
+      } else {
+        usingTouchAim = true;
+      }
+    }, { passive: true });
 
 
     const uiState = {
@@ -340,12 +351,26 @@
     let mouseDownPos = { x: 0, y: 0 };
     let mouseDragMoved = 0;
     const pointerNDC = new THREE.Vector2(0, 0);
+    const CENTER_AIM_NDC = { x: 0, y: 0 };
 
     const mouseSens = 0.0022;
 
     function updatePointerNDC(clientX, clientY) {
       pointerNDC.x = (clientX / Math.max(1, window.innerWidth)) * 2 - 1;
       pointerNDC.y = -(clientY / Math.max(1, window.innerHeight)) * 2 + 1;
+    }
+
+    function getAimNDC() {
+      return (isPointerLocked || usingTouchAim) ? CENTER_AIM_NDC : pointerNDC;
+    }
+
+    function positionBoxHoverPill(pillEl, aimNDC, rightMargin) {
+      const margin = rightMargin || 250;
+      const pxScreen = ((aimNDC.x + 1) * 0.5) * window.innerWidth;
+      const pyScreen = ((1 - aimNDC.y) * 0.5) * window.innerHeight;
+      pillEl.style.display = 'block';
+      pillEl.style.left = Math.min(window.innerWidth - margin, Math.max(10, pxScreen + 14)) + 'px';
+      pillEl.style.top = Math.max(46, pyScreen - 34) + 'px';
     }
 
     function updateLockHintDisplay() {
@@ -959,6 +984,9 @@
 
     window.addEventListener('mousemove', (e) => {
       if (isBlockingModalOpen()) return;
+      if (Date.now() - lastTouchInteractionMs > 600) {
+        usingTouchAim = false;
+      }
       updatePointerNDC(e.clientX, e.clientY);
       if (isPointerLocked) {
         player.yaw -= e.movementX * mouseSens;
@@ -1409,15 +1437,17 @@
       lookTouchStart.y = touch.clientY;
       lookTouchMaxMove = 0;
       lookTouchHeldMs = 0;
-      updatePointerNDC(touch.clientX, touch.clientY);
+      usingTouchAim = true;
+      lastTouchInteractionMs = Date.now();
       if (e.cancelable) e.preventDefault();
     }
 
     touchLookZone.addEventListener('touchstart', startLookTouch, { passive: false });
     renderer.domElement.addEventListener('touchstart', (e) => {
+      usingTouchAim = true;
+      lastTouchInteractionMs = Date.now();
       if (lookTouchId !== null || joystickTouchId !== null) return;
       const touch = e.changedTouches[0];
-      updatePointerNDC(touch.clientX, touch.clientY);
       const nearTippedTotes = Boolean(
         window.ClaimsTotes &&
         typeof window.ClaimsTotes.getOpenTotes === 'function' &&
@@ -1434,7 +1464,18 @@
         if (t.identifier === lookTouchId) {
           lookTouchId = null;
           if (lookTouchMaxMove < 10 && lookTouchHeldMs < 350) {
-            if (handleDirectBoxClick(t.clientX, t.clientY) || handleClaimsToteInteract(true, t.clientX, t.clientY) || handleBackstockInteract(true, t.clientX, t.clientY)) {
+            const tappedDirect =
+              handleDirectBoxClick(t.clientX, t.clientY) ||
+              handleClaimsToteInteract(true, t.clientX, t.clientY) ||
+              handleBackstockInteract(true, t.clientX, t.clientY);
+            if (tappedDirect) {
+              lastTouchTapMs = Date.now();
+            } else if (
+              (isCarryingBackstockCase() && uiState.hoveredBackstockTarget) ||
+              (isArrangingRecallItem() && uiState.hoveredRecallArrangeSpot) ||
+              ((isHoldingClaimsItem() || isHoldingRecallTote()) && (uiState.hoveredClaimsReceptacle || uiState.hoveredRecallBottomDock || uiState.hoveredRecallItem))
+            ) {
+              handleInteractE();
               lastTouchTapMs = Date.now();
             }
           }
@@ -1573,6 +1614,7 @@
         lookTouchHeldMs += (dt || 0.016) * 1000;
       }
 
+      const aimNDC = getAimNDC();
       const px = player.position.x;
       const pz = player.position.z;
       const carryingBackstock = isCarryingBackstockCase();
@@ -1619,7 +1661,7 @@
       if (invScannerActive) {
         const invMeshes = window.BackstockRacks.getInventoryRaycastMeshes();
         if (invMeshes.length > 0) {
-          interactRaycaster.setFromCamera(isPointerLocked ? { x: 0, y: 0 } : pointerNDC, camera);
+          interactRaycaster.setFromCamera(aimNDC, camera);
           interactRaycaster.far = 7.0;
           const invHits = interactRaycaster.intersectObjects(invMeshes, false);
           if (invHits.length > 0 && invHits[0].object && invHits[0].object.userData && invHits[0].object.userData.backstockCaseRef) {
@@ -1647,7 +1689,7 @@
       if (supScannerActive) {
         const supMeshes = window.BackstockRacks.getPickableCaseMeshes();
         if (supMeshes.length > 0) {
-          interactRaycaster.setFromCamera(isPointerLocked ? { x: 0, y: 0 } : pointerNDC, camera);
+          interactRaycaster.setFromCamera(aimNDC, camera);
           interactRaycaster.far = 7.0;
           const supHits = interactRaycaster.intersectObjects(supMeshes, false);
           if (supHits.length > 0 && supHits[0].object && supHits[0].object.userData && supHits[0].object.userData.backstockCaseRef) {
@@ -1657,11 +1699,11 @@
         }
       }
 
-      // Raycast over Individual Delivery Boxes (only when NOT carrying a backstock case or targeting an inventory/supply shelf case)
-      if (!carryingBackstock && !holdingClaimsItem && !holdingRecallTote && !arrangingRecallItem && !uiState.hoveredInventoryCase && !uiState.hoveredSupplyCase && !isBlockingModalOpen() && (!isPointerLocked || uiState.scannerModalOpen || uiState.invoiceModalOpen || uiState.overageDeliveryId)) {
+      // Raycast over Individual Delivery Boxes (only when NOT carrying a backstock case, operating the jack, or targeting an inventory/supply shelf case)
+      if (!carryingBackstock && !player.hasElectricJack && !holdingClaimsItem && !holdingRecallTote && !arrangingRecallItem && !uiState.hoveredInventoryCase && !uiState.hoveredSupplyCase && !isBlockingModalOpen() && (!(isPointerLocked || usingTouchAim) || uiState.scannerModalOpen || uiState.invoiceModalOpen || uiState.overageDeliveryId)) {
         const boxMeshes = getActiveDeliveryBoxMeshes();
         if (boxMeshes.length > 0) {
-          interactRaycaster.setFromCamera(isPointerLocked ? { x: 0, y: 0 } : pointerNDC, camera);
+          interactRaycaster.setFromCamera(aimNDC, camera);
           interactRaycaster.far = 7.0;
           const boxHits = interactRaycaster.intersectObjects(boxMeshes, false);
           if (boxHits.length > 0 && boxHits[0].object.userData && boxHits[0].object.userData.physicalBoxRef) {
@@ -1672,7 +1714,7 @@
       }
 
       // 1. Raycast from reticle (or unlocked cursor) to detect interactible OR backstock target in focus
-      interactRaycaster.setFromCamera(isPointerLocked ? { x: 0, y: 0 } : pointerNDC, camera);
+      interactRaycaster.setFromCamera(aimNDC, camera);
       interactRaycaster.far = 5.2;
 
       focusedInteractible = null;
@@ -1727,7 +1769,7 @@
       if (claimsItemRayEligible) {
         const dmgMeshes = window.ClaimsTotes.getOpenToteItemMeshes();
         if (dmgMeshes.length > 0) {
-          interactRaycaster.setFromCamera(isPointerLocked ? { x: 0, y: 0 } : pointerNDC, camera);
+          interactRaycaster.setFromCamera(aimNDC, camera);
           interactRaycaster.far = uiState.scannerModalOpen ? 7.0 : 4.6;
           const dHits = interactRaycaster.intersectObjects(dmgMeshes, false);
           if (dHits.length > 0 && dHits[0].distance < interactHitDist && dHits[0].object && dHits[0].object.userData && dHits[0].object.userData.claimsItemRef) {
@@ -1741,7 +1783,7 @@
 
       // Raycast top-shelf placement spot while rearranging a recalled item
       if (arrangingRecallItem && window.ClaimsTotes && typeof window.ClaimsTotes.updateRecallArrangePreview === 'function') {
-        interactRaycaster.setFromCamera(isPointerLocked ? { x: 0, y: 0 } : pointerNDC, camera);
+        interactRaycaster.setFromCamera(aimNDC, camera);
         interactRaycaster.far = 4.6;
         uiState.hoveredRecallArrangeSpot = window.ClaimsTotes.updateRecallArrangePreview(interactRaycaster);
       } else if (window.ClaimsTotes && typeof window.ClaimsTotes.updateRecallArrangePreview === 'function') {
@@ -1750,7 +1792,7 @@
 
       // Raycast top-shelf items / bottom-shelf dock / disposal receptacles while holding Small Recall Tote (or claims item)
       if ((holdingClaimsItem || holdingRecallTote) && !isBlockingModalOpen() && !uiState.invoiceModalOpen && !uiState.overageDeliveryId && window.ClaimsTotes) {
-        interactRaycaster.setFromCamera(isPointerLocked ? { x: 0, y: 0 } : pointerNDC, camera);
+        interactRaycaster.setFromCamera(aimNDC, camera);
         interactRaycaster.far = 4.6;
         let bestTop = Infinity;
         let bestDock = Infinity;
@@ -1926,11 +1968,7 @@
           const boxUnitTag = hb.isCredit
             ? ' (1u CREDIT)'
             : (Number(hb.unitsPerCase) > 0 ? ` (${Number(hb.unitsPerCase)}u/cs)` : '');
-          const pxScreen = ((pointerNDC.x + 1) * 0.5) * window.innerWidth;
-          const pyScreen = ((1 - pointerNDC.y) * 0.5) * window.innerHeight;
-          boxHoverPill.style.display = 'block';
-          boxHoverPill.style.left = Math.min(window.innerWidth - 220, Math.max(10, pxScreen + 14)) + 'px';
-          boxHoverPill.style.top = Math.max(46, pyScreen - 34) + 'px';
+          positionBoxHoverPill(boxHoverPill, aimNDC, 220);
           if (boxOverageMode) {
             boxHoverPill.style.borderColor = '#e879f9';
             boxHoverPill.style.color = '#fae8ff';
@@ -1989,11 +2027,7 @@
         promptDriver.style.display = 'none';
 
         if (boxHoverPill) {
-          const pxScreen = ((pointerNDC.x + 1) * 0.5) * window.innerWidth;
-          const pyScreen = ((1 - pointerNDC.y) * 0.5) * window.innerHeight;
-          boxHoverPill.style.display = 'block';
-          boxHoverPill.style.left = Math.min(window.innerWidth - 260, Math.max(10, pxScreen + 14)) + 'px';
-          boxHoverPill.style.top = Math.max(46, pyScreen - 34) + 'px';
+          positionBoxHoverPill(boxHoverPill, aimNDC, 260);
           if (!isPlaced) {
             boxHoverPill.style.borderColor = '#ef4444';
             boxHoverPill.style.color = '#fecaca';
@@ -2053,11 +2087,7 @@
         promptDriver.style.display = 'none';
 
         if (boxHoverPill) {
-          const pxScreen = ((pointerNDC.x + 1) * 0.5) * window.innerWidth;
-          const pyScreen = ((1 - pointerNDC.y) * 0.5) * window.innerHeight;
-          boxHoverPill.style.display = 'block';
-          boxHoverPill.style.left = Math.min(window.innerWidth - 260, Math.max(10, pxScreen + 14)) + 'px';
-          boxHoverPill.style.top = Math.max(46, pyScreen - 34) + 'px';
+          positionBoxHoverPill(boxHoverPill, aimNDC, 260);
           if (orderLockedToday) {
             boxHoverPill.style.borderColor = '#f59e0b';
             boxHoverPill.style.color = '#fef3c7';
@@ -2096,9 +2126,7 @@
             : `📦 [E / Click] Set ${held ? held.name : 'Case'} back on ${tgt.pallet.label}`;
         }
         if (boxHoverPill) {
-          boxHoverPill.style.display = 'block';
-          boxHoverPill.style.left = Math.min(window.innerWidth - 250, Math.max(10, ((pointerNDC.x + 1) * 0.5) * window.innerWidth + 14)) + 'px';
-          boxHoverPill.style.top = Math.max(46, ((1 - pointerNDC.y) * 0.5) * window.innerHeight - 34) + 'px';
+          positionBoxHoverPill(boxHoverPill, aimNDC, 250);
           if (!tgt.valid) {
             boxHoverPill.style.borderColor = '#ef4444';
             boxHoverPill.style.color = '#fecaca';
@@ -2149,9 +2177,7 @@
             ? `📦 [E / Click] Pull Case from Shelf: ${bc.name} (${linkNote.trim()})`
             : `📦 [E / Click] Pick Up Case: ${bc.name} (${bc.unitsPerCase}u · ${bc.size.toUpperCase()})`);
         if (boxHoverPill) {
-          boxHoverPill.style.display = 'block';
-          boxHoverPill.style.left = Math.min(window.innerWidth - 250, Math.max(10, ((pointerNDC.x + 1) * 0.5) * window.innerWidth + 14)) + 'px';
-          boxHoverPill.style.top = Math.max(46, ((1 - pointerNDC.y) * 0.5) * window.innerHeight - 34) + 'px';
+          positionBoxHoverPill(boxHoverPill, aimNDC, 250);
           boxHoverPill.style.borderColor = isPickBlocked ? '#ef4444' : '#f59e0b';
           boxHoverPill.style.color = isPickBlocked ? '#fecaca' : '#fef3c7';
           boxHoverPill.textContent = isPickBlocked
@@ -2184,9 +2210,7 @@
           promptPallet.textContent = `🧺 [E / Click] Tip Tote Forward: ${tote.label} (${itemCount} item${itemCount === 1 ? '' : 's'})`;
         }
         if (boxHoverPill) {
-          boxHoverPill.style.display = 'block';
-          boxHoverPill.style.left = Math.min(window.innerWidth - 250, Math.max(10, ((pointerNDC.x + 1) * 0.5) * window.innerWidth + 14)) + 'px';
-          boxHoverPill.style.top = Math.max(46, ((1 - pointerNDC.y) * 0.5) * window.innerHeight - 34) + 'px';
+          positionBoxHoverPill(boxHoverPill, aimNDC, 250);
           boxHoverPill.style.borderColor = tote.isRed ? '#ef4444' : (tote.isOpen ? '#f59e0b' : '#38bdf8');
           boxHoverPill.style.color = tote.isRed ? '#fecaca' : (tote.isOpen ? '#fef3c7' : '#e0f2fe');
           boxHoverPill.textContent = tote.isRed
@@ -2231,9 +2255,7 @@
           promptPallet.style.display = 'none';
         }
         if (boxHoverPill) {
-          boxHoverPill.style.display = 'block';
-          boxHoverPill.style.left = Math.min(window.innerWidth - 280, Math.max(10, ((pointerNDC.x + 1) * 0.5) * window.innerWidth + 14)) + 'px';
-          boxHoverPill.style.top = Math.max(46, ((1 - pointerNDC.y) * 0.5) * window.innerHeight - 34) + 'px';
+          positionBoxHoverPill(boxHoverPill, aimNDC, 280);
           boxHoverPill.style.borderColor = item.scannerConfirmed ? '#22c55e' : '#38bdf8';
           boxHoverPill.style.color = item.scannerConfirmed ? '#86efac' : '#e0f2fe';
           const inDmgScan = Boolean(uiState.scannerModalOpen && window.DSDReceipts && typeof window.DSDReceipts.isScannerDamageMode === 'function' && window.DSDReceipts.isScannerDamageMode());
@@ -2260,9 +2282,7 @@
           : `🔍 Aim at Recall Cart top shelf & [E / Click] to place down`;
         if (boxHoverPill) {
           if (uiState.hoveredRecallArrangeSpot) {
-            boxHoverPill.style.display = 'block';
-            boxHoverPill.style.left = Math.min(window.innerWidth - 260, Math.max(10, ((pointerNDC.x + 1) * 0.5) * window.innerWidth + 14)) + 'px';
-            boxHoverPill.style.top = Math.max(46, ((1 - pointerNDC.y) * 0.5) * window.innerHeight - 34) + 'px';
+            positionBoxHoverPill(boxHoverPill, aimNDC, 260);
             boxHoverPill.style.borderColor = '#38bdf8';
             boxHoverPill.style.color = '#e0f2fe';
             boxHoverPill.textContent = '📦 [E / CLICK] PLACE ON TOP SHELF';
@@ -2298,9 +2318,7 @@
           ? `🧺 [E / Click] Collect ${item.name} into Recall Tote`
           : `🖐️ [E / Click] Move ${item.name} on shelf to count`;
         if (boxHoverPill) {
-          boxHoverPill.style.display = 'block';
-          boxHoverPill.style.left = Math.min(window.innerWidth - 280, Math.max(10, ((pointerNDC.x + 1) * 0.5) * window.innerWidth + 14)) + 'px';
-          boxHoverPill.style.top = Math.max(46, ((1 - pointerNDC.y) * 0.5) * window.innerHeight - 34) + 'px';
+          positionBoxHoverPill(boxHoverPill, aimNDC, 280);
           boxHoverPill.style.borderColor = holdingRecallTote ? '#22c55e' : '#f59e0b';
           boxHoverPill.style.color = holdingRecallTote ? '#86efac' : '#fef3c7';
           boxHoverPill.textContent = holdingRecallTote
@@ -2326,9 +2344,7 @@
         promptPallet.style.display = 'block';
         promptPallet.textContent = '📥 [E / Click] Set Recall Tote on Bottom Shelf';
         if (boxHoverPill) {
-          boxHoverPill.style.display = 'block';
-          boxHoverPill.style.left = Math.min(window.innerWidth - 260, Math.max(10, ((pointerNDC.x + 1) * 0.5) * window.innerWidth + 14)) + 'px';
-          boxHoverPill.style.top = Math.max(46, ((1 - pointerNDC.y) * 0.5) * window.innerHeight - 34) + 'px';
+          positionBoxHoverPill(boxHoverPill, aimNDC, 260);
           boxHoverPill.style.borderColor = '#38bdf8';
           boxHoverPill.style.color = '#e0f2fe';
           boxHoverPill.textContent = '📥 [E / CLICK] SET TOTE DOWN';
@@ -2370,9 +2386,7 @@
           promptPallet.textContent = `📥 [E / Click] Place ${heldItem ? heldItem.name : 'Claim Item'} in ${rec.label}`;
         }
         if (boxHoverPill) {
-          boxHoverPill.style.display = 'block';
-          boxHoverPill.style.left = Math.min(window.innerWidth - 260, Math.max(10, ((pointerNDC.x + 1) * 0.5) * window.innerWidth + 14)) + 'px';
-          boxHoverPill.style.top = Math.max(46, ((1 - pointerNDC.y) * 0.5) * window.innerHeight - 34) + 'px';
+          positionBoxHoverPill(boxHoverPill, aimNDC, 260);
           boxHoverPill.style.borderColor = (holdingRecallTote && !toteReadyToDump) ? '#f59e0b' : '#22c55e';
           boxHoverPill.style.color = (holdingRecallTote && !toteReadyToDump) ? '#fef3c7' : '#86efac';
           boxHoverPill.textContent = holdingRecallTote
@@ -2429,9 +2443,7 @@
         promptPallet.style.display = 'block';
         promptPallet.textContent = '🧺 [E / Click] Pick Up Small Gray Recall Tote';
         if (boxHoverPill) {
-          boxHoverPill.style.display = 'block';
-          boxHoverPill.style.left = Math.min(window.innerWidth - 260, Math.max(10, ((pointerNDC.x + 1) * 0.5) * window.innerWidth + 14)) + 'px';
-          boxHoverPill.style.top = Math.max(46, ((1 - pointerNDC.y) * 0.5) * window.innerHeight - 34) + 'px';
+          positionBoxHoverPill(boxHoverPill, aimNDC, 260);
           boxHoverPill.style.borderColor = '#22c55e';
           boxHoverPill.style.color = '#86efac';
           boxHoverPill.textContent = '🧺 [E / CLICK] PICK UP RECALL TOTE';
@@ -2549,40 +2561,99 @@
           mobileBtnDock.style.display = 'none';
         } else {
           mobileBtnDock.style.display = 'flex';
-          const canUseInteractible = Boolean(
+          let useLabel = '';
+          if (carryingBackstock) {
+            if (uiState.hoveredBackstockTarget) useLabel = 'Place';
+          } else if (arrangingRecallItem) {
+            if (uiState.hoveredRecallArrangeSpot) useLabel = 'Place';
+          } else if (holdingRecallTote) {
+            if (uiState.hoveredRecallItem) useLabel = 'Collect';
+            else if (uiState.hoveredRecallBottomDock) useLabel = 'Set Tote';
+            else if (uiState.hoveredClaimsReceptacle) useLabel = 'Dump Tote';
+          } else if (holdingClaimsItem) {
+            if (uiState.hoveredClaimsReceptacle) useLabel = 'Place';
+          } else if (focusedInteractible) {
+            if (focusedInteractible.type === 'dock_button' || focusedInteractible.type === 'side_door_button') {
+              useLabel = 'Door';
+            } else if (focusedInteractible.type === 'terminal') {
+              useLabel = 'Terminal';
+            } else if (focusedInteractible.type === 'driver') {
+              useLabel = 'Driver';
+            } else if (
+              ['desk_papers', 'filing_folder', 'file_cabinet', 'printer', 'trash_can'].includes(focusedInteractible.type)
+            ) {
+              useLabel = 'Inspect';
+            }
+          }
+          if (!useLabel && !carryingBackstock && !holdingClaimsItem && !holdingRecallTote && !arrangingRecallItem) {
+            if (!player.hasElectricJack && uiState.hoveredBackstockCase) {
+              useLabel = 'Pick Up';
+            } else if (uiState.hoveredClaimsTote && !uiState.hoveredClaimsTote.isRed) {
+              useLabel = uiState.hoveredClaimsTote.isOpen ? 'Close Tote' : 'Open Tote';
+            } else if (!player.hasElectricJack && uiState.hoveredClaimsItem && uiState.hoveredClaimsItem.scannerConfirmed) {
+              useLabel = 'Take Item';
+            } else if (!player.hasElectricJack && uiState.hoveredRecallItem) {
+              useLabel = 'Move Item';
+            } else if (!player.hasElectricJack && uiState.hoveredRecallTote) {
+              useLabel = 'Take Tote';
+            }
+          }
+
+          let jackLabel = '';
+          if (player.hitchedPallet) {
+            jackLabel = 'Drop Pallet';
+          } else if (player.hasElectricJack) {
+            jackLabel = (focusedInteractible && focusedInteractible.type === 'pallet') ? 'Hitch Pallet' : 'Park Jack';
+          } else if (
+            !carryingBackstock &&
+            !holdingClaimsItem &&
+            !holdingRecallTote &&
+            !arrangingRecallItem &&
+            !uiState.scannerModalOpen &&
             focusedInteractible &&
-            [
-              'dock_button',
-              'side_door_button',
-              'terminal',
-              'driver',
-              'desk_papers',
-              'filing_folder',
-              'file_cabinet',
-              'printer',
-              'trash_can'
-            ].includes(focusedInteractible.type)
-          );
-          const canUseHovered = Boolean(
-            (uiState.hoveredBackstockTarget && carryingBackstock) ||
-            uiState.hoveredBackstockCase ||
-            (uiState.hoveredClaimsTote && !uiState.hoveredClaimsTote.isRed) ||
-            (uiState.hoveredClaimsItem && uiState.hoveredClaimsItem.scannerConfirmed) ||
-            (arrangingRecallItem && uiState.hoveredRecallArrangeSpot) ||
-            uiState.hoveredRecallItem ||
-            uiState.hoveredRecallBottomDock ||
-            (uiState.hoveredClaimsReceptacle && (holdingClaimsItem || holdingRecallTote)) ||
-            uiState.hoveredRecallTote
-          );
-          const showUseBtn = canUseInteractible || canUseHovered;
-          const showJackBtn = Boolean(
-            (focusedInteractible && focusedInteractible.type === 'electric_jack') ||
+            focusedInteractible.type === 'electric_jack'
+          ) {
+            jackLabel = 'Take Jack';
+          }
+
+          let scanLabel = '';
+          const scanBlocked = Boolean(
+            carryingBackstock ||
+            holdingClaimsItem ||
+            holdingRecallTote ||
+            arrangingRecallItem ||
             player.hasElectricJack ||
-            player.hitchedPallet
+            player.hitchedPallet ||
+            uiState.bolModalOpen
           );
-          if (btnTouchDoor) btnTouchDoor.style.display = showUseBtn ? 'inline-flex' : 'none';
-          if (btnTouchAction) btnTouchAction.style.display = showJackBtn ? 'inline-flex' : 'none';
-          if (btnTouchScan) btnTouchScan.style.display = 'inline-flex';
+          if (!scanBlocked) {
+            if (uiState.scannerModalOpen) {
+              scanLabel = 'Close Scan';
+            } else if (uiState.hoveredClaimsItem && !uiState.hoveredClaimsItem.scannerConfirmed) {
+              scanLabel = 'Scan Claim';
+            } else if (uiState.hoveredPhysicalBox) {
+              scanLabel = 'Scan Box';
+            } else if (uiState.hoveredClaimsTote && uiState.hoveredClaimsTote.isOpen) {
+              scanLabel = 'Scan Claim';
+            } else if (uiState.hoveredBackstockCase) {
+              scanLabel = 'Scan Case';
+            } else {
+              scanLabel = 'Scanner';
+            }
+          }
+
+          if (btnTouchDoor) {
+            btnTouchDoor.style.display = useLabel ? 'inline-flex' : 'none';
+            if (useLabel) btnTouchDoor.textContent = useLabel;
+          }
+          if (btnTouchAction) {
+            btnTouchAction.style.display = jackLabel ? 'inline-flex' : 'none';
+            if (jackLabel) btnTouchAction.textContent = jackLabel;
+          }
+          if (btnTouchScan) {
+            btnTouchScan.style.display = scanLabel ? 'inline-flex' : 'none';
+            if (scanLabel) btnTouchScan.textContent = scanLabel;
+          }
         }
       }
 
@@ -2957,6 +3028,19 @@
     promptTerminal.addEventListener('click', handleInteractE);
     promptDesk.addEventListener('click', handleInteractE);
     promptDriver.addEventListener('click', handleInteractE);
+    promptPallet.addEventListener('click', () => {
+      if (
+        player.hasElectricJack ||
+        player.hitchedPallet ||
+        (focusedInteractible && (focusedInteractible.type === 'electric_jack' || focusedInteractible.type === 'pallet'))
+      ) {
+        handlePalletAction();
+      } else if (uiState.hoveredClaimsItem && !uiState.hoveredClaimsItem.scannerConfirmed) {
+        toggleScanner();
+      } else {
+        handleInteractE();
+      }
+    });
 
     function takeElectricJack() {
       if (isCarryingBackstockCase()) {
@@ -3320,7 +3404,7 @@
       if (!bc && window.BackstockRacks && !isCarryingBackstockCase()) {
         const pickables = window.BackstockRacks.getPickableCaseMeshes();
         if (pickables.length > 0) {
-          interactRaycaster.setFromCamera(isPointerLocked ? { x: 0, y: 0 } : pointerNDC, camera);
+          interactRaycaster.setFromCamera(getAimNDC(), camera);
           interactRaycaster.far = 4.8;
           const hits = interactRaycaster.intersectObjects(pickables, false);
           if (hits.length > 0 && hits[0].object && hits[0].object.userData && hits[0].object.userData.backstockCaseRef) {
@@ -3348,7 +3432,7 @@
         return { screen: 'damage', item: uiState.hoveredClaimsItem || null };
       }
       if (!window.ClaimsTotes) return null;
-      interactRaycaster.setFromCamera(isPointerLocked ? { x: 0, y: 0 } : pointerNDC, camera);
+      interactRaycaster.setFromCamera(getAimNDC(), camera);
       interactRaycaster.far = 4.8;
       if (typeof window.ClaimsTotes.getOpenToteItemMeshes === 'function') {
         const itemMeshes = window.ClaimsTotes.getOpenToteItemMeshes();
@@ -3446,7 +3530,7 @@
         if (!cand) {
           const pickables = window.BackstockRacks.getPickableCaseMeshes();
           if (pickables.length > 0) {
-            interactRaycaster.setFromCamera(isPointerLocked ? { x: 0, y: 0 } : pointerNDC, camera);
+            interactRaycaster.setFromCamera(getAimNDC(), camera);
             interactRaycaster.far = 4.8;
             const hits = interactRaycaster.intersectObjects(pickables, false);
             if (hits.length > 0 && hits[0].object && hits[0].object.userData && hits[0].object.userData.backstockCaseRef) {

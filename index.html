@@ -3,7 +3,7 @@
 
 <head>
   <meta charset="UTF-8">
-  <title>New 3D Game - DSD Receiving Facility</title>
+  <title>3D DSD Receiving Simulator</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
   <script src="./js/dsd-catalog.js"></script>
@@ -558,7 +558,8 @@
       <div class="bol-gui-footer">
         <div class="inv-ui-pill" style="flex:1 1 auto;">
           <span class="inv-ui-stat-lbl">DEPT 01 AUTO-POSTING</span>
-          <span class="inv-ui-stat-val" id="bol-receipt-status" style="color:#86efac;">Auto-finalizes 01 receipt &amp; leaves simplified invoice for filing (no print-out needed)</span>
+          <span class="inv-ui-stat-val" id="bol-receipt-status" style="color:#86efac;">Auto-finalizes 01 receipt &amp;
+            leaves simplified invoice for filing (no print-out needed)</span>
         </div>
         <button type="button" class="inv-gui-btn inv-sign-btn" id="btn-sign-bol">SIGN BILL OF LADING</button>
       </div>
@@ -640,7 +641,9 @@
         <input type="number" min="0" max="999" step="1" id="sqm-qty-input" class="sqm-qty-input" value="0">
         <button type="button" class="sqm-step-btn" id="sqm-plus-btn" aria-label="Increase quantity">+</button>
       </div>
-      <div id="sqm-error" style="min-height:14px; font-size:11px; color:#f87171; font-weight:700; text-align:center; margin-top:4px;"></div>
+      <div id="sqm-error"
+        style="min-height:14px; font-size:11px; color:#f87171; font-weight:700; text-align:center; margin-top:4px;">
+      </div>
       <div class="dq-footer">
         <button type="button" class="dq-btn dq-btn-sec" id="sqm-zero-btn">SET 0</button>
         <button type="button" class="dq-btn dq-btn-go" id="sqm-apply-btn">STAMP SHORTAGE</button>
@@ -693,7 +696,8 @@
           </div>
         </div>
         <div class="phase2-modal-ftr">
-          <span style="font-size:11px;color:#94a3b8;">Print Store Copies from Terminal [2] Receipt Ledger. Click or drag a Store Copy onto its matching Invoice to paperclip them together.</span>
+          <span style="font-size:11px;color:#94a3b8;">Print Store Copies from Terminal [2] Receipt Ledger. Click or drag
+            a Store Copy onto its matching Invoice to paperclip them together.</span>
           <button id="filing-file-btn" type="button">FILE ALL LINKED PAIRS TO CABINET</button>
         </div>
       </div>
