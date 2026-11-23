@@ -137,6 +137,7 @@
       doorQueueModalOpen: false,
       shortageMode: false,
       shortageModalOpen: false,
+      alertModalOpen: false,
       overageDeliveryId: null,
       currentInvoiceTab: 'invoice',
       hoveredPhysicalBox: null,
@@ -226,6 +227,11 @@
       onOpenTerminal: () => openTerminal(),
       getTerminalModalOpen: () => uiState.terminalModalOpen,
       getDeliverySystem: () => DeliverySystem,
+      onPunchOutTimeclock: () => {
+        if (window.DSDGame && typeof window.DSDGame.punchOutAtTimeclock === 'function') {
+          window.DSDGame.punchOutAtTimeclock();
+        }
+      },
       showAlert: (...args) => showAlert(...args),
       showNotification: (...args) => showNotification(...args)
     });
@@ -346,6 +352,7 @@
       hooks: {
         getPlayer: () => player,
         showAlert: (...args) => showAlert(...args),
+        showPopupModal: (...args) => showPopupModal(...args),
         showNotification: (...args) => showNotification(...args),
         updateLockHintDisplay: () => updateLockHintDisplay(),
         syncPhase2ContainerClasses: () => syncPhase2ContainerClasses(),
@@ -375,9 +382,15 @@
     } = deliveryCtrl;
 
     // --- PLAYER STATE & CONTROLS ---
+    const PLAYER_SPAWN = {
+      x: 8.60,
+      y: 1.65,
+      z: ORIGIN_Z + 23 * TILE_SIZE + 2.35,
+      yaw: -Math.PI * 0.36
+    };
     const player = {
-      position: new THREE.Vector3(0, 1.65, ORIGIN_Z + 13 * TILE_SIZE),
-      yaw: 0,
+      position: new THREE.Vector3(PLAYER_SPAWN.x, PLAYER_SPAWN.y, PLAYER_SPAWN.z),
+      yaw: PLAYER_SPAWN.yaw,
       pitch: 0,
       radius: 0.45,
       speed: 4.8,
@@ -387,6 +400,7 @@
     };
 
     let jackBattery = 100;
+    let jackLowBatteryWarned = false;
     let jackDockedAtCharger = true;
     let lastJackGaugeSyncMs = -1;
 
@@ -470,7 +484,7 @@
     }
 
     function isBlockingModalOpen() {
-      return Boolean(uiState.terminalModalOpen || uiState.doorQueueModalOpen || uiState.bolModalOpen || isPhase2ModalOpen() || (window.DSDGame && window.DSDGame.isModalOpen()));
+      return Boolean(uiState.alertModalOpen || uiState.terminalModalOpen || uiState.doorQueueModalOpen || uiState.bolModalOpen || isPhase2ModalOpen() || (window.DSDGame && window.DSDGame.isModalOpen()));
     }
 
     function syncNightDropToolButtons() {
@@ -581,7 +595,6 @@
           const docked = window.ClaimsTotes.dockRecallToteOnBottomShelf();
           if (docked && docked.ok) {
             SoundSystem.playDropSound();
-            showNotification('📥 Set Recall Tote back on bottom shelf of Recall Cart.');
             if (uiState.terminalModalOpen && window.DSDReceipts && typeof window.DSDReceipts.renderTerminalUI === 'function') {
               window.DSDReceipts.renderTerminalUI();
             }
@@ -594,17 +607,17 @@
           const dropRes = window.ClaimsTotes.dropRecallToteIntoReceptacle(recMeta.id);
           if (dropRes && !dropRes.ok && dropRes.reason === 'items_remaining_on_cart') {
             SoundSystem.playErrorBuzzer();
-            showNotification('⚠️ Finish collecting all recalled units off the top shelf into the tote first!', 3400);
+            showNotification('⚠️ Finish collecting all recalled units off the top shelf into the tote first!', 'high');
             return true;
           }
           if (dropRes && dropRes.ok) {
             if (!dropRes.isCorrect) {
               SoundSystem.playErrorBuzzer();
               const ptsTxt = dropRes.penaltyPoints ? ` (-${dropRes.penaltyPoints} pts)` : '';
-              showNotification(`⚠️ Wrong container! "${dropRes.productName}" goes in ${dropRes.correctLabel}.${ptsTxt}`, 3800);
+              showNotification(`⚠️ Wrong container! "${dropRes.productName}" goes in ${dropRes.correctLabel}.${ptsTxt}`, 'critical');
             } else {
               SoundSystem.playSuccessChime();
-              showNotification(`✓ Disposed "${dropRes.productName}" into ${dropRes.placedLabel}! Enter your counted total on Computer Terminal [4].`, 4200);
+              showNotification(`✓ Disposed "${dropRes.productName}" into ${dropRes.placedLabel}! Enter counted total on Terminal [4].`, 'low');
               if (uiState.terminalModalOpen && window.DSDReceipts && typeof window.DSDReceipts.renderTerminalUI === 'function') {
                 window.DSDReceipts.renderTerminalUI();
               }
@@ -629,27 +642,18 @@
               if (!dropRes.isCorrect) {
                 SoundSystem.playErrorBuzzer();
                 const ptsTxt = dropRes.penaltyPoints ? ` (-${dropRes.penaltyPoints} pts)` : ' (Logged error)';
-                showNotification(`⚠️ Wrong receptacle! ${dropRes.item.name} belongs in ${dropRes.correctLabel}.${ptsTxt}`, 3600);
+                showNotification(`⚠️ Wrong receptacle! ${dropRes.item.name} belongs in ${dropRes.correctLabel}.${ptsTxt}`, 'critical');
               } else if (dropRes.placedIn === 'vendor_credit') {
                 SoundSystem.playSuccessChime();
-                showNotification(`🔴 Placed ${dropRes.item.name} in RED CREDIT TOTE for next vendor delivery (Credit: $${dropRes.displayCredit.toFixed(2)}).`, 3600);
-              } else if (dropRes.placedIn === 'donate') {
+              } else if (dropRes.placedIn === 'donate' || dropRes.placedIn === 'organics' || dropRes.placedIn === 'hazwaste') {
                 SoundSystem.playSuccessChime();
-                showNotification(`🎁 Donated ${dropRes.item.name} cleanly.`, 2800);
-              } else if (dropRes.placedIn === 'organics') {
-                SoundSystem.playSuccessChime();
-                showNotification(`♻️ Placed ${dropRes.item.name} in ORGANICS barrel.`, 2800);
-              } else if (dropRes.placedIn === 'hazwaste') {
-                SoundSystem.playSuccessChime();
-                showNotification(`☢️ Stored ${dropRes.item.name} safely in HAZWASTE drum.`, 2800);
               } else {
                 SoundSystem.playDropSound();
-                showNotification(`🗑️ Discarded ${dropRes.item.name} in TRASH barrel.`, 2800);
               }
               if (dropRes.allDone) {
                 setTimeout(() => {
                   SoundSystem.playSuccessChime();
-                  showNotification('🏆 All Claims processed! (+400 pts)');
+                  showNotification('🏆 All Claims processed! (+400 pts)', 'status');
                 }, 450);
               }
               return true;
@@ -724,14 +728,12 @@
           }
           if (!itemRec.scannerConfirmed) {
             SoundSystem.playErrorBuzzer();
-            showNotification('📱 Open Hand Scanner [F] to Markdown Claims (#4) & confirm disposition before taking item!', 3400);
+            showNotification('📱 Open Hand Scanner [F] to Markdown Claims (#4) & confirm disposition before taking item!', 'high');
             return true;
           }
           const picked = window.ClaimsTotes.pickupItem(itemRec);
           if (picked && picked.ok) {
             SoundSystem.playButtonClick();
-            const destLabel = window.ClaimsTotes.getReceptacleLabel(itemRec.confirmedDisposition);
-            showNotification(`🖐️ Carrying ${itemRec.name} — Place in ${destLabel}.`);
           }
           return true;
         }
@@ -744,7 +746,7 @@
 
       if (tote.isRed) {
         SoundSystem.playErrorBuzzer();
-        showNotification('🔴 Credit Tote stays upright on the shelf — it receives eligible vendor returns.', 2800);
+        showNotification('🔴 Credit Tote stays upright on the shelf — it receives eligible vendor returns.', 'high');
         return true;
       }
 
@@ -754,14 +756,10 @@
         return true;
       }
 
-      const summary = window.ClaimsTotes.getGrayToteSummary(tote);
-      const count = summary ? summary.itemCount : 0;
       if (res.isOpen) {
         SoundSystem.playButtonClick();
-        showNotification(`🧺 Tipped ${tote.label} claims tote forward (${count} item${count === 1 ? '' : 's'}) — Hover for condition, [F] to scan.`);
       } else {
         SoundSystem.playDropSound();
-        showNotification(`📥 Returned ${tote.label} claims tote upright onto shelf.`);
       }
       return true;
     }
@@ -789,16 +787,7 @@
           const res = window.BackstockRacks.placeHeldCaseAtPreview(preview);
           if (res) {
             SoundSystem.playDropSound();
-            if (preview.type === 'pallet' && preview.pallet) {
-              showNotification(`📦 Set ${res.caseRec.name} back on ${preview.pallet.label}`);
-            } else if (preview.slot) {
-              const rackLabel = window.BackstockRacks.getRackDisplayName(preview.slot.rackId);
-              const binLoc = window.BackstockRacks.formatSlotDesignation(preview.slot);
-              if (res.linkedCount && res.linkedCount > 1) {
-                showNotification(`🔗 Linked ${res.caseRec.name} (×${res.linkedCount} · ${res.linkedRowQty}u) on ${rackLabel} (${binLoc})`);
-              } else {
-                showNotification(`📦 Placed ${res.caseRec.name} on ${rackLabel} (${binLoc})`);
-              }
+            if (preview.type !== 'pallet' && preview.slot) {
               if (
                 preview.slot.rackId === 'claims_steel' &&
                 typeof window.BackstockRacks.isSupplyCase === 'function' &&
@@ -807,7 +796,7 @@
                 window.BackstockRacks.getUnplacedSupplyCasesCount() === 0
               ) {
                 if (window.ShiftStats) window.ShiftStats.setFlag('suppliesCompleted', true);
-                showNotification('✓ All Dept 60 supplies stocked on Claims Steel!');
+                showNotification('✓ All Dept 60 supplies stocked on Claims Steel!', 'status');
               }
             }
             return true;
@@ -1005,7 +994,7 @@
       const hitObj = hits[0].object;
       const box = hitObj && hitObj.userData ? hitObj.userData.physicalBoxRef : null;
       if (!box) return false;
-      const boxDelivId = hitObj.userData.deliveryId;
+      const boxDelivId = box.deliveryId || (hitObj.userData ? hitObj.userData.deliveryId : null);
 
       // Interactive OVERAGE Flagging Mode on 3D Carts & Pallets
       if (uiState.overageDeliveryId) {
@@ -1047,7 +1036,8 @@
       }
       if (window.DSDReceipts) {
         const res = window.DSDReceipts.scanSpecificBox(box);
-        syncDeliveryBoxesVisuals(d);
+        const syncedSess = boxDelivId ? DeliverySystem.getSessionForDelivery(boxDelivId) : null;
+        syncDeliveryBoxesVisuals((syncedSess && syncedSess.delivery) || DeliverySystem.activeDelivery || d);
         if (res && res.ok) {
           const isValidScan = Boolean(res.loaded || res.scanned);
           if (isValidScan && SoundSystem && typeof SoundSystem.playScanBeep === 'function') {
@@ -1203,8 +1193,10 @@
         flashKeyButton('scan');
         if (uiState.hoveredPhysicalBox) {
           hoveredBoxBeforeOpen = uiState.hoveredPhysicalBox;
-          if (hoveredBoxBeforeOpen.deliveryId) {
-            DeliverySystem.focusDelivery(hoveredBoxBeforeOpen.deliveryId);
+          const hbDelivId = hoveredBoxBeforeOpen.deliveryId ||
+            (uiState.hoveredBoxMesh && uiState.hoveredBoxMesh.userData && uiState.hoveredBoxMesh.userData.deliveryId);
+          if (hbDelivId) {
+            DeliverySystem.focusDelivery(hbDelivId);
           }
         }
         if (!player.scannerActive) {
@@ -1241,7 +1233,10 @@
       }
       if (action === 'scan' && hoveredBoxBeforeOpen && window.DSDReceipts && typeof window.DSDReceipts.scanSpecificBox === 'function') {
         const res = window.DSDReceipts.scanSpecificBox(hoveredBoxBeforeOpen);
-        const targetDeliv = DeliverySystem.activeDelivery;
+        const hbDelivId = hoveredBoxBeforeOpen.deliveryId ||
+          (uiState.hoveredBoxMesh && uiState.hoveredBoxMesh.userData && uiState.hoveredBoxMesh.userData.deliveryId);
+        const hbSess = hbDelivId ? DeliverySystem.getSessionForDelivery(hbDelivId) : null;
+        const targetDeliv = (hbSess && hbSess.delivery) || DeliverySystem.activeDelivery;
         if (targetDeliv) syncDeliveryBoxesVisuals(targetDeliv);
         if (res && res.ok && (res.loaded || res.scanned)) {
           triggerScanVisualFeedback();
@@ -1257,6 +1252,15 @@
 
     // --- KEYBOARD CONTROLS (PC) ---
     window.addEventListener('keydown', (e) => {
+      if (uiState.alertModalOpen) {
+        if (e.code === 'Escape' || e.code === 'Enter' || e.code === 'Space' || e.code === 'NumpadEnter') {
+          SoundSystem.playButtonClick();
+          closePopupModal();
+          e.preventDefault();
+          e.stopPropagation();
+        }
+        return;
+      }
       if (uiState.shortageModalOpen) {
         if (e.code === 'Escape' && typeof closeShortageQtyModal === 'function') {
           closeShortageQtyModal();
@@ -1793,6 +1797,85 @@
         alertBanner.style.display = 'none';
       }, 3200);
     }
+
+    const gameAlertModal = document.getElementById('game-alert-modal');
+    const gameAlertTitle = document.getElementById('gam-title');
+    const gameAlertBody = document.getElementById('gam-body');
+    const gameAlertOkBtn = document.getElementById('gam-ok-btn');
+    const gameAlertCloseBtn = document.getElementById('gam-close-btn');
+
+    function closePopupModal() {
+      if (!gameAlertModal) return;
+      gameAlertModal.classList.remove('active');
+      uiState.alertModalOpen = false;
+      syncPhase2ContainerClasses();
+    }
+
+    function showPopupModal(optsOrMessage) {
+      if (!gameAlertModal || !gameAlertBody) {
+        showAlert(typeof optsOrMessage === 'string' ? optsOrMessage : (optsOrMessage && optsOrMessage.message) || '');
+        return;
+      }
+      let title = '⚠️ NOTICE';
+      let message = '';
+      let tone = 'warn';
+      let buttonText = 'OK [ENTER]';
+
+      if (typeof optsOrMessage === 'string') {
+        const raw = String(optsOrMessage || '').trim();
+        const splitIdx = raw.indexOf('\n\n');
+        if (splitIdx !== -1) {
+          title = raw.slice(0, splitIdx).trim();
+          message = raw.slice(splitIdx + 2).trim();
+        } else {
+          message = raw;
+        }
+        if (/^(🎉|🏆|✅)/.test(title) || /^(🎉|🏆|✅)/.test(message)) {
+          tone = 'success';
+        }
+      } else if (optsOrMessage && typeof optsOrMessage === 'object') {
+        if (optsOrMessage.title) title = String(optsOrMessage.title);
+        if (optsOrMessage.message) message = String(optsOrMessage.message);
+        if (optsOrMessage.tone) tone = String(optsOrMessage.tone);
+        if (optsOrMessage.buttonText) buttonText = String(optsOrMessage.buttonText);
+      }
+
+      if (gameAlertTitle) gameAlertTitle.textContent = title;
+      gameAlertBody.textContent = message;
+      if (gameAlertOkBtn) gameAlertOkBtn.textContent = buttonText;
+      gameAlertModal.setAttribute('data-tone', tone);
+      gameAlertModal.classList.add('active');
+      uiState.alertModalOpen = true;
+      if (document.pointerLockElement && document.exitPointerLock) {
+        document.exitPointerLock();
+      }
+      syncPhase2ContainerClasses();
+      if (gameAlertOkBtn && typeof gameAlertOkBtn.focus === 'function') {
+        setTimeout(() => gameAlertOkBtn.focus(), 0);
+      }
+    }
+
+    if (gameAlertOkBtn) {
+      gameAlertOkBtn.addEventListener('click', () => {
+        SoundSystem.playButtonClick();
+        closePopupModal();
+      });
+    }
+    if (gameAlertCloseBtn) {
+      gameAlertCloseBtn.addEventListener('click', () => {
+        SoundSystem.playButtonClick();
+        closePopupModal();
+      });
+    }
+    if (gameAlertModal) {
+      gameAlertModal.addEventListener('click', (e) => {
+        if (e.target === gameAlertModal) {
+          SoundSystem.playButtonClick();
+          closePopupModal();
+        }
+      });
+    }
+    global.DSDPopupModal = { show: showPopupModal, close: closePopupModal };
 
     let notifyTimeout = null;
     function showNotification(msg, durationOrPriority, explicitPriority) {
@@ -3133,9 +3216,6 @@
         dd.trailerDoorOpen = Boolean(dd.hasTrailer && dd.isOpen && dd.currentProgress >= 0.72 && driverInsideAuthorized);
         if (dd.trailerDoorOpen && !prevTrailerOpen) {
           SoundSystem.playDoorMotor(1.2);
-          const baySess = DeliverySystem.getSessionForBay(dd.id);
-          const drvName = baySess && baySess.delivery ? baySess.delivery.driverName : 'Driver';
-          showNotification(`🚛 ${drvName} opened trailer roll-up door at Bay ${dd.id}.`);
         }
         const targetTrailerProg = (dd.hasTrailer && dd.trailerDoorOpen) ? 1.0 : 0.0;
         if (dd.trailerDoorProgress < targetTrailerProg) {
@@ -3506,7 +3586,6 @@
       electricJackViewmodel.visible = true;
       syncElectricJackBatteryVisuals(undefined, true);
       SoundSystem.playHydraulicLift();
-      showNotification('⚡ Operating Electric Pallet Jack — Move with WASD, [Space] to Hitch Pallet or Drop Jack');
     }
 
     function canParkElectricJackAt(jx, jz, yaw) {
@@ -3645,7 +3724,6 @@
       syncElectricJackBatteryVisuals(undefined, true);
 
       SoundSystem.playDropSound();
-      showNotification('⚡ Electric Pallet Jack parked');
     }
 
     function handlePalletAction() {
@@ -3688,7 +3766,7 @@
           } else {
             showAlert('⚠️ ELECTRIC PALLET JACK REQUIRED! You cannot move pallets by hand. Take the electric jack first.');
             SoundSystem.playErrorBuzzer();
-            showNotification('⚡ Take the Electric Pallet Jack staged between Docks 1 & 2 (or where parked).');
+            showNotification('⚠️ Take the Electric Pallet Jack staged between Docks 1 & 2 (or where parked).', 'high');
           }
         }
       }
@@ -3737,7 +3815,6 @@
       jackBattery = Math.max(5, jackBattery - 0.2);
       if (SoundSystem.playHitchSound) SoundSystem.playHitchSound();
       SoundSystem.playHydraulicLift();
-      showNotification(`⚡ Hitched ${pallet.data.po}: ${pallet.data.name} (Forks raised)`);
     }
 
     function dropPallet() {
@@ -3747,12 +3824,18 @@
       const grid = worldToGrid(pallet.position.x, pallet.position.z);
       const tileType = getTileType(grid.col, grid.row);
 
+      const inHallway = tileType === 'H' || (grid.col === 10 && grid.row >= 17 && grid.row <= 22);
+      if (inHallway) {
+        showAlert('🚫 EMPLOYEE HALLWAY: Warehouse pallets cannot be staged in the employee hallway!');
+        return;
+      }
+
       if (tileType === 'Y') {
         showAlert('🚫 BLOCKED TRANSIT LANE! Pallets cannot be dropped on yellow transit tiles.');
         return;
       }
 
-      if (tileType === 'W' || tileType === 'H') {
+      if (tileType === 'W') {
         showAlert('🚫 NO STAGING ZONE: Pallets cannot be staged on red grid tiles or walls!');
         return;
       }
@@ -3770,13 +3853,12 @@
         let zoneName = 'Main Dock Ambient Staging';
         if (tileType === 'F') zoneName = 'Freezer (0°F) Staging';
         else if (tileType === 'C') zoneName = 'Cooler (36°F) Staging';
-        showNotification(`✅ PERFECT! ${pallet.data.po} correctly staged in ${zoneName}`);
+        showNotification(`✅ PERFECT! ${pallet.data.po} correctly staged in ${zoneName}`, 'status');
         if (window.WarehouseTrucks && typeof window.WarehouseTrucks.onPalletStaged === 'function') {
           window.WarehouseTrucks.onPalletStaged(pallet);
         }
       } else if (tileType === 'T') {
         pallet.data.status = 'UNLOADED';
-        showNotification(`📦 Pallet ${pallet.data.po} returned to trailer`);
       } else {
         pallet.data.status = 'MISPLACED';
         SoundSystem.playErrorBuzzer();
@@ -4205,7 +4287,7 @@
         if (whDone >= whRows.length && dsdDone >= dsdRows.length) {
           SoundSystem.playSuccessChime();
           closeTerminal();
-          showNotification(`🏆 SHIFT RECEIVING COMPLETE!\n\nWarehouse Trucks: ${whDone}/${whRows.length} auto-posted.\nDSD Deliveries: ${dsdDone}/${dsdRows.length} signed.\n\nUse File Cabinet / End Shift to inspect full ledger!`, 'low');
+          showNotification(`🏆 SHIFT RECEIVING COMPLETE!\n\nWarehouse Trucks: ${whDone}/${whRows.length} auto-posted.\nDSD Deliveries: ${dsdDone}/${dsdRows.length} signed.\n\nUse File Cabinet / End Shift to inspect full ledger!`, 'status');
         } else {
           SoundSystem.playErrorBuzzer();
           showAlert(`⚠️ SHIFT RECEIVING IN PROGRESS\n\nWarehouse Trucks Completed: ${whDone}/${whRows.length}\nDSD Side-Door / Vendor Trucks Completed: ${dsdDone}/${dsdRows.length}\n\nClear waiting bays & finish scheduled arrivals before shift end.`);
@@ -4231,20 +4313,36 @@
           if (counterLabel) counterLabel.textContent = 'PALLETS AUDITED: ';
           updateStagedCounter();
 
-          showNotification('🚀 PHASE 2 ACTIVE: Scan each staged pallet with Hand Scanner [F] to verify items & temp specs!');
-          alert('🎉 PHASE 1 DOCK & STAGING COMPLETE!\n\nAll 7 inbound pallets are staged in their correct temperature zones.\n\n▶ PHASE 2 INITIATED: AUDIT & PIECE VERIFICATION\nEquip your Hand Scanner [F], walk over to each staged pallet in the Cooler, Freezer, and Ambient Dock, and press [SCAN] to audit the 27 cases per pallet.');
+          showNotification('🚀 PHASE 2 ACTIVE: Scan each staged pallet with Hand Scanner [F] to verify items & temp specs!', 'low');
+          showPopupModal({
+            title: '🎉 PHASE 1 DOCK & STAGING COMPLETE!',
+            message: 'All 7 inbound pallets are staged in their correct temperature zones.\n\n▶ PHASE 2 INITIATED: AUDIT & PIECE VERIFICATION\nEquip your Hand Scanner [F], walk over to each staged pallet in the Cooler, Freezer, and Ambient Dock, and press [SCAN] to audit the 27 cases per pallet.',
+            tone: 'success'
+          });
         } else {
           SoundSystem.playErrorBuzzer();
-          alert(`⚠️ RECEIVING INCOMPLETE\n\nOnly ${correct} of ${pallets.length} pallets properly staged. Check trailers, stage in designated bays, and ensure yellow transit corridors remain unblocked.`);
+          showPopupModal({
+            title: '⚠️ RECEIVING INCOMPLETE',
+            message: `Only ${correct} of ${pallets.length} pallets properly staged. Check trailers, stage in designated bays, and ensure yellow transit corridors remain unblocked.`,
+            tone: 'warn'
+          });
         }
       } else if (gamePhase === 2) {
         const audited = pallets.filter(p => p.data.status === 'AUDITED').length;
         if (audited >= pallets.length) {
           SoundSystem.playSuccessChime();
-          alert('🏆 SHIFT COMPLETE — 100% AUDIT ACCURACY!\n\nAll 7 inbound pallets (189 total cases) verified, barcode-certified, and temp-compliant!\n\nElectronic ASN & Bill of Lading transmitted to Central ERP.\n\nOutstanding work, Lead Receiver!');
+          showPopupModal({
+            title: '🏆 SHIFT COMPLETE — 100% AUDIT ACCURACY!',
+            message: 'All 7 inbound pallets (189 total cases) verified, barcode-certified, and temp-compliant!\n\nElectronic ASN & Bill of Lading transmitted to Central ERP.\n\nOutstanding work, Lead Receiver!',
+            tone: 'success'
+          });
         } else {
           SoundSystem.playErrorBuzzer();
-          alert(`⚠️ AUDIT INCOMPLETE\n\nOnly ${audited} of ${pallets.length} pallets audited. Use your Hand Scanner [F] to inspect and scan the remaining ${pallets.length - audited} pallets.`);
+          showPopupModal({
+            title: '⚠️ AUDIT INCOMPLETE',
+            message: `Only ${audited} of ${pallets.length} pallets audited. Use your Hand Scanner [F] to inspect and scan the remaining ${pallets.length - audited} pallets.`,
+            tone: 'warn'
+          });
         }
       }
     }
@@ -4254,6 +4352,43 @@
     // Trailer access allowed if trailer present;
     // Side Rollup Door EXIT strictly blocked for player!
     // ==========================================
+    const boundaryWarnState = Object.create(null);
+    function triggerBoundaryWarning(key, msg, cooldownMs = 3000) {
+      const now = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
+      const entry = boundaryWarnState[key] || { active: false, lastAt: -1e9 };
+      if (!entry.active && (now - entry.lastAt) >= cooldownMs) {
+        entry.active = true;
+        entry.lastAt = now;
+        boundaryWarnState[key] = entry;
+        showNotification(msg);
+      } else {
+        entry.active = true;
+        boundaryWarnState[key] = entry;
+      }
+    }
+    function updateBoundaryWarningReset(px, pz) {
+      const r = player.radius;
+      const maxWorldX = -ORIGIN_X - 0.1;
+      const sideEntry = boundaryWarnState.side_door_vendors_only;
+      if (sideEntry && sideEntry.active) {
+        const atSideZ = Math.abs(pz - sideRollupDoor.worldZ) < (sideRollupDoor.width / 2 + 0.25);
+        if (!sideRollupDoor.isOpen || !atSideZ || (px + r < maxWorldX - 0.35)) {
+          sideEntry.active = false;
+        }
+      }
+      for (let i = 0; i < dockDoors.length; i++) {
+        const dd = dockDoors[i];
+        const key = 'bay_trailer_sealed_' + dd.id;
+        const entry = boundaryWarnState[key];
+        if (entry && entry.active) {
+          const inX = px >= dd.worldX - doorWidth / 2 - 0.25 && px <= dd.worldX + doorWidth / 2 + 0.25;
+          if (dd.trailerDoorProgress >= 0.70 || !dd.hasTrailer || !inX || pz > (doorZ - 0.45) + r + 0.45) {
+            entry.active = false;
+          }
+        }
+      }
+    }
+
     function checkCollision(newX, newZ) {
       const r = player.radius;
 
@@ -4267,7 +4402,7 @@
       if (newX + r > maxWorldX) {
         const atSideDoorZ = Math.abs(newZ - sideRollupDoor.worldZ) < (sideRollupDoor.width / 2);
         if (atSideDoorZ && sideRollupDoor.isOpen) {
-          showNotification('⚠️ VENDORS ONLY: Receiving staff must remain on the dock.');
+          triggerBoundaryWarning('side_door_vendors_only', '⚠️ VENDORS ONLY: Receiving staff must remain on the dock.');
         }
         return true;
       }
@@ -4291,7 +4426,7 @@
           }
         } else if (dd.trailerDoorProgress < 0.70) {
           if (newX >= doorMinX && newX <= doorMaxX && newZ < (doorZ - 0.45) + r + 0.12 && newZ > doorZ - 1.2) {
-            showNotification(`🔒 Bay ${dd.id} trailer door sealed! Let driver inside building to open trailer.`);
+            triggerBoundaryWarning('bay_trailer_sealed_' + dd.id, `🔒 Bay ${dd.id} trailer door sealed! Let driver inside building to open trailer.`);
             return true;
           }
         }
@@ -4407,12 +4542,17 @@
           player.position.z = testZ;
         }
       }
+      updateBoundaryWarningReset(player.position.x, player.position.z);
 
       if (player.hasElectricJack) {
         const drainPerSec = inputLen > 0.01
           ? (player.hitchedPallet ? 0.063 : 0.043)
           : 0.008;
         jackBattery = Math.max(5, jackBattery - drainPerSec * dt);
+        if (!jackLowBatteryWarned && jackBattery <= 25) {
+          jackLowBatteryWarned = true;
+          showNotification(`⚠️ ELECTRIC JACK BATTERY LOW (${Math.floor(jackBattery)}%) — Plug into North charger between Bays 1 & 2!`, 'high');
+        }
 
         if (inputLen > 0.01) {
           viewmodelBob += dt * currentSpeed * 6.5;
@@ -4472,6 +4612,7 @@
       for (let r = 0; r < ROWS; r++) {
         for (let c = 0; c < COLS; c++) {
           const type = DOCK_LAYOUT[r].charAt(c);
+          const isHallTile = type === 'H' || (c === 10 && r >= 17 && r <= 22);
           if (r < 10) {
             bgCtx.fillStyle = '#0f172a';
             bgCtx.fillRect(c * cellW, r * cellH, cellW, cellH);
@@ -4479,7 +4620,8 @@
           }
 
           let color = '#838a95';
-          if (type === 'W' || type === 'H') color = '#dc2626';
+          if (isHallTile) color = '#475569';
+          else if (type === 'W') color = '#dc2626';
           else if (type === 'Y') color = '#786414';
           else if (type === 'F') color = '#0284c7';
           else if (type === 'C') color = '#7dd3fc';
@@ -4494,6 +4636,44 @@
 
       bgCtx.fillStyle = '#dc2626';
       bgCtx.fillRect(0, 10 * cellH - 1.5, cw, 2);
+
+      // Draw 2D layout fixtures (West Sales Floor Doors + Hallway Fixtures across Rows 23-24)
+      {
+        const totalWorldW = COLS * TILE_SIZE;
+        const totalWorldH = ROWS * TILE_SIZE;
+        const toMx = (wx) => ((wx - ORIGIN_X) / totalWorldW) * cw;
+        const toMz = (wz) => ((wz - ORIGIN_Z) / totalWorldH) * ch;
+        const hNorthZ = ORIGIN_Z + 23 * TILE_SIZE;
+        const hEndZ = ORIGIN_Z + ROWS * TILE_SIZE - 0.25;
+        const hCenterZ = (hNorthZ + hEndZ) / 2;
+
+        // Dock West-wall inset double black sales floor doors (Rows 13-14, Col 0)
+        bgCtx.fillStyle = '#090d16';
+        bgCtx.fillRect(0, toMz(8.05), 3.5, Math.max(4, toMz(11.15) - toMz(8.05)));
+
+        // Hallway North wall fixtures: Vending (-3.45..-0.40), Coat rack (1.70..3.70), Lockers (4.16..9.76)
+        bgCtx.fillStyle = '#ef4444';
+        bgCtx.fillRect(toMx(-3.40), toMz(hNorthZ), toMx(-0.40) - toMx(-3.40), Math.max(2, toMz(hNorthZ + 0.87) - toMz(hNorthZ)));
+        bgCtx.fillStyle = '#cbd5e1';
+        bgCtx.fillRect(toMx(1.70), toMz(hNorthZ), toMx(3.70) - toMx(1.70), Math.max(2, toMz(hNorthZ + 0.35) - toMz(hNorthZ)));
+        bgCtx.fillStyle = '#60a5fa';
+        bgCtx.fillRect(toMx(4.16), toMz(hNorthZ), toMx(9.76) - toMx(4.16), Math.max(2.5, toMz(hNorthZ + 0.53) - toMz(hNorthZ)));
+        // Expanded Timeclock Station on East corner wall
+        bgCtx.fillStyle = '#f59e0b';
+        bgCtx.fillRect(toMx(12.40), toMz(hCenterZ - 0.86), Math.max(2.5, toMx(12.95) - toMx(12.40)), Math.max(3, toMz(hCenterZ + 0.86) - toMz(hCenterZ - 0.86)));
+        // Double black sales floor doors on West end of Hallway
+        bgCtx.fillStyle = '#090d16';
+        bgCtx.fillRect(toMx(-13.15), toMz(hCenterZ - 1.20), Math.max(2.5, toMx(-12.80) - toMx(-13.15)), Math.max(4, toMz(hCenterZ + 1.20) - toMz(hCenterZ - 1.20)));
+        // South wall closed decorative doors + Fire Extinguisher & First Aid station
+        bgCtx.fillStyle = '#dc2626';
+        bgCtx.fillRect(toMx(-9.15), toMz(hEndZ - 0.20), Math.max(2.5, toMx(-8.05) - toMx(-9.15)), 2);
+        bgCtx.fillStyle = '#92400e';
+        bgCtx.fillRect(toMx(-3.08), toMz(hEndZ - 0.20), Math.max(2, toMx(-2.12) - toMx(-3.08)), 2);
+        bgCtx.fillStyle = '#0d9488';
+        bgCtx.fillRect(toMx(1.86), toMz(hEndZ - 0.20), Math.max(2, toMx(2.94) - toMx(1.86)), 2);
+        bgCtx.fillStyle = '#94a3b8';
+        bgCtx.fillRect(toMx(6.35), toMz(hEndZ - 0.20), Math.max(2, toMx(7.25) - toMx(6.35)), 2);
+      }
 
       if (Array.isArray(steelRacks)) {
         const totalWorldW = COLS * TILE_SIZE;
@@ -4776,6 +4956,7 @@
       if (!isSystemPaused) {
         if (jackDockedAtCharger && jackBattery < 100) {
           jackBattery = Math.min(100, jackBattery + 1.2 * dt);
+          if (jackBattery >= 35) jackLowBatteryWarned = false;
         }
         updateNearbyInteractions(dt);
         DeliverySystem.update(dt);
@@ -4856,6 +5037,7 @@
         },
         showNotification: showNotification,
         showAlert: showAlert,
+        showPopupModal: showPopupModal,
         playSuccess: () => SoundSystem.playSuccessChime(),
         playError: () => SoundSystem.playErrorBuzzer(),
         playTruckDockBrake: () => { if (SoundSystem.playTruckDockBrake) SoundSystem.playTruckDockBrake(); },
@@ -4959,14 +5141,15 @@
       drawerState.topDrawerSlideOpen = false;
 
       pallets.slice().forEach((p) => removePallet3D(p));
-      player.position.set(0, 1.65, ORIGIN_Z + 13 * TILE_SIZE);
-      player.yaw = 0;
+      player.position.set(PLAYER_SPAWN.x, PLAYER_SPAWN.y, PLAYER_SPAWN.z);
+      player.yaw = PLAYER_SPAWN.yaw;
       player.pitch = 0;
       player.hitchedPallet = null;
       player.hasElectricJack = false;
       if (hitchStatusCard) hitchStatusCard.style.display = 'none';
 
       jackBattery = 100;
+      jackLowBatteryWarned = false;
       jackDockedAtCharger = true;
       electricJackViewmodel.visible = false;
       electricJackWorld.position.set(JACK_HOME_POS.x, 0, JACK_HOME_POS.z);
@@ -5122,6 +5305,7 @@
 
       const ej = data.electricJack || {};
       jackBattery = Number.isFinite(Number(ej.battery)) ? Number(ej.battery) : 100;
+      jackLowBatteryWarned = jackBattery <= 25;
       jackDockedAtCharger = ej.dockedAtCharger !== undefined ? Boolean(ej.dockedAtCharger) : true;
       electricJackWorld.position.set(
         Number.isFinite(Number(ej.x)) ? Number(ej.x) : JACK_HOME_POS.x,
@@ -5170,6 +5354,22 @@
           }
         },
         onMenuStateChange: (menuFlags) => {
+          if (menuFlags && menuFlags.shiftSummaryOpen) {
+            if (uiState.scannerModalOpen) closeScanner(true);
+            if (uiState.overageDeliveryId && typeof exitOverageFlagMode === 'function') exitOverageFlagMode(true);
+            if (uiState.bolModalOpen) closeWarehouseBol();
+            if (uiState.invoiceModalOpen) closeInvoice();
+            if (uiState.terminalModalOpen) closeTerminal(true);
+            if (uiState.doorQueueModalOpen) closeDoorQueueModal(true);
+            closePopupModal();
+            if (window.DSDReceipts) {
+              if (typeof window.DSDReceipts.closeNightDropPanel === 'function') window.DSDReceipts.closeNightDropPanel(true);
+              if (typeof window.DSDReceipts.closeFilingOverlay === 'function') window.DSDReceipts.closeFilingOverlay();
+              if (typeof window.DSDReceipts.closeInvoiceArchive === 'function') window.DSDReceipts.closeInvoiceArchive();
+              if (typeof window.DSDReceipts.closeTrashCanDialog === 'function') window.DSDReceipts.closeTrashCanDialog(true);
+              if (typeof window.DSDReceipts.closeHandReceiptDialog === 'function') window.DSDReceipts.closeHandReceiptDialog(true);
+            }
+          }
           const anyOverlay = Boolean(menuFlags && (menuFlags.mainMenuOpen || menuFlags.systemMenuOpen || menuFlags.saveLoadModalOpen || menuFlags.infoModalOpen || menuFlags.shiftSummaryOpen));
           container.classList.toggle('main-menu-open', Boolean(menuFlags && menuFlags.mainMenuOpen));
           container.classList.toggle('system-menu-open', Boolean(menuFlags && (menuFlags.systemMenuOpen || menuFlags.saveLoadModalOpen || menuFlags.infoModalOpen)));
@@ -5215,6 +5415,10 @@
           drawerState.pendingArchiveOpen = false;
           drawerState.pendingArchiveTimer = 0;
           drawerState.topDrawerSlideOpen = false;
+          player.position.set(PLAYER_SPAWN.x, PLAYER_SPAWN.y, PLAYER_SPAWN.z);
+          player.yaw = PLAYER_SPAWN.yaw;
+          player.pitch = 0;
+          camera.position.copy(player.position);
           player.hitchedPallet = null;
           player.hasElectricJack = false;
           jackBattery = 100;
@@ -5249,17 +5453,17 @@
           DeliverySystem.init();
           if (nextShiftSupplyOrders.length > 0) {
             const totalSupCases = nextShiftSupplyOrders.reduce((s, it) => s + Math.max(0, Number(it.cases || it.qty) || 0), 0);
-            showNotification(`🚚 Vendor #601 Dept 60 supply delivery (${totalSupCases} case${totalSupCases === 1 ? '' : 's'}) scheduled today!`);
+            showNotification(`🚚 Vendor #601 Dept 60 supply delivery (${totalSupCases} case${totalSupCases === 1 ? '' : 's'}) scheduled today!`, 'low');
           }
           if (supplyUsageReport && Array.isArray(supplyUsageReport.outOfStock) && supplyUsageReport.outOfStock.length > 0) {
             const missingNames = supplyUsageReport.outOfStock.slice(0, 3).map((s) => s.name).join(', ');
             const extraMore = supplyUsageReport.outOfStock.length > 3 ? ` +${supplyUsageReport.outOfStock.length - 3} more` : '';
             const pts = supplyUsageReport.outOfStock.length * 200;
-            showAlert(`⚠️ SUPPLY OUT OF STOCK (-${pts} pts): ${missingNames}${extraMore}. Order Dept 60 on Scanner #2!`);
+            showAlert(`⚠️ SUPPLY OUT OF STOCK (-${pts} pts): ${missingNames}${extraMore}. Order Dept 60 on Scanner #2!`, 'critical');
           } else if (supplyUsageReport && Array.isArray(supplyUsageReport.nowEmptySkus) && supplyUsageReport.nowEmptySkus.length > 0) {
             const emptyNames = supplyUsageReport.nowEmptySkus.slice(0, 3).map((s) => s.name).join(', ');
             const extraMore = supplyUsageReport.nowEmptySkus.length > 3 ? ` +${supplyUsageReport.nowEmptySkus.length - 3} more` : '';
-            showNotification(`⚠️ Dept 60 depleted today: ${emptyNames}${extraMore}. Order on Scanner #2 before next shift!`);
+            showNotification(`⚠️ Dept 60 depleted today: ${emptyNames}${extraMore}. Order on Scanner #2 before next shift!`, 'high');
           }
         }
       });
@@ -5415,7 +5619,8 @@
         playSuccess: () => SoundSystem.playSuccessChime(),
         playPaper: () => SoundSystem.playPaperRustle(),
         showNotification: showNotification,
-        showAlert: showAlert
+        showAlert: showAlert,
+        showPopupModal: showPopupModal
       });
     }
 

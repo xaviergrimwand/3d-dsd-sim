@@ -61,18 +61,24 @@
 
     const upper = String(message || '').toUpperCase();
 
-    // 1. ALERTS ('critical'): Rule breaks, point penalties, temp failures, recalls, staging/disposal errors
+    // 1. ALERTS ('critical'): Urgent high-priority arrivals, recalls, temp failures, point penalties & staging/disposal rule violations
     if (
       upper.includes('PRODUCT RECALL ALERT') ||
+      upper.includes('HIGH PRIORITY WAREHOUSE TRUCK') ||
+      upper.includes('OVERTIME ALERT') ||
+      upper.includes('OVERTIME PENALTY') ||
+      upper.includes('HARD CUTOFF') ||
       upper.includes('SECURITY PENALTY') ||
       upper.includes('PRIORITY ADHERENCE VIOLATION') ||
       upper.includes('SUPPLY OUT OF STOCK') ||
       upper.includes('PENALTY (') ||
       upper.includes('WITH PENALTY') ||
+      upper.includes('-100 PTS') ||
       upper.includes('TEMP FAIL:') ||
       upper.includes('OUT OF TEMP') ||
       upper.includes('RECALL COUNT MISMATCH') ||
       upper.includes('MISPLACED!') ||
+      upper.includes('EMPLOYEE HALLWAY') ||
       upper.includes('BLOCKED TRANSIT LANE') ||
       upper.includes('NO STAGING ZONE') ||
       upper.includes('WRONG CONTAINER') ||
@@ -81,40 +87,36 @@
       return 'critical';
     }
 
-    // 2. TASKS ('low'): Actionable paperwork/ops dispatches, Home Office tasks, BOLs, Filing, Inventory, Milestones
+    // 2. TASKS ('low'): Pending actionable assignments & dispatches (not completed milestones)
     if (
       upper.includes('📬') ||
       upper.includes('RECEIVING TASK') ||
-      upper.includes('DNR CONFIRMED') ||
-      upper.includes('TRUE VENDOR SHORTAGE') ||
-      upper.includes('TASK VERIFIED') ||
-      upper.includes('MISSING RECEIPT VERIFIED') ||
-      upper.includes('RECALL COMPLETE') ||
-      upper.includes('HIGH PRIORITY WAREHOUSE TRUCK') ||
-      upper.includes('WAREHOUSE BOL SIGNED') ||
-      upper.includes('BILL OF LADING') ||
-      upper.includes('NIGHT DROP INVOICE') ||
-      upper.includes('DAILY FILING COMPLETE') ||
-      upper.includes('DAILY FILING FOLDER') ||
-      upper.includes('PRINT ALL STORE COPIES') ||
-      upper.includes('DAILY BACKROOM INVENTORY FINALIZED') ||
-      upper.includes('DEPT 60 ORDER') ||
-      upper.includes('DEPT 60 SUPPLY DELIVERY') ||
-      upper.includes('SUPPLIES STOCKED') ||
-      upper.includes('SHIFT RECEIVING COMPLETE') ||
-      upper.includes('ALL SCHEDULED DSD') ||
-      upper.includes('ALL CLAIMS PROCESSED') ||
+      upper.includes('ARRIVAL:') ||
+      upper.includes('WAITING OUTSIDE') ||
+      upper.includes('TO CHECK IN') ||
+      upper.includes('OPEN BAY') ||
+      upper.includes('OPEN DOCK DOOR') ||
+      upper.includes('[E] TO SIGN BILL OF LADING') ||
+      upper.includes('SCAN CASES [F]') ||
       upper.includes('PHASE 2 ACTIVE') ||
-      upper.includes('21 WORKING DAYS')
+      upper.includes('DEPT 60 SUPPLY DELIVERY')
     ) {
       return 'low';
     }
 
-    // 3. WARNINGS ('high'): Advisories, stock depletion, header/filing gates, and interaction/control blockers
+    // 3. WARNINGS ('high'): Advisories, stock depletion, low jack battery, driver exit blockers, shift/filing gates & mismatches
     if (
       upper.includes('SECURITY ADVISORY') ||
       upper.includes('SHIFT RECEIVING IN PROGRESS') ||
       upper.includes('DEPT 60 DEPLETED') ||
+      upper.includes('JACK BATTERY LOW') ||
+      upper.includes('BACKSTOCK LEFT BEHIND') ||
+      upper.includes('TIMECLOCK PUNCH-OUT') ||
+      upper.includes('12:00 PM') ||
+      upper.includes('WAITING BY THE SIDE DOOR') ||
+      upper.includes('WAITING BY SIDE DOOR') ||
+      upper.includes('READY TO HEAD OUT') ||
+      upper.includes('STILL NEEDS PRINTED RECEIPT') ||
       upper.includes('VENDORS ONLY') ||
       upper.includes('HANDS OCCUPIED') ||
       upper.includes('PARK THE ELECTRIC PALLET JACK') ||
@@ -128,6 +130,7 @@
       upper.includes('PULL TOP CASES') ||
       upper.includes('BELONGS TO ANOTHER DELIVERY') ||
       upper.includes('HEADER DIFFERS') ||
+      upper.includes('DOES NOT MATCH INVOICE') ||
       upper.includes('TYPE MISMATCH') ||
       upper.includes('CANNOT PAIR') ||
       upper.includes('DAILY FILING IS LOCKED') ||
@@ -136,13 +139,14 @@
       upper.includes('VALID AFFECTED UNIT COUNT') ||
       upper.includes('CANNOT BE FLAGGED') ||
       upper.includes('STAYS UPRIGHT') ||
+      upper.includes('NO PRINTED RECEIPTS') ||
       upper.includes('⚠️') ||
       upper.includes('🔒')
     ) {
       return 'high';
     }
 
-    // 4. INFO ('status'): Routine dock/freight/door/jack/printer/claims updates
+    // 4. INFO ('status'): Meaningful completions, positive confirmations & status updates
     return 'status';
   }
 

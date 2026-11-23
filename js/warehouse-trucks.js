@@ -123,6 +123,13 @@
     };
   }
 
+  function getWorkdayIndex() {
+    const clock = global.ShiftClock;
+    const snap = clock && typeof clock.getTimeSnapshot === 'function' ? clock.getTimeSnapshot() : null;
+    const idx = Number(snap && snap.workdayIndex);
+    return Number.isFinite(idx) && idx >= 1 ? idx : 1;
+  }
+
   function buildWarehouseCatalogPools() {
     const whProducts = (global.DSDCatalog && typeof global.DSDCatalog.getProductsForDepartment === 'function')
       ? global.DSDCatalog.getProductsForDepartment('01')
@@ -539,8 +546,9 @@
     const shiftStartMin = (Number(cfg.shiftStartHour) || 6) * 60;
     const cutoffHour = Number(cfg.deliveryCutoffHour) || 12;
     const endMin = cutoffHour * 60; // No deliveries after 12:00 PM
-    const minWh = Math.max(1, Math.min(2, Number(cfg.minWarehouseTrucksPerDay) || 1));
-    const maxWh = Math.max(minWh, Math.min(2, Number(cfg.maxWarehouseTrucksPerDay) || 2));
+    const maxWhCap = getWorkdayIndex() === 1 ? 1 : 2;
+    const minWh = Math.max(1, Math.min(maxWhCap, Number(cfg.minWarehouseTrucksPerDay) || 1));
+    const maxWh = Math.max(minWh, Math.min(maxWhCap, Number(cfg.maxWarehouseTrucksPerDay) || maxWhCap));
     const minDel = Math.max(6, Number(cfg.minDeliveriesPerDay) || 8);
     const maxDel = Math.max(minDel, Number(cfg.maxDeliveriesPerDay) || 10);
     const totalSlots = randInt(minDel, maxDel); // 8-10 total deliveries per day
@@ -965,7 +973,8 @@
 
     if (typeof state.hooks.showNotification === 'function') {
       state.hooks.showNotification(
-        `🚨 HIGH PRIORITY WAREHOUSE TRUCK docked at Bay ${truck.dockBay} (${truck.totalPallets} pallets). Driver waiting at Side Door!`
+        `🚨 HIGH PRIORITY WAREHOUSE TRUCK docked at Bay ${truck.dockBay} (${truck.totalPallets} pallets). Driver waiting at Side Door!`,
+        'critical'
       );
     }
     if (typeof state.hooks.onScheduleUpdated === 'function') {
@@ -986,7 +995,8 @@
     }
     if (typeof state.hooks.showNotification === 'function') {
       state.hooks.showNotification(
-        `📦 BAY ${truck.dockBay} UNLOADED! Meet ${truck.driverName} to sign the Bill of Lading [E].`
+        `📦 BAY ${truck.dockBay} UNLOADED! Meet ${truck.driverName} to sign the Bill of Lading [E].`,
+        'low'
       );
     }
     if (typeof state.hooks.updateStagedCounter === 'function') {
@@ -1038,14 +1048,7 @@
       global.ShiftStats.increment('warehouseTrucksProcessed', 1);
     }
 
-    // Clear staged pallets belonging to this completed warehouse load so F/C/D staging zones stay open for the next truck.
-    if (typeof state.hooks.removePallet3D === 'function') {
-      truck.spawnedPallets.slice().forEach((palletObj) => {
-        state.hooks.removePallet3D(palletObj);
-      });
-    }
-    truck.spawnedPallets = [];
-
+    // Completed warehouse pallets stay staged in F/C/D zones until the next shift starts.
     const docks = state.hooks.dockDoors || [];
     const dd = docks.find((d) => d.id === truck.dockBay);
     if (dd) {
@@ -1059,7 +1062,8 @@
     if (typeof state.hooks.showNotification === 'function') {
       const recStr = truck.receiptNumber ? `#${truck.receiptNumber}` : '01-AUTO';
       state.hooks.showNotification(
-        `🏭 WAREHOUSE BOL SIGNED! Receipt ${recStr} auto-finalized (+350 pts). Let ${truck.driverName} out Side Door!`
+        `🏭 WAREHOUSE BOL SIGNED! Receipt ${recStr} auto-finalized (+350 pts). Let ${truck.driverName} out Side Door!`,
+        'status'
       );
     }
     if (typeof state.hooks.onWarehouseCompleted === 'function') {

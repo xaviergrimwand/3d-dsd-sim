@@ -17,8 +17,8 @@
     "YYDYYDYYDYY", // Row 10 (Dock door threshold & apron)
     "DDDDDDDDDDY", // Row 11 (Main dock floor + east transit lane)
     "DDDDDDDDDDY", // Row 12
-    "DDDDDDDDDDY", // Row 13
-    "DDDDDDDDDDY", // Row 14
+    "YDDDDDDDDDY", // Row 13 (Col 0 Sales Floor door threshold - yellow no-pallet tiles)
+    "YDDDDDDDDDY", // Row 14 (Col 0 Sales Floor door threshold - yellow no-pallet tiles)
     "DDDDDDDDDDY", // Row 15 (Expanded dry staging row)
     "DDDDDDDDDDY", // Row 16 (Bottom row of dry staging: dock approach, backstock racks & east hallway entry)
     "WWYWWWYWWWW", // Row 17 (Cooler / Freezer front wall & doorways)
@@ -26,12 +26,13 @@
     "FFFFWCCCCWW", // Row 19
     "FFFFWCCCCWW", // Row 20
     "FFFFWCCCCWW", // Row 21 (Expanded Freezer & Cooler back row)
-    "HHHHHHHHHHH", // Row 22 (Extended Employee Hallway - turns West, 2 tiles wide to Freezer West wall)
-    "HHHHHHHHHHH"  // Row 23 (Extended Employee Hallway - South outer row)
+    "WWWWWWWWWWW", // Row 22 (Red bulkhead separating Freezer/Cooler from Employee Hallway; Col 10 corridor opens south)
+    "HHHHHHHHHHH", // Row 23 (Extended Employee Hallway - turns West, 2 tiles wide)
+    "HHHHHHHHHHH"  // Row 24 (Extended Employee Hallway - South outer row)
   ];
 
   const COLS = 11;
-  const ROWS = 24;
+  const ROWS = 25;
   const TILE_SIZE = 2.4;
 
   const ORIGIN_X = -(COLS * TILE_SIZE) / 2;
@@ -73,9 +74,14 @@
       createTempLedTexture,
       createCrtScreenDisplay,
       createInvoiceSheetTexture,
+      createKeyboardShellTexture,
       createKeyboardTexture,
       createBrickTexture,
       createHallwaySignTexture,
+      createHallwayPosterTexture,
+      createHallwayDoorSignTexture,
+      createNoPalletZoneTexture,
+      createVendingFrontTexture,
       createTrailerDoorTexture,
       createHallwayTimeclockDisplay,
       createTruckFloorTexture,
@@ -92,6 +98,8 @@
       createBatteryChargerTexture,
       createBatteryChargerDisplay,
       createWoodGrainTexture,
+      createOfficeDeskLaminateTexture,
+      createOfficeDeskEnamelTexture,
       createCardboardBoxTexture,
       createKgsCapTexture,
       createDriverBadgeTexture,
@@ -127,6 +135,7 @@
     vendorTrailerRoofTex.needsUpdate = true;
     vendorTrailerRoofTex.repeat.set(1, 6);
     const yellowTransitTex = createYellowTransitTexture();
+    const noPalletZoneTex = createNoPalletZoneTexture();
     const freezerFloorTex = createFreezerFloorTexture();
     const coolerFloorTex = createCoolerFloorTexture();
     const insulatedHeaderTex = createInsulatedPanelTexture(2, 1, false);
@@ -139,6 +148,7 @@
     const matFloorTruck = new THREE.MeshStandardMaterial({ map: truckFloorTex, roughness: 0.88 });
     const matFloorVendorTruck = new THREE.MeshStandardMaterial({ map: vendorFloorTex, roughness: 0.88 });
     const matFloorYellow = new THREE.MeshStandardMaterial({ map: yellowTransitTex, roughness: 0.88, metalness: 0.05 });
+    const matFloorNoPallet = new THREE.MeshStandardMaterial({ map: noPalletZoneTex, roughness: 0.88, metalness: 0.05 });
     const matFloorFreezer = new THREE.MeshStandardMaterial({ map: freezerFloorTex, roughness: 0.4 });
     const matFloorCooler = new THREE.MeshStandardMaterial({ map: coolerFloorTex, roughness: 0.45 });
 
@@ -157,6 +167,7 @@
     const matHazardBollard = new THREE.MeshStandardMaterial({ color: 0xf59e0b, roughness: 0.5 });
     const matHazardRail = new THREE.MeshStandardMaterial({ map: hazardTex, roughness: 0.7 });
     const matBlackRubber = new THREE.MeshStandardMaterial({ color: 0x0f172a, roughness: 0.9 });
+    const matChrome = new THREE.MeshStandardMaterial({ color: 0xe2e8f0, roughness: 0.25, metalness: 0.85 });
     const matCeiling = new THREE.MeshStandardMaterial({ map: dockCeilingTex, roughness: 0.82, metalness: 0.25 });
     const matColdCeiling = new THREE.MeshStandardMaterial({ map: coldCeilingTex, roughness: 0.45, metalness: 0.22 });
     const matHallCeiling = new THREE.MeshStandardMaterial({ map: hallwayCeilingTex, roughness: 0.88, metalness: 0.05 });
@@ -211,6 +222,41 @@
         uvAttr.setXY(i, u, v);
       }
       uvAttr.needsUpdate = true;
+    }
+
+    // Add uniform floor-to-wall black & yellow hazard kickrail segments that break cleanly at doorways.
+    const KICKRAIL_REPEAT_METERS = 7.68; // 0.16m height * 4:1 stripe aspect * repeatS(12)
+    function addWallKickrailSegments(axis, fixedCoord, segments, opts = {}) {
+      const h = opts.height || 0.16;
+      const d = opts.depth || 0.04;
+      const y = opts.y !== undefined ? opts.y : h / 2;
+      (segments || []).forEach(([start, end]) => {
+        const len = end - start;
+        if (!(len > 0.02)) return;
+        const geom = axis === 'x'
+          ? new THREE.BoxGeometry(len, h, d)
+          : new THREE.BoxGeometry(d, h, len);
+        const mesh = new THREE.Mesh(geom, matHazardRail);
+        if (axis === 'x') mesh.position.set((start + end) / 2, y, fixedCoord);
+        else mesh.position.set(fixedCoord, y, (start + end) / 2);
+
+        const posAttr = geom.attributes && geom.attributes.position;
+        const normAttr = geom.attributes && geom.attributes.normal;
+        const uvAttr = geom.attributes && geom.attributes.uv;
+        if (posAttr && normAttr && uvAttr) {
+          for (let i = 0; i < posAttr.count; i++) {
+            const wx = mesh.position.x + posAttr.getX(i);
+            const wy = mesh.position.y + posAttr.getY(i);
+            const wz = mesh.position.z + posAttr.getZ(i);
+            const nx = Math.abs(normAttr.getX(i));
+            const nz = Math.abs(normAttr.getZ(i));
+            const uCoord = (nx >= nz) ? wz : wx;
+            uvAttr.setXY(i, uCoord / KICKRAIL_REPEAT_METERS, wy / h);
+          }
+          uvAttr.needsUpdate = true;
+        }
+        scene.add(mesh);
+      });
     }
 
     function mergeStaticGroupByMaterial(rootGroup, skipSet) {
@@ -365,7 +411,7 @@
       return bGroup;
     }
 
-    const isHallwayTile = (c, r) => (c === 10 && r >= 17 && r <= 21) || (DOCK_LAYOUT[r] && DOCK_LAYOUT[r].charAt(c) === 'H');
+    const isHallwayTile = (c, r) => (c === 10 && r >= 17 && r <= 22) || (DOCK_LAYOUT[r] && DOCK_LAYOUT[r].charAt(c) === 'H');
 
     for (let r = 0; r < ROWS; r++) {
       // Rows 0..9 belong to dynamic outdoor trailer bays (rendered per-bay via dd.trailerGroup only when docked)
@@ -377,6 +423,7 @@
 
         let floorMat = matFloorDock;
         if (type === 'Y') floorMat = matFloorYellow;
+        else if (type === 'N') floorMat = matFloorNoPallet;
         else if (type === 'F') floorMat = matFloorFreezer;
         else if (type === 'C') floorMat = matFloorCooler;
         else if (type === 'W' && !hallwayTile) floorMat = matWallDock;
@@ -395,12 +442,6 @@
           wallMesh.position.set(pos.x, wallH / 2, pos.z);
           applyWorldWallUVs(wallMesh);
           scene.add(wallMesh);
-
-          // Lower hazard kickrail along wall base
-          const kickrailGeo = new THREE.BoxGeometry(TILE_SIZE + 0.02, 0.16, TILE_SIZE + 0.02);
-          const kickrail = new THREE.Mesh(kickrailGeo, matHazardRail);
-          kickrail.position.set(pos.x, 0.08, pos.z);
-          scene.add(kickrail);
 
           solidWalls.push({
             minX: pos.x - TILE_SIZE / 2,
@@ -449,11 +490,100 @@
     southWall.position.set(0, COLD_CEILING_H / 2, ORIGIN_Z + totalD);
     scene.add(southWall);
 
-    // West Wall (Indoor Dock + Cold Rooms only: Z = 0 to +24m)
-    const westWall = new THREE.Mesh(new THREE.BoxGeometry(outerWallThickness, DOCK_CEILING_H, buildingDepth), matWallDock);
-    westWall.position.set(ORIGIN_X, DOCK_CEILING_H / 2, buildingCenterZ);
-    applyWorldWallUVs(westWall);
-    scene.add(westWall);
+    // West Wall split around Inset Receiving-Dock Sales Floor Double Doorway (Col 0, Rows 13-14: Z = 8.05m .. 11.15m)
+    const westDoorWidth = 3.10;
+    const westDoorHeight = 2.68;
+    const westDoorCenterZ = ORIGIN_Z + 14 * TILE_SIZE; // Z = 9.60m (centered between Rows 13 & 14)
+    const westDoorMinZ = westDoorCenterZ - westDoorWidth / 2; // 8.05m
+    const westDoorMaxZ = westDoorCenterZ + westDoorWidth / 2; // 11.15m
+    const westNorthLen = westDoorMinZ - buildingNorthZ;
+    const westWallNorth = new THREE.Mesh(
+      new THREE.BoxGeometry(outerWallThickness, DOCK_CEILING_H, westNorthLen),
+      matWallDock
+    );
+    westWallNorth.position.set(ORIGIN_X, DOCK_CEILING_H / 2, buildingNorthZ + westNorthLen / 2);
+    applyWorldWallUVs(westWallNorth);
+    scene.add(westWallNorth);
+
+    const westSouthLen = (ORIGIN_Z + totalD) - westDoorMaxZ;
+    const westWallSouth = new THREE.Mesh(
+      new THREE.BoxGeometry(outerWallThickness, DOCK_CEILING_H, westSouthLen),
+      matWallDock
+    );
+    westWallSouth.position.set(ORIGIN_X, DOCK_CEILING_H / 2, westDoorMaxZ + westSouthLen / 2);
+    applyWorldWallUVs(westWallSouth);
+    scene.add(westWallSouth);
+
+    const westHeaderH = DOCK_CEILING_H - westDoorHeight;
+    const westDoorHeader = new THREE.Mesh(
+      new THREE.BoxGeometry(outerWallThickness, westHeaderH, westDoorWidth),
+      matWallDock
+    );
+    westDoorHeader.position.set(ORIGIN_X, westDoorHeight + westHeaderH / 2, westDoorCenterZ);
+    applyWorldWallUVs(westDoorHeader);
+    scene.add(westDoorHeader);
+
+    // Inset Portal Masonry Recess + Non-Functional Large Double Black Sales Floor Doors (facing East +X into dock)
+    const westInsetGrp = new THREE.Group();
+    westInsetGrp.position.set(ORIGIN_X, 0, westDoorCenterZ);
+
+    const insetBacking = new THREE.Mesh(
+      new THREE.BoxGeometry(0.18, westDoorHeight + 0.14, westDoorWidth + 0.34),
+      matWallDock
+    );
+    insetBacking.position.set(-0.34, (westDoorHeight + 0.14) / 2, 0);
+    westInsetGrp.add(insetBacking);
+
+    const insetSoffit = new THREE.Mesh(
+      new THREE.BoxGeometry(0.56, 0.10, westDoorWidth + 0.04),
+      matSteelFrame
+    );
+    insetSoffit.position.set(0.0, westDoorHeight - 0.03, 0);
+    westInsetGrp.add(insetSoffit);
+
+    [-westDoorWidth / 2 + 0.04, westDoorWidth / 2 - 0.04].forEach((jz) => {
+      const jamb = new THREE.Mesh(new THREE.BoxGeometry(0.52, westDoorHeight, 0.09), matSteelFrame);
+      jamb.position.set(0.01, westDoorHeight / 2, jz);
+      westInsetGrp.add(jamb);
+    });
+
+    const dockBlackLeafMat = new THREE.MeshStandardMaterial({ color: 0x0f172a, roughness: 0.52, metalness: 0.28 });
+    const dockDoorGlassMat = new THREE.MeshStandardMaterial({ color: 0x94a3b8, roughness: 0.2, metalness: 0.4, opacity: 0.65, transparent: true });
+    const dockDoorLeafW = (westDoorWidth - 0.22) / 2;
+    [-1, 1].forEach((side) => {
+      const lz = side * (dockDoorLeafW / 2 + 0.015);
+      const leaf = new THREE.Mesh(new THREE.BoxGeometry(0.06, westDoorHeight - 0.08, dockDoorLeafW), dockBlackLeafMat);
+      leaf.position.set(-0.14, (westDoorHeight - 0.08) / 2, lz);
+      westInsetGrp.add(leaf);
+
+      const kick = new THREE.Mesh(new THREE.BoxGeometry(0.016, 0.48, dockDoorLeafW - 0.08), matChrome);
+      kick.position.set(-0.105, 0.26, lz);
+      westInsetGrp.add(kick);
+
+      const crashBar = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.10, dockDoorLeafW - 0.16), matSteel);
+      crashBar.position.set(-0.095, 1.08, lz);
+      westInsetGrp.add(crashBar);
+
+      const winFrame = new THREE.Mesh(new THREE.BoxGeometry(0.02, 0.68, 0.34), matSteelFrame);
+      winFrame.position.set(-0.106, 1.78, lz - side * 0.14);
+      westInsetGrp.add(winFrame);
+      const winGlass = new THREE.Mesh(new THREE.BoxGeometry(0.024, 0.60, 0.28), dockDoorGlassMat);
+      winGlass.position.set(-0.104, 1.78, lz - side * 0.14);
+      westInsetGrp.add(winGlass);
+    });
+
+    const westDoorsSign = new THREE.Mesh(
+      new THREE.PlaneGeometry(2.15, 0.34),
+      new THREE.MeshBasicMaterial({ map: createHallwayDoorSignTexture('SALES FLOOR', 'KEEP CLEAR — NO PALLETS', '#090d16', '#facc15') })
+    );
+    westDoorsSign.position.set(0.26, westDoorHeight + 0.30, 0);
+    westDoorsSign.rotation.y = Math.PI / 2;
+    westInsetGrp.add(westDoorsSign);
+
+    const floorThresh = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.018, westDoorWidth - 0.12), matSteelFrame);
+    floorThresh.position.set(0.06, 0.009, 0);
+    westInsetGrp.add(floorThresh);
+    scene.add(westInsetGrp);
 
     // EAST WALL: Cutout matches Side Rollup Door EXACTLY with zero gap to the outside world
     // Side door is 2.4m wide, centered at Row 13.5 (Z = ORIGIN_Z + 13.5 * TILE_SIZE = +8.4m)
@@ -542,10 +672,12 @@
     applyWorldWallUVs(rightJamb);
     scene.add(rightJamb);
 
-    // 3. Lower Floor Hazard Kickrail along dock threshold
-    const floorHazardRail = new THREE.Mesh(new THREE.BoxGeometry(totalW - 0.2, 0.16, 0.1), matHazardRail);
-    floorHazardRail.position.set(0, 0.08, doorZ + 0.2);
-    scene.add(floorHazardRail);
+    // 3. Lower Floor Hazard Kickrail along North dock piers ONLY (breaks cleanly at all 4 dock doorways & steel I-beams)
+    addWallKickrailSegments('x', doorZ + 0.22, [
+      [-8.40, -7.41], [-6.99, -6.00],
+      [-1.20, -0.21], [0.21, 1.20],
+      [6.00, 6.99], [7.41, 8.40]
+    ]);
 
     // 4. Five Full-Height Vertical Structural Steel I-Beam Columns
     const colXPositions = [-13.2, -7.2, 0.0, 7.2, 13.2];
@@ -1010,7 +1142,6 @@
           const remainingTravel = (dd.isOpen ? (1.0 - dd.currentProgress) : dd.currentProgress);
           const motorTime = Math.max(0.3, remainingTravel * DOCK_DOOR_DURATION);
           SoundSystem.playDoorMotor(motorTime);
-          if (hooks.showNotification) hooks.showNotification(`⚡ ${dd.name} button pressed: ${dd.isOpen ? 'OPENING' : 'CLOSING'}`);
           if (typeof lib !== 'undefined' && lib.log) {
             lib.log(`${dd.name} button pressed: ${dd.isOpen ? 'OPEN' : 'CLOSED'}`);
           }
@@ -1337,43 +1468,60 @@
       scene.add(group);
     });
 
-    // 6. Center Column Props: Fire Extinguisher Station (X = 0.0, Mounted on Column between Bays 2 & 3)
-    const extinguisherGroup = new THREE.Group();
-    extinguisherGroup.position.set(0, 1.45, doorZ + 0.5);
+    // 6. Detailed Wall-Mounted Fire Extinguisher Station Builder (shared by Dock East Wall & Employee Hallway)
+    const extMatRed = new THREE.MeshStandardMaterial({ color: 0xdc2626, roughness: 0.28, metalness: 0.35 });
+    const extMatBrass = new THREE.MeshStandardMaterial({ color: 0xd97706, roughness: 0.3, metalness: 0.8 });
+    function createFireExtinguisherStation(opts = {}) {
+      const grp = opts.parentGroup || new THREE.Group();
+      const ox = opts.offsetX || 0;
+      if (!opts.parentGroup) {
+        grp.position.set(opts.x || 0, opts.y || 0, opts.z || 0);
+        if (opts.ry !== undefined) grp.rotation.y = opts.ry;
+      }
 
-    const extBody = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.12, 0.65, 24), new THREE.MeshStandardMaterial({ color: 0xef4444, roughness: 0.3, metalness: 0.3 }));
-    const extTop = new THREE.Mesh(new THREE.SphereGeometry(0.12, 16, 16), new THREE.MeshStandardMaterial({ color: 0xb91c1c, roughness: 0.4 }));
-    extTop.position.y = 0.32;
-    const extBottom = new THREE.Mesh(new THREE.SphereGeometry(0.12, 16, 16), new THREE.MeshStandardMaterial({ color: 0xb91c1c, roughness: 0.4 }));
-    extBottom.position.y = -0.32;
-    const extValve = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.12, 0.1), new THREE.MeshStandardMaterial({ color: 0xcccccc, metalness: 0.9, roughness: 0.2 }));
-    extValve.position.y = 0.45;
-    const extHose = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 0.5, 12), new THREE.MeshStandardMaterial({ color: 0x111111, roughness: 0.8 }));
-    extHose.position.set(0.1, 0.15, 0);
+      const extBoard = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.94, 0.03), matSteelFrame);
+      extBoard.position.set(ox, 1.32, 0.015);
+      grp.add(extBoard);
+      const extTank = new THREE.Mesh(new THREE.CylinderGeometry(0.085, 0.085, 0.48, 16), extMatRed);
+      extTank.position.set(ox, 1.24, 0.12);
+      grp.add(extTank);
+      const extDome = new THREE.Mesh(new THREE.SphereGeometry(0.085, 16, 10, 0, Math.PI * 2, 0, Math.PI / 2), extMatRed);
+      extDome.position.set(ox, 1.48, 0.12);
+      grp.add(extDome);
+      const extBand = new THREE.Mesh(new THREE.BoxGeometry(0.11, 0.04, 0.175), matSteelFrame);
+      extBand.position.set(ox, 1.32, 0.12);
+      grp.add(extBand);
+      const extValve = new THREE.Mesh(new THREE.CylinderGeometry(0.026, 0.030, 0.09, 10), extMatBrass);
+      extValve.position.set(ox, 1.59, 0.12);
+      grp.add(extValve);
+      const extLever = new THREE.Mesh(new THREE.BoxGeometry(0.11, 0.025, 0.03), matBlackRubber);
+      extLever.position.set(ox + 0.03, 1.63, 0.12);
+      grp.add(extLever);
+      const extGauge = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.022, 0.022, 0.02, 12),
+        new THREE.MeshBasicMaterial({ color: 0x4ade80 })
+      );
+      extGauge.rotation.x = Math.PI / 2;
+      extGauge.position.set(ox, 1.59, 0.155);
+      grp.add(extGauge);
+      // Curved discharge hose + flared black nozzle strapped to side of tank
+      const extHose = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.012, 0.42, 8), matBlackRubber);
+      extHose.position.set(ox + 0.11, 1.38, 0.13);
+      extHose.rotation.z = 0.08;
+      grp.add(extHose);
+      const extHorn = new THREE.Mesh(new THREE.CylinderGeometry(0.015, 0.035, 0.12, 10), matBlackRubber);
+      extHorn.position.set(ox + 0.13, 1.15, 0.13);
+      grp.add(extHorn);
+      const extSign = new THREE.Mesh(
+        new THREE.PlaneGeometry(0.42, 0.16),
+        new THREE.MeshBasicMaterial({ map: createHallwayDoorSignTexture('FIRE EXTINGUISHER', 'ABC CLASS · PULL PIN', '#991b1b', '#fef08a') })
+      );
+      extSign.position.set(ox, 1.90, 0.01);
+      grp.add(extSign);
 
-    extinguisherGroup.add(extBody);
-    extinguisherGroup.add(extTop);
-    extinguisherGroup.add(extBottom);
-    extinguisherGroup.add(extValve);
-    extinguisherGroup.add(extHose);
-
-    // Red "FIRE EXTINGUISHER" sign directly above extinguisher
-    const extSign = new THREE.Mesh(
-      new THREE.PlaneGeometry(0.6, 0.3),
-      new THREE.MeshStandardMaterial({ map: createWarningSignTexture('extinguisher') })
-    );
-    extSign.position.set(0, 0.68, 0.05);
-    extinguisherGroup.add(extSign);
-    scene.add(extinguisherGroup);
-
-    // Red emergency electrical junction box high on center column
-    const centerJunction = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.25, 0.15), new THREE.MeshStandardMaterial({ color: 0xef4444, roughness: 0.5 }));
-    centerJunction.position.set(0, 3.2, doorZ + 0.42);
-    scene.add(centerJunction);
-
-    const centerConduit = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.025, 2.5, 8), matConduit);
-    centerConduit.position.set(0, 4.45, doorZ + 0.42);
-    scene.add(centerConduit);
+      if (!opts.parentGroup) scene.add(grp);
+      return grp;
+    }
 
     // 6B. Column at X = -7.2 (Between Docks 1 & 2): Industrial Battery Charging Station
     const chargerGroup = new THREE.Group();
@@ -1811,11 +1959,9 @@
         const motorTime = Math.max(0.3, remainingTravel * SIDE_DOOR_DURATION);
         SoundSystem.playDoorMotor(motorTime);
         if (sideRollupDoor.isOpen && waitingExit.length > 0) {
-          showNotification(`⚡ Side Door opening — letting ${waitingExit.length === 1 ? waitingExit[0].delivery.driverName : waitingExit.length + ' driver(s)'} out.`);
+          showNotification(`⚡ Side Door opening — letting ${waitingExit.length === 1 ? waitingExit[0].delivery.driverName : waitingExit.length + ' driver(s)'} out.`, 'status');
         } else if (sideRollupDoor.isOpen && waiting.length > 0) {
-          showNotification(`⚡ Side Door open — ${waiting.length} waiting outside. Speak [E] to pick who may enter.`);
-        } else {
-          showNotification(`⚡ Side Rollup Door button pressed: ${sideRollupDoor.isOpen ? 'OPENING' : 'CLOSING'}`);
+          showNotification(`⚡ Side Door open — ${waiting.length} waiting outside. Speak [E] to pick who may enter.`, 'low');
         }
       }
     };
@@ -1864,6 +2010,13 @@
     mergeStaticGroupByMaterial(sideRollupGroup, new Set([sideCurtain, sideStation.group, sideBeacon.group]));
     scene.add(sideRollupGroup);
 
+    // Fire Extinguisher Station moved to East Wall just South of Side Rollup Door (opposite the Computer Desk)
+    createFireExtinguisherStation({
+      x: -ORIGIN_X - outerWallThickness / 2,
+      z: sideDoorMaxZ + 1.05,
+      ry: -Math.PI / 2
+    });
+
     // ==========================================
     // CORNER WORKSTATION: OFFICE DESK WITH TWO FILE DRAWERS & RETRO TERMINAL
     // Faithfully matches user reference image with two drawers, retro CRT,
@@ -1874,14 +2027,35 @@
     const deskGroup = new THREE.Group();
     deskGroup.position.set(deskPos.x, 0, deskPos.z);
 
-    const woodMat = new THREE.MeshStandardMaterial({ color: 0x784419, roughness: 0.72 });
-    const drawerWoodMat = new THREE.MeshStandardMaterial({ color: 0x633511, roughness: 0.75 });
-    const matChrome = new THREE.MeshStandardMaterial({ color: 0xe2e8f0, roughness: 0.25, metalness: 0.85 });
+    const deskLaminateTex = createOfficeDeskLaminateTexture ? createOfficeDeskLaminateTexture() : null;
+    const deskChassisTex = createOfficeDeskEnamelTexture ? createOfficeDeskEnamelTexture('chassis') : null;
+    const deskDrawerTex = createOfficeDeskEnamelTexture ? createOfficeDeskEnamelTexture('drawer') : null;
+    const deskLaminateMat = new THREE.MeshStandardMaterial(
+      deskLaminateTex
+        ? { map: deskLaminateTex, roughness: 0.46, metalness: 0.04 }
+        : { color: 0x6e492c, roughness: 0.48, metalness: 0.04 }
+    );
+    const deskEdgeTrimMat = new THREE.MeshStandardMaterial({ color: 0x262629, roughness: 0.62, metalness: 0.08 });
+    const woodMat = new THREE.MeshStandardMaterial(
+      deskChassisTex
+        ? { map: deskChassisTex, roughness: 0.56, metalness: 0.22 }
+        : { color: 0x898b82, roughness: 0.58, metalness: 0.22 }
+    );
+    const drawerWoodMat = new THREE.MeshStandardMaterial(
+      deskDrawerTex
+        ? { map: deskDrawerTex, roughness: 0.54, metalness: 0.24 }
+        : { color: 0x777a71, roughness: 0.56, metalness: 0.24 }
+    );
     const matCrtCase = new THREE.MeshStandardMaterial({ color: 0xd8d3c7, roughness: 0.55 });
     const matDarkTray = new THREE.MeshStandardMaterial({ color: 0x334155, roughness: 0.5, metalness: 0.4 });
 
-    // 1. Office Desk Tabletop
-    const deskTop = new THREE.Mesh(new THREE.BoxGeometry(1.35, 0.08, 2.3), woodMat);
+    // 1. Office Desk Tabletop (Honey-Oak Formica Laminate surface with dark 90s T-molding edge trim)
+    const deskTopMaterials = [
+      deskEdgeTrimMat, deskEdgeTrimMat,
+      deskLaminateMat, deskLaminateMat,
+      deskEdgeTrimMat, deskEdgeTrimMat
+    ];
+    const deskTop = new THREE.Mesh(new THREE.BoxGeometry(1.35, 0.08, 2.3), deskTopMaterials);
     deskTop.position.set(0, 1.05, 0);
     deskGroup.add(deskTop);
 
@@ -1954,14 +2128,14 @@
     const fileCabinetInteractible = {
       id: 'file_cabinet',
       type: 'file_cabinet',
-      name: '32-Day File Cabinet Archive',
+      name: '90-Day File Cabinet Archive',
       target: topDrawerGroup,
       mesh: fileCabinetHitbox,
       get boxCenter() {
         return new THREE.Vector3(deskPos.x - 0.31 + topDrawerGroup.position.x, 0.72, deskPos.z - 0.62);
       },
       boxSize: new THREE.Vector3(0.64, 0.40, 0.68),
-      getPrompt: () => '[E] Open 32-Day File Cabinet Archive',
+      getPrompt: () => '[E] Open 90-Day File Cabinet Archive',
       interact: () => {
         if (drawerState.pendingArchiveOpen) return;
         if (window.DSDReceipts && window.DSDReceipts.isBlockingModalOpen && window.DSDReceipts.isBlockingModalOpen()) return;
@@ -2091,12 +2265,115 @@
     interactibles.push(terminalInteractible);
     terminalHitbox.userData.interactible = terminalInteractible;
 
-    // 4. MECHANICAL KEYBOARD DIRECTLY IN FRONT OF MONITOR
-    // Aligned with monitor at Z = -0.06
-    const keyboardMat = new THREE.MeshStandardMaterial({ map: createKeyboardTexture(), roughness: 0.65 });
-    const keyboard = new THREE.Mesh(new THREE.BoxGeometry(0.56, 0.035, 0.22), keyboardMat);
-    keyboard.position.set(-0.34, 1.10, -0.06);
-    keyboard.rotation.y = -Math.PI / 2; // Spacebar faces West towards player, function keys face East towards monitor
+    // 4. CHUNKY 90s MECHANICAL KEYBOARD DIRECTLY IN FRONT OF MONITOR (approx. 0.56m x 0.22m footprint)
+    // Aligned with monitor at Z = -0.06, Model-M wedged beige shell + 3D raised key zones + coiled cord
+    const kbGroup = new THREE.Group();
+    kbGroup.position.set(-0.34, 1.09, -0.06);
+    kbGroup.rotation.y = -Math.PI / 2; // Spacebar faces West towards player, rear cable faces East towards CRT
+
+    const kbShellTex = createKeyboardShellTexture ? createKeyboardShellTexture() : null;
+    const kbShellMat = new THREE.MeshStandardMaterial(
+      kbShellTex
+        ? { map: kbShellTex, roughness: 0.58, metalness: 0.05 }
+        : { color: 0xd7d1c3, roughness: 0.58, metalness: 0.05 }
+    );
+    const kbWellMat = new THREE.MeshStandardMaterial({ color: 0x262a33, roughness: 0.78 });
+    const kbSkirtMat = new THREE.MeshStandardMaterial({ color: 0xb5ae9e, roughness: 0.62 });
+
+    // 4A. Lower rubberized tilt feet & thick ABS bottom plinth (gives chunky rear lift)
+    [-0.21, 0.21].forEach((fx) => {
+      const tiltFoot = new THREE.Mesh(new THREE.BoxGeometry(0.036, 0.014, 0.022), matBlackRubber);
+      tiltFoot.position.set(fx, 0.007, -0.088);
+      kbGroup.add(tiltFoot);
+    });
+    const kbLowerBase = new THREE.Mesh(new THREE.BoxGeometry(0.556, 0.020, 0.214), kbSkirtMat);
+    kbLowerBase.position.set(0, 0.015, 0.002);
+    kbGroup.add(kbLowerBase);
+
+    // 4B. Wedged upper shell + recessed keywell + 3D sculpted key clusters tilted toward user
+    const kbTopTilt = new THREE.Group();
+    kbTopTilt.position.set(0, 0.028, 0.004);
+    kbTopTilt.rotation.x = 0.095; // Classic Model-M forward typing wedge slope
+
+    const kbMainBody = new THREE.Mesh(new THREE.BoxGeometry(0.560, 0.024, 0.216), kbShellMat);
+    kbMainBody.position.set(0, 0, 0);
+    kbTopTilt.add(kbMainBody);
+
+    // Chunky side & wrist bezel rails around the recessed keybed
+    const kbBackForehead = new THREE.Mesh(new THREE.BoxGeometry(0.560, 0.018, 0.044), kbShellMat);
+    kbBackForehead.position.set(0, 0.018, -0.084);
+    kbTopTilt.add(kbBackForehead);
+
+    const kbFrontLip = new THREE.Mesh(new THREE.BoxGeometry(0.560, 0.011, 0.022), kbShellMat);
+    kbFrontLip.position.set(0, 0.013, 0.096);
+    kbTopTilt.add(kbFrontLip);
+
+    [-0.268, 0.268].forEach((bx) => {
+      const sideBezel = new THREE.Mesh(new THREE.BoxGeometry(0.024, 0.016, 0.148), kbShellMat);
+      sideBezel.position.set(bx, 0.015, 0.011);
+      kbTopTilt.add(sideBezel);
+    });
+
+    // Dark recessed steel keybed well plate
+    const kbWell = new THREE.Mesh(new THREE.BoxGeometry(0.514, 0.004, 0.148), kbWellMat);
+    kbWell.position.set(0, 0.012, 0.011);
+    kbTopTilt.add(kbWell);
+
+    // Raised 3D keycap cluster blocks + top-plate printed legends (Main, Function, Nav, Numpad)
+    const kbMainTex = createKeyboardTexture('main');
+    const kbFuncTex = createKeyboardTexture('func');
+    const kbNavTex = createKeyboardTexture('nav');
+    const kbNumTex = createKeyboardTexture('numpad');
+    const kbBadgeTex = createKeyboardTexture('badge');
+
+    function addKeyCluster(cw, cd, cx, cz, topTex) {
+      const cBlock = new THREE.Mesh(new THREE.BoxGeometry(cw, 0.011, cd), kbSkirtMat);
+      cBlock.position.set(cx, 0.018, cz);
+      kbTopTilt.add(cBlock);
+      const cTop = new THREE.Mesh(
+        new THREE.PlaneGeometry(cw, cd),
+        new THREE.MeshStandardMaterial({ map: topTex, roughness: 0.56 })
+      );
+      cTop.rotation.x = -Math.PI / 2;
+      cTop.position.set(cx, 0.0238, cz);
+      kbTopTilt.add(cTop);
+    }
+
+    // Function row strip (top rear of keybed)
+    addKeyCluster(0.320, 0.024, -0.092, -0.044, kbFuncTex);
+    // Main QWERTY + Spacebar cluster (with raised Model-M Spacebar cap)
+    addKeyCluster(0.320, 0.106, -0.092, 0.028, kbMainTex);
+    const spacebarCap = new THREE.Mesh(new THREE.BoxGeometry(0.128, 0.005, 0.018), kbShellMat);
+    spacebarCap.position.set(-0.103, 0.0242, 0.067);
+    kbTopTilt.add(spacebarCap);
+    // Navigation & Inverted-T Arrow cluster
+    addKeyCluster(0.068, 0.106, 0.114, 0.028, kbNavTex);
+    // Warehouse Numeric Keypad cluster
+    addKeyCluster(0.090, 0.106, 0.204, 0.028, kbNumTex);
+
+    // Upper forehead status badge & Num/Caps/Scroll LED strip
+    const kbBadgePlate = new THREE.Mesh(
+      new THREE.PlaneGeometry(0.240, 0.032),
+      new THREE.MeshStandardMaterial({ map: kbBadgeTex, roughness: 0.42 })
+    );
+    kbBadgePlate.rotation.x = -Math.PI / 2;
+    kbBadgePlate.position.set(0.132, 0.0274, -0.084);
+    kbTopTilt.add(kbBadgePlate);
+
+    kbGroup.add(kbTopTilt);
+
+    // Coiled 90s PS/2 cable exiting the back edge toward the CRT monitor
+    for (let ci = 0; ci < 7; ci++) {
+      const coil = new THREE.Mesh(new THREE.TorusGeometry(0.0085, 0.0028, 8, 12), matBlackRubber);
+      coil.position.set(0.12, 0.012, -0.116 - ci * 0.011);
+      kbGroup.add(coil);
+    }
+    const kbCordLead = new THREE.Mesh(new THREE.CylinderGeometry(0.003, 0.003, 0.14, 8), matBlackRubber);
+    kbCordLead.rotation.x = Math.PI / 2;
+    kbCordLead.position.set(0.12, 0.006, -0.255);
+    kbGroup.add(kbCordLead);
+
+    const keyboard = kbGroup;
     deskGroup.add(keyboard);
 
     // (Mouse and mousepad removed to open South side of desk for the dot-matrix printer)
@@ -2735,10 +3012,10 @@
     scene.add(coldRoofDeck);
 
     // 2B. Wrap embossed insulated cold-room wall panels onto the remaining interior walls of Freezer & Cooler
-    // Keep Freezer & Cooler back wall at Row 21 end (Z = ORIGIN_Z + 22 * TILE_SIZE = 28.8m) so Rows 22-23 form the West-turning hallway!
+    // Row 22 (Z = 28.80m..31.20m) is the solid red bulkhead behind Freezer/Cooler; Rows 23-24 form the West-turning hallway!
     const coldRoomInnerZ = ORIGIN_Z + 18 * TILE_SIZE; // 19.20m
     const coldBackWallZ = ORIGIN_Z + 22 * TILE_SIZE;  // 28.80m
-    const coldRoomBackZ = coldBackWallZ - outerWallThickness / 2; // 28.55m
+    const coldRoomBackZ = coldBackWallZ;              // flush against North face of Row 22 bulkhead
     const coldSideLen = coldRoomBackZ - coldRoomInnerZ;
     const coldSideMidZ = coldRoomInnerZ + coldSideLen / 2;
     const coldDoorRevealZ = coldRoomInnerZ - 0.60; // 18.60m
@@ -2748,27 +3025,9 @@
     const hallWestX = ORIGIN_X + outerWallThickness / 2; // -12.95m (in line with Freezer West wall)
     const hallClearW = hallMaxX - hallMinX;      // 2.15m
     const hallCenterX = (hallMinX + hallMaxX) / 2; // 11.875m
-    const hallEndZ = ORIGIN_Z + totalD - outerWallThickness / 2; // 33.35m (Row 23 inner South wall)
-    const hallNorthZ = coldBackWallZ + outerWallThickness / 2;   // 29.05m (Row 22 inner North wall)
-    const hallWestCenterZ = (hallNorthZ + hallEndZ) / 2;         // 31.20m
-
-    // Dividing Back Wall separating Freezer/Cooler (Cols 0..9, Row 21) from West-turning Hallway (Rows 22..23)
-    const coldBackDivW = hallMinX - ORIGIN_X; // 24.0m
-    const coldBackDivWall = new THREE.Mesh(
-      new THREE.BoxGeometry(coldBackDivW, COLD_CEILING_H, outerWallThickness),
-      matWallDock
-    );
-    coldBackDivWall.position.set(ORIGIN_X + coldBackDivW / 2, COLD_CEILING_H / 2, coldBackWallZ);
-    applyWorldWallUVs(coldBackDivWall);
-    scene.add(coldBackDivWall);
-
-    solidWalls.push({
-      minX: ORIGIN_X,
-      maxX: hallMinX,
-      minZ: coldBackWallZ - outerWallThickness / 2,
-      maxZ: coldBackWallZ + outerWallThickness / 2,
-      isColdBackDivWall: true
-    });
+    const hallEndZ = ORIGIN_Z + totalD - outerWallThickness / 2; // 35.75m (Row 24 inner South wall)
+    const hallNorthZ = ORIGIN_Z + 23 * TILE_SIZE;                // 31.20m (South face of Row 22 bulkhead)
+    const hallWestCenterZ = (hallNorthZ + hallEndZ) / 2;         // 33.475m
 
     const coldWallSpecs = [
       // Freezer (cols 0-3, X: -12.95 to -3.60, doorway at col 2: -8.40 to -6.00)
@@ -2807,12 +3066,25 @@
       scene.add(panel);
     });
 
-    // 3. Lower floor hazard kickrail along South wall base (ending at Col 10 hallway opening)
-    const westRailStart = -totalW / 2 + 0.1;
-    const westRailW = hallMinX - westRailStart;
-    const southHazardRailWest = new THREE.Mesh(new THREE.BoxGeometry(westRailW, 0.16, 0.1), matHazardRail);
-    southHazardRailWest.position.set(westRailStart + westRailW / 2, 0.08, southDividingZ - 0.15);
-    scene.add(southHazardRailWest);
+    // 3. Consistent floor-to-wall black & yellow hazard kickrails along all Dock & Hallway walls
+    // Every rail matches (0.16m H x 0.04m D) and breaks cleanly across all doors, jambs, and doorways.
+    const innerWestWallX = ORIGIN_X + outerWallThickness / 2; // -12.95m
+    // Dock South wall (breaks at Freezer door Col 2, Cooler door Col 6, and Hallway opening Col 10)
+    addWallKickrailSegments('x', southDividingZ - 0.02, [
+      [innerWestWallX, ORIGIN_X + 2 * TILE_SIZE - 0.02],
+      [ORIGIN_X + 3 * TILE_SIZE + 0.02, ORIGIN_X + 6 * TILE_SIZE - 0.02],
+      [ORIGIN_X + 7 * TILE_SIZE + 0.02, hallMinX]
+    ]);
+    // Dock West wall (breaks cleanly across Sales Floor double black doors at Z = 8.05m..11.15m)
+    addWallKickrailSegments('z', innerWestWallX + 0.02, [
+      [doorZ + 0.20, westDoorMinZ],
+      [westDoorMaxZ, southDividingZ - 0.04]
+    ]);
+    // Dock East wall (breaks cleanly across Side Rollup Door Z = 7.20m..9.60m and Hallway portal jamb at 16.57m)
+    addWallKickrailSegments('z', innerEastWallX - 0.02, [
+      [doorZ + 0.20, sideDoorMinZ],
+      [sideDoorMaxZ, southDividingZ - 0.23]
+    ]);
 
     // 3B. L-SHAPED EMPLOYEE HALLWAY (Col 10 Rows 17-23, turning West across Rows 22-23 to Freezer West Wall)
     // Hallway Entrance Portal Trim
@@ -2832,16 +3104,36 @@
       scene.add(hallJamb);
     });
 
-    // East Wall Base Hazard Kickrail inside Hallway (rows 17-23, Z: 16.8m to 33.35m)
-    const hallEastLen = hallEndZ - southDividingZ;
-    const hallEastKickrail = new THREE.Mesh(
-      new THREE.BoxGeometry(0.02, 0.16, hallEastLen),
-      matHazardRail
-    );
-    hallEastKickrail.position.set(hallMaxX - 0.01, 0.08, southDividingZ + hallEastLen / 2);
-    scene.add(hallEastKickrail);
+    // Leg 1 (along Cooler): Keep floor completely unobstructed; add simple wall-mounted safety & guidelines posters
+    const posterSpecs = [
+      { variant: 'safety_lift', x: hallMaxX - 0.02, z: 19.2, ry: -Math.PI / 2 },
+      { variant: 'guidelines', x: hallMinX + 0.02, z: 22.0, ry: Math.PI / 2 },
+      { variant: 'safety_exit', x: hallMaxX - 0.02, z: 25.2, ry: -Math.PI / 2 }
+    ];
+    posterSpecs.forEach((ps) => {
+      const frame = new THREE.Group();
+      frame.position.set(ps.x, 1.66, ps.z);
+      frame.rotation.y = ps.ry;
+      const backing = new THREE.Mesh(new THREE.BoxGeometry(0.62, 0.78, 0.022), matSteelFrame);
+      frame.add(backing);
+      const art = new THREE.Mesh(
+        new THREE.PlaneGeometry(0.56, 0.70),
+        new THREE.MeshBasicMaterial({ map: createHallwayPosterTexture(ps.variant) })
+      );
+      art.position.z = 0.013;
+      frame.add(art);
+      scene.add(frame);
+    });
 
-    // Full South Wall Concrete Finish & Base Kickrail across West-turning Hallway (X: -12.95m to +12.95m)
+    // Leg 1 West & East Wall Base Hazard Kickrails inside Hallway (starting South of portal jambs at Z = 17.03m)
+    addWallKickrailSegments('z', hallMinX + 0.02, [
+      [southDividingZ + 0.23, hallNorthZ]
+    ]);
+    addWallKickrailSegments('z', hallMaxX - 0.02, [
+      [southDividingZ + 0.23, hallEndZ - 0.04]
+    ]);
+
+    // Full South Wall Concrete Finish & Base Kickrail (breaks across Store Manager, Breakroom & Broom Closet doors)
     const hallFullW = hallMaxX - hallWestX;
     const hallSouthPanel = new THREE.Mesh(
       new THREE.BoxGeometry(hallFullW, COLD_CEILING_H, 0.05),
@@ -2851,23 +3143,19 @@
     applyWorldWallUVs(hallSouthPanel);
     scene.add(hallSouthPanel);
 
-    const hallSouthKickrail = new THREE.Mesh(
-      new THREE.BoxGeometry(hallFullW - 0.04, 0.16, 0.04),
-      matHazardRail
-    );
-    hallSouthKickrail.position.set((hallWestX + hallMaxX) / 2, 0.08, hallEndZ - 0.05);
-    scene.add(hallSouthKickrail);
+    addWallKickrailSegments('x', hallEndZ - 0.055, [
+      [hallWestX + 0.04, -3.17],
+      [-2.03, 1.78],
+      [3.02, 6.27],
+      [7.33, hallMaxX - 0.04]
+    ]);
 
-    // North Wall Base Hazard Kickrail along West-running Hallway (Cols 0..9, Z = 29.07m)
-    const hallNorthW = hallMinX - hallWestX;
-    const hallNorthKickrail = new THREE.Mesh(
-      new THREE.BoxGeometry(hallNorthW, 0.16, 0.04),
-      matHazardRail
-    );
-    hallNorthKickrail.position.set((hallWestX + hallMinX) / 2, 0.08, hallNorthZ + 0.02);
-    scene.add(hallNorthKickrail);
+    // North Wall Base Hazard Kickrail along West-running Hallway (Cols 0..9, Z = 31.22m)
+    addWallKickrailSegments('x', hallNorthZ + 0.02, [
+      [hallWestX + 0.04, hallMinX]
+    ]);
 
-    // West End Wall Concrete Finish & Kickrail (in line with West side of Freezer, X = -12.95m)
+    // West End Wall Concrete Finish & Kickrail (breaks cleanly across Sales Floor double black doors)
     const hallWestDepth = hallEndZ - hallNorthZ;
     const hallWestPanel = new THREE.Mesh(
       new THREE.BoxGeometry(0.05, COLD_CEILING_H, hallWestDepth),
@@ -2877,12 +3165,10 @@
     applyWorldWallUVs(hallWestPanel);
     scene.add(hallWestPanel);
 
-    const hallWestKickrail = new THREE.Mesh(
-      new THREE.BoxGeometry(0.04, 0.16, hallWestDepth - 0.04),
-      matHazardRail
-    );
-    hallWestKickrail.position.set(hallWestX + 0.05, 0.08, hallWestCenterZ);
-    scene.add(hallWestKickrail);
+    addWallKickrailSegments('z', hallWestX + 0.055, [
+      [hallNorthZ + 0.04, hallWestCenterZ - 1.25],
+      [hallWestCenterZ + 1.25, hallEndZ - 0.04]
+    ]);
 
     // Overhead Fluorescent Strip Fixtures & Lighting in both N-S and E-W Hallway legs
     const matHallLamp = new THREE.MeshBasicMaterial({ color: 0xfffaed });
@@ -2912,89 +3198,52 @@
     mergeStaticGroupByMaterial(hallFixturesGroup);
     scene.add(hallFixturesGroup);
 
-    const hallwayPointLight = new THREE.PointLight(0xffedd5, 0.88, 20, 1.5);
-    hallwayPointLight.position.set(hallCenterX - 2.0, 3.6, hallWestCenterZ - 1.5);
-    scene.add(hallwayPointLight);
-
-    // Bank of 3 Industrial Steel Employee Lockers at South End (facing North)
-    const lockerGroup = new THREE.Group();
-    lockerGroup.position.set(hallMinX + 0.80, 0, hallEndZ - 0.28); // X ~ 11.60, Z ~ 23.47
-
-    const matLockerBody = new THREE.MeshStandardMaterial({ color: 0x475569, roughness: 0.45, metalness: 0.55 });
-    const matLockerDoor = new THREE.MeshStandardMaterial({ color: 0x64748b, roughness: 0.42, metalness: 0.55 });
-    const matLockerTrim = new THREE.MeshStandardMaterial({ color: 0x1e293b, roughness: 0.65, metalness: 0.35 });
-    const matNamePlate = new THREE.MeshStandardMaterial({ color: 0xe2e8f0, roughness: 0.35, metalness: 0.2 });
-
-    const lockerPlinth = new THREE.Mesh(new THREE.BoxGeometry(1.40, 0.10, 0.48), matLockerTrim);
-    lockerPlinth.position.set(0, 0.05, 0);
-    lockerGroup.add(lockerPlinth);
-
-    for (let li = 0; li < 3; li++) {
-      const lx = (li - 1) * 0.46;
-      const unit = new THREE.Group();
-      unit.position.set(lx, 0.10, 0);
-
-      const body = new THREE.Mesh(new THREE.BoxGeometry(0.44, 1.84, 0.46), matLockerBody);
-      body.position.set(0, 0.92, 0.01);
-      unit.add(body);
-
-      const door = new THREE.Mesh(new THREE.BoxGeometry(0.40, 1.78, 0.025), matLockerDoor);
-      door.position.set(0, 0.92, -0.225);
-      unit.add(door);
-
-      // Slanted top hood
-      const topSlope = new THREE.Mesh(new THREE.BoxGeometry(0.44, 0.08, 0.46), matLockerBody);
-      topSlope.position.set(0, 1.87, 0.01);
-      topSlope.rotation.x = 0.16;
-      unit.add(topSlope);
-
-      // Top & bottom louvered vent slats
-      [1.60, 1.54, 1.48, 0.30, 0.24, 0.18].forEach((vy) => {
-        const vent = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.018, 0.012), matLockerTrim);
-        vent.position.set(0, vy, -0.238);
-        unit.add(vent);
-      });
-
-      // Number plate & recessed latch handle + padlock hasp
-      const plate = new THREE.Mesh(new THREE.BoxGeometry(0.11, 0.05, 0.012), matNamePlate);
-      plate.position.set(0, 1.70, -0.238);
-      unit.add(plate);
-
-      const handle = new THREE.Mesh(new THREE.BoxGeometry(0.035, 0.11, 0.025), matChrome);
-      handle.position.set(-0.14, 0.96, -0.242);
-      unit.add(handle);
-
-      lockerGroup.add(unit);
-    }
-    scene.add(lockerGroup);
-
-    solidWalls.push({
-      minX: hallMinX + 0.08,
-      maxX: hallMinX + 1.54,
-      minZ: hallEndZ - 0.56,
-      maxZ: hallEndZ + 0.05
+    [9.2, 1.0, -7.2].forEach((lx) => {
+      const hallLight = new THREE.PointLight(0xffedd5, 0.72, 16, 1.5);
+      hallLight.position.set(lx, 3.55, hallWestCenterZ);
+      scene.add(hallLight);
     });
 
-    // Wall-Mounted 1996 Employee Punch Timeclock & Timecard Rack (beside Lockers on South/East corner)
+    // ---------------------------------------------------------
+    // 1. EXPANDED TIMECLOCK AREA (East Wall at Hallway Corner, facing West)
+    // ---------------------------------------------------------
+    const tcCenterZ = hallWestCenterZ;
+    const tcDeskShelf = new THREE.Mesh(new THREE.BoxGeometry(0.38, 0.06, 1.66), woodMat);
+    tcDeskShelf.position.set(hallMaxX - 0.20, 0.96, tcCenterZ);
+    scene.add(tcDeskShelf);
+
+    [-0.64, 0.64].forEach((bz) => {
+      const bracket = new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.22, 0.05), matSteelFrame);
+      bracket.position.set(hallMaxX - 0.17, 0.82, tcCenterZ + bz);
+      scene.add(bracket);
+    });
+
+    const tcShelfClipboard = new THREE.Mesh(
+      new THREE.BoxGeometry(0.24, 0.02, 0.32),
+      new THREE.MeshStandardMaterial({ color: 0x78350f, roughness: 0.7 })
+    );
+    tcShelfClipboard.position.set(hallMaxX - 0.18, 1.00, tcCenterZ + 0.42);
+    scene.add(tcShelfClipboard);
+
     const timeclockDisplay = createHallwayTimeclockDisplay();
     const timeclockGroup = new THREE.Group();
-    timeclockGroup.position.set(hallMaxX - 0.34, 1.50, hallEndZ - 0.12); // X ~ 12.61, Z ~ 23.63
+    timeclockGroup.position.set(hallMaxX - 0.12, 1.54, tcCenterZ);
+    timeclockGroup.rotation.y = Math.PI / 2; // local -Z face points West (-X) into the hallway
 
     const tcHousing = new THREE.Mesh(
-      new THREE.BoxGeometry(0.40, 0.48, 0.16),
+      new THREE.BoxGeometry(0.42, 0.50, 0.16),
       new THREE.MeshStandardMaterial({ color: 0x334155, roughness: 0.45, metalness: 0.55 })
     );
     timeclockGroup.add(tcHousing);
 
     const tcFaceMesh = new THREE.Mesh(
-      new THREE.PlaneGeometry(0.34, 0.255),
+      new THREE.PlaneGeometry(0.36, 0.27),
       new THREE.MeshBasicMaterial({ map: timeclockDisplay.texture })
     );
     tcFaceMesh.position.set(0, 0.075, -0.082);
     tcFaceMesh.rotation.y = Math.PI;
     timeclockGroup.add(tcFaceMesh);
 
-    // Card-punch tray & throat slot at bottom of timeclock
     const tcTray = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.05, 0.08), matSteelFrame);
     tcTray.position.set(0, -0.14, -0.09);
     timeclockGroup.add(tcTray);
@@ -3009,29 +3258,537 @@
     );
     tcCardSample.position.set(0, -0.08, -0.10);
     timeclockGroup.add(tcCardSample);
-
     scene.add(timeclockGroup);
 
-    // Adjacent Steel Timecard Rack on East Wall right beside the Timeclock
-    const cardRackGroup = new THREE.Group();
-    cardRackGroup.position.set(hallMaxX - 0.03, 1.44, hallEndZ - 0.72); // X ~ 12.92, Z ~ 23.03
-    cardRackGroup.rotation.y = -Math.PI / 2;
+    // Placard above Timeclock + Directional Sign pointing North toward Receiving Dock
+    const tcHeaderSign = new THREE.Mesh(
+      new THREE.PlaneGeometry(0.86, 0.24),
+      new THREE.MeshBasicMaterial({ map: createHallwayDoorSignTexture('TIMECLOCK STATION', 'PUNCH OUT [E] AFTER 12:00 PM', '#0f172a', '#f59e0b') })
+    );
+    tcHeaderSign.position.set(hallMaxX - 0.02, 2.02, tcCenterZ);
+    tcHeaderSign.rotation.y = -Math.PI / 2;
+    scene.add(tcHeaderSign);
 
-    const rackFrame = new THREE.Mesh(new THREE.BoxGeometry(0.26, 0.68, 0.05), matSteelFrame);
-    cardRackGroup.add(rackFrame);
+    const tcDockDirSign = new THREE.Mesh(
+      new THREE.PlaneGeometry(0.96, 0.26),
+      new THREE.MeshBasicMaterial({ map: createHallwayDoorSignTexture('← RECEIVING DOCK', 'BACK TO TRUCK BAYS', '#0f172a', '#38bdf8') })
+    );
+    tcDockDirSign.position.set(hallMaxX - 0.02, 2.02, tcCenterZ - 1.15);
+    tcDockDirSign.rotation.y = -Math.PI / 2;
+    scene.add(tcDockDirSign);
 
+    // Twin Steel Timecard Racks flanking North & South of the Timeclock
     const matTimecard = new THREE.MeshStandardMaterial({ color: 0xfde68a, roughness: 0.85 });
-    for (let ci = 0; ci < 7; ci++) {
-      const slotPocket = new THREE.Mesh(new THREE.BoxGeometry(0.20, 0.03, 0.025), matSteel);
-      slotPocket.position.set(0, -0.24 + ci * 0.08, 0.032);
-      cardRackGroup.add(slotPocket);
-      if (ci % 2 === 0 || ci === 3) {
-        const card = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.07, 0.008), matTimecard);
-        card.position.set(0, -0.205 + ci * 0.08, 0.035);
-        cardRackGroup.add(card);
+    [tcCenterZ - 0.62, tcCenterZ + 0.62].forEach((rz, rackIdx) => {
+      const cardRackGroup = new THREE.Group();
+      cardRackGroup.position.set(hallMaxX - 0.03, 1.48, rz);
+      cardRackGroup.rotation.y = -Math.PI / 2;
+      cardRackGroup.add(new THREE.Mesh(new THREE.BoxGeometry(0.26, 0.68, 0.05), matSteelFrame));
+      for (let ci = 0; ci < 7; ci++) {
+        const slotPocket = new THREE.Mesh(new THREE.BoxGeometry(0.20, 0.03, 0.025), matSteel);
+        slotPocket.position.set(0, -0.24 + ci * 0.08, 0.032);
+        cardRackGroup.add(slotPocket);
+        if ((ci + rackIdx) % 2 === 0 || ci === 3) {
+          const card = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.07, 0.008), matTimecard);
+          card.position.set(0, -0.205 + ci * 0.08, 0.035);
+          cardRackGroup.add(card);
+        }
       }
+      scene.add(cardRackGroup);
+    });
+
+    // Shift Schedule & Labor Bulletin Board on East Wall beside Timeclock
+    const noticeZ = hallEndZ - 0.80;
+    const corkMat = new THREE.MeshStandardMaterial({ color: 0xb45309, roughness: 0.9 });
+    const noticeFrame = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.80, 0.96), matSteelFrame);
+    noticeFrame.position.set(hallMaxX - 0.02, 1.56, noticeZ);
+    scene.add(noticeFrame);
+    const noticeCork = new THREE.Mesh(new THREE.BoxGeometry(0.036, 0.72, 0.88), corkMat);
+    noticeCork.position.set(hallMaxX - 0.022, 1.56, noticeZ);
+    scene.add(noticeCork);
+    [-0.22, 0.08].forEach((nz, ni) => {
+      const sheet = new THREE.Mesh(
+        new THREE.BoxGeometry(0.04, 0.28, 0.22),
+        new THREE.MeshStandardMaterial({ color: ni === 0 ? 0xf8fafc : 0xfef08a, roughness: 0.8 })
+      );
+      sheet.position.set(hallMaxX - 0.025, 1.62 - ni * 0.14, noticeZ + nz);
+      scene.add(sheet);
+    });
+
+    solidWalls.push({
+      minX: hallMaxX - 0.44,
+      maxX: hallMaxX + 0.05,
+      minZ: tcCenterZ - 0.86,
+      maxZ: tcCenterZ + 0.86
+    });
+
+    // Timeclock Interactible ([E] to Punch Out at End of Shift — clean margin around housing/tray/card)
+    const timeclockHitbox = new THREE.Mesh(
+      new THREE.BoxGeometry(0.30, 0.60, 0.50),
+      new THREE.MeshBasicMaterial({ visible: false })
+    );
+    timeclockHitbox.position.set(hallMaxX - 0.15, 1.50, tcCenterZ);
+    scene.add(timeclockHitbox);
+
+    const timeclockInteractible = {
+      id: 'hallway_timeclock',
+      type: 'timeclock',
+      name: 'Employee Timeclock',
+      mesh: timeclockHitbox,
+      boxCenter: new THREE.Vector3(hallMaxX - 0.15, 1.50, tcCenterZ),
+      boxSize: new THREE.Vector3(0.30, 0.60, 0.50),
+      getPrompt: () => {
+        const afterNoon = global.ShiftClock && typeof global.ShiftClock.isAfterNoon === 'function'
+          ? global.ShiftClock.isAfterNoon()
+          : false;
+        return afterNoon
+          ? '[E] Punch Out at Timeclock (End Shift)'
+          : '[E] Employee Timeclock (Punch Out Opens 12:00 PM)';
+      },
+      interact: () => {
+        if (typeof hooks.onPunchOutTimeclock === 'function') {
+          hooks.onPunchOutTimeclock();
+        }
+      }
+    };
+    interactibles.push(timeclockInteractible);
+    timeclockHitbox.userData.interactible = timeclockInteractible;
+
+    // ---------------------------------------------------------
+    // 2. FULL ROW OF 12 EMPLOYEE LOCKERS (North Wall, facing South)
+    // ---------------------------------------------------------
+    const lockerCount = 12;
+    const lockerSpacing = 0.46;
+    const lockerGroup = new THREE.Group();
+    lockerGroup.position.set(6.96, 0, hallNorthZ + 0.27); // X: +4.20 .. +9.72, facing South (+Z)
+    lockerGroup.rotation.y = Math.PI;
+
+    const matLockerBody = new THREE.MeshStandardMaterial({ color: 0x475569, roughness: 0.45, metalness: 0.55 });
+    const matLockerDoor = new THREE.MeshStandardMaterial({ color: 0x64748b, roughness: 0.42, metalness: 0.55 });
+    const matLockerTrim = new THREE.MeshStandardMaterial({ color: 0x1e293b, roughness: 0.65, metalness: 0.35 });
+    const matNamePlate = new THREE.MeshStandardMaterial({ color: 0xe2e8f0, roughness: 0.35, metalness: 0.2 });
+
+    const lockerPlinth = new THREE.Mesh(new THREE.BoxGeometry(lockerCount * lockerSpacing + 0.04, 0.10, 0.48), matLockerTrim);
+    lockerPlinth.position.set(0, 0.05, 0);
+    lockerGroup.add(lockerPlinth);
+
+    const midIdx = (lockerCount - 1) / 2;
+    for (let li = 0; li < lockerCount; li++) {
+      const lx = (li - midIdx) * lockerSpacing;
+      const unit = new THREE.Group();
+      unit.position.set(lx, 0.10, 0);
+
+      const body = new THREE.Mesh(new THREE.BoxGeometry(0.44, 1.84, 0.46), matLockerBody);
+      body.position.set(0, 0.92, 0.01);
+      unit.add(body);
+
+      const door = new THREE.Mesh(new THREE.BoxGeometry(0.40, 1.78, 0.025), matLockerDoor);
+      door.position.set(0, 0.92, -0.225);
+      unit.add(door);
+
+      const topSlope = new THREE.Mesh(new THREE.BoxGeometry(0.44, 0.08, 0.46), matLockerBody);
+      topSlope.position.set(0, 1.87, 0.01);
+      topSlope.rotation.x = 0.16;
+      unit.add(topSlope);
+
+      [1.60, 1.54, 1.48, 0.30, 0.24, 0.18].forEach((vy) => {
+        const vent = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.018, 0.012), matLockerTrim);
+        vent.position.set(0, vy, -0.238);
+        unit.add(vent);
+      });
+
+      const plate = new THREE.Mesh(new THREE.BoxGeometry(0.11, 0.05, 0.012), matNamePlate);
+      plate.position.set(0, 1.70, -0.238);
+      unit.add(plate);
+
+      const handle = new THREE.Mesh(new THREE.BoxGeometry(0.035, 0.11, 0.025), matChrome);
+      handle.position.set(-0.14, 0.96, -0.242);
+      unit.add(handle);
+
+      lockerGroup.add(unit);
     }
-    scene.add(cardRackGroup);
+    scene.add(lockerGroup);
+
+    solidWalls.push(
+      { minX: 4.16, maxX: 9.76, minZ: hallNorthZ, maxZ: hallNorthZ + 0.54 }
+    );
+
+    // ---------------------------------------------------------
+    // 3. COAT RACK & HANGING COATS AREA (North Wall beside Lockers, X: 1.7..3.7)
+    // ---------------------------------------------------------
+    const coatCenterX = 2.70;
+    const coatRackGroup = new THREE.Group();
+    coatRackGroup.position.set(coatCenterX, 0, hallNorthZ + 0.04);
+
+    // Molded oak backboard + chamfered lower trim strip
+    const coatRail = new THREE.Mesh(new THREE.BoxGeometry(1.94, 0.20, 0.045), woodMat);
+    coatRail.position.set(0, 1.66, 0.02);
+    coatRackGroup.add(coatRail);
+
+    const coatTopShelf = new THREE.Mesh(new THREE.BoxGeometry(1.94, 0.04, 0.28), woodMat);
+    coatTopShelf.position.set(0, 1.78, 0.14);
+    coatRackGroup.add(coatTopShelf);
+
+    // Steel shelf support corbel brackets + front lip rail
+    [-0.78, 0, 0.78].forEach((bx) => {
+      const corbel = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.14, 0.22), matSteelFrame);
+      corbel.position.set(bx, 1.69, 0.11);
+      coatRackGroup.add(corbel);
+    });
+
+    // Folded hard hat, knit cap & work gloves resting cleanly on top shelf
+    const hardHatMat = new THREE.MeshStandardMaterial({ color: 0xfacc15, roughness: 0.35 });
+    const hardHat = new THREE.Mesh(new THREE.SphereGeometry(0.11, 16, 10, 0, Math.PI * 2, 0, Math.PI / 2), hardHatMat);
+    hardHat.position.set(-0.52, 1.80, 0.15);
+    coatRackGroup.add(hardHat);
+    const hardHatBrim = new THREE.Mesh(new THREE.CylinderGeometry(0.13, 0.13, 0.015, 16), hardHatMat);
+    hardHatBrim.position.set(-0.52, 1.805, 0.15);
+    coatRackGroup.add(hardHatBrim);
+
+    const capBeanie = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.085, 0.095, 0.08, 12),
+      new THREE.MeshStandardMaterial({ color: 0x1e3a8a, roughness: 0.9 })
+    );
+    capBeanie.position.set(0.45, 1.84, 0.15);
+    coatRackGroup.add(capBeanie);
+
+    const glovesBox = new THREE.Mesh(
+      new THREE.BoxGeometry(0.22, 0.04, 0.14),
+      new THREE.MeshStandardMaterial({ color: 0xd97706, roughness: 0.85 })
+    );
+    glovesBox.position.set(0.05, 1.82, 0.15);
+    coatRackGroup.add(glovesBox);
+
+    const coatSign = new THREE.Mesh(
+      new THREE.PlaneGeometry(0.74, 0.20),
+      new THREE.MeshBasicMaterial({ map: createHallwayDoorSignTexture('COATS & PPE', 'HANG GEAR HERE', '#1e293b', '#e2e8f0') })
+    );
+    coatSign.position.set(0, 2.06, 0.01);
+    coatRackGroup.add(coatSign);
+
+    const coatSpecs = [
+      { x: -0.72, color: 0x1e3a8a, vest: false, hood: true, len: 0.78 },
+      { x: -0.36, color: 0xfacc15, vest: true, hood: false, len: 0.62 },
+      { x: 0.0, color: 0x334155, vest: false, hood: true, len: 0.80 },
+      { x: 0.36, color: 0x7c2d12, vest: false, hood: false, len: 0.72 }
+    ];
+    [-0.72, -0.36, 0.0, 0.36, 0.72].forEach((hx, idx) => {
+      // Twin-prong brass/chrome coat hook + rosette plate
+      const plate = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.09, 0.015), matChrome);
+      plate.position.set(hx, 1.63, 0.045);
+      coatRackGroup.add(plate);
+      const pegTop = new THREE.Mesh(new THREE.BoxGeometry(0.022, 0.06, 0.075), matChrome);
+      pegTop.position.set(hx, 1.65, 0.075);
+      coatRackGroup.add(pegTop);
+      const pegLow = new THREE.Mesh(new THREE.BoxGeometry(0.022, 0.045, 0.055), matChrome);
+      pegLow.position.set(hx, 1.60, 0.065);
+      coatRackGroup.add(pegLow);
+
+      const cs = coatSpecs[idx];
+      if (cs) {
+        const coatMat = new THREE.MeshStandardMaterial({ color: cs.color, roughness: 0.82 });
+        const trimMat = new THREE.MeshStandardMaterial({ color: cs.vest ? 0xe2e8f0 : 0x0f172a, roughness: 0.5 });
+        const topY = 1.56 - (cs.len - 0.62) * 0.45;
+
+        const body = new THREE.Mesh(new THREE.BoxGeometry(0.27, cs.len, 0.11), coatMat);
+        body.position.set(hx, topY - 0.04, 0.11);
+        body.rotation.z = (idx % 2 === 0 ? 0.025 : -0.025);
+        coatRackGroup.add(body);
+
+        const shoulders = new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.13, 0.125), coatMat);
+        shoulders.position.set(hx, 1.55, 0.11);
+        coatRackGroup.add(shoulders);
+
+        // Hanging side sleeves & center seam/reflective stripe
+        [-0.145, 0.145].forEach((sx) => {
+          const sleeve = new THREE.Mesh(new THREE.BoxGeometry(0.07, cs.len * 0.68, 0.085), coatMat);
+          sleeve.position.set(hx + sx, 1.32, 0.11);
+          sleeve.rotation.z = sx > 0 ? -0.05 : 0.05;
+          coatRackGroup.add(sleeve);
+        });
+        if (cs.vest) {
+          [-0.08, 0.14].forEach((vyOff) => {
+            const stripe = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.04, 0.118), trimMat);
+            stripe.position.set(hx, topY + vyOff, 0.11);
+            coatRackGroup.add(stripe);
+          });
+        } else {
+          const zipper = new THREE.Mesh(new THREE.BoxGeometry(0.018, cs.len * 0.88, 0.116), trimMat);
+          zipper.position.set(hx, topY - 0.03, 0.112);
+          coatRackGroup.add(zipper);
+        }
+        if (cs.hood) {
+          const hood = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.14, 0.09), coatMat);
+          hood.position.set(hx, 1.63, 0.13);
+          coatRackGroup.add(hood);
+        }
+      }
+    });
+
+    // Rubberized slatted boot mat + work boots waiting on the floor tray
+    const bootTray = new THREE.Mesh(new THREE.BoxGeometry(1.88, 0.035, 0.34), matLockerTrim);
+    bootTray.position.set(0, 0.018, 0.17);
+    coatRackGroup.add(bootTray);
+    const bootTrayLip = new THREE.Mesh(new THREE.BoxGeometry(1.92, 0.045, 0.03), matBlackRubber);
+    bootTrayLip.position.set(0, 0.022, 0.34);
+    coatRackGroup.add(bootTrayLip);
+    const bootMat = new THREE.MeshStandardMaterial({ color: 0x451a03, roughness: 0.78 });
+    [-0.58, -0.44, 0.44, 0.58].forEach((bx) => {
+      const sole = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.12, 0.24), bootMat);
+      sole.position.set(bx, 0.095, 0.19);
+      coatRackGroup.add(sole);
+    });
+    scene.add(coatRackGroup);
+
+    solidWalls.push({
+      minX: coatCenterX - 0.98,
+      maxX: coatCenterX + 0.98,
+      minZ: hallNorthZ,
+      maxZ: hallNorthZ + 0.38
+    });
+
+    // ---------------------------------------------------------
+    // 4. VENDING MACHINE ALCOVE (North Wall, facing South +Z)
+    // ---------------------------------------------------------
+    [
+      { x: -0.95, kind: 'soda', bodyColor: 0x991b1b },
+      { x: -2.20, kind: 'snack', bodyColor: 0x1e293b }
+    ].forEach((vm) => {
+      const vg = new THREE.Group();
+      vg.position.set(vm.x, 0, hallNorthZ + 0.45);
+      const body = new THREE.Mesh(
+        new THREE.BoxGeometry(1.02, 1.94, 0.84),
+        new THREE.MeshStandardMaterial({ color: vm.bodyColor, roughness: 0.45, metalness: 0.45 })
+      );
+      body.position.set(0, 0.97, 0);
+      vg.add(body);
+      const front = new THREE.Mesh(
+        new THREE.PlaneGeometry(0.92, 1.78),
+        new THREE.MeshBasicMaterial({ map: createVendingFrontTexture(vm.kind) })
+      );
+      front.position.set(0, 0.99, 0.422);
+      vg.add(front);
+      scene.add(vg);
+    });
+
+    // Detailed Break Trash Receptacle beside Vending Machines (tapered bin, folded white liner rim, dome swing lid)
+    const vendTrashGroup = new THREE.Group();
+    vendTrashGroup.position.set(-3.16, 0, hallNorthZ + 0.30);
+    const trashBodyMat = new THREE.MeshStandardMaterial({ color: 0x334155, roughness: 0.62, metalness: 0.15 });
+    const trashRimMat = new THREE.MeshStandardMaterial({ color: 0xe2e8f0, roughness: 0.4 });
+    const trashLidMat = new THREE.MeshStandardMaterial({ color: 0x1e293b, roughness: 0.55 });
+    const trashBase = new THREE.Mesh(new THREE.BoxGeometry(0.46, 0.62, 0.42), trashBodyMat);
+    trashBase.position.y = 0.31;
+    vendTrashGroup.add(trashBase);
+    // Vertical molded ribs & liner bag cuff
+    [-0.17, 0, 0.17].forEach((rx) => {
+      const rib = new THREE.Mesh(new THREE.BoxGeometry(0.025, 0.56, 0.435), matSteelFrame);
+      rib.position.set(rx, 0.31, 0);
+      vendTrashGroup.add(rib);
+    });
+    const linerCuff = new THREE.Mesh(new THREE.BoxGeometry(0.48, 0.04, 0.44), trashRimMat);
+    linerCuff.position.y = 0.63;
+    vendTrashGroup.add(linerCuff);
+    const domeHood = new THREE.Mesh(new THREE.BoxGeometry(0.47, 0.18, 0.43), trashLidMat);
+    domeHood.position.y = 0.74;
+    vendTrashGroup.add(domeHood);
+    const swingFlap = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.11, 0.02), matChrome);
+    swingFlap.position.set(0, 0.74, 0.215);
+    swingFlap.rotation.x = -0.14;
+    vendTrashGroup.add(swingFlap);
+    scene.add(vendTrashGroup);
+
+    solidWalls.push({
+      minX: -3.45,
+      maxX: -0.40,
+      minZ: hallNorthZ,
+      maxZ: hallNorthZ + 0.92
+    });
+
+    // ---------------------------------------------------------
+    // 5. CLOSED DECORATIVE ROOM DOORS (ALL facing away from Dock/Freezer/Cooler; strictly non-openable)
+    // ---------------------------------------------------------
+    function createDecorativeHallDoor(opts) {
+      const grp = new THREE.Group();
+      const totalW = opts.doubleDoor ? (opts.width || 2.30) : (opts.width || 0.98);
+      const doorH = opts.height || 2.18;
+      grp.position.set(
+        opts.x !== undefined ? opts.x : 0,
+        0,
+        opts.z !== undefined ? opts.z : (hallEndZ - 0.045)
+      );
+      grp.rotation.y = opts.ry !== undefined ? opts.ry : Math.PI; // Default: South wall facing North; West wall uses ry = Math.PI/2
+
+      const frameT = 0.075;
+      [-totalW / 2 - frameT / 2, totalW / 2 + frameT / 2].forEach((jx) => {
+        const post = new THREE.Mesh(new THREE.BoxGeometry(frameT, doorH + 0.04, 0.09), matSteelFrame);
+        post.position.set(jx, (doorH + 0.04) / 2, 0.02);
+        grp.add(post);
+      });
+      const header = new THREE.Mesh(new THREE.BoxGeometry(totalW + frameT * 2, 0.08, 0.09), matSteelFrame);
+      header.position.set(0, doorH + 0.04, 0.02);
+      grp.add(header);
+
+      const leafMat = new THREE.MeshStandardMaterial({
+        color: opts.color || 0x475569,
+        roughness: opts.blackDoor ? 0.55 : 0.48,
+        metalness: opts.blackDoor ? 0.25 : 0.35
+      });
+      const glassMat = new THREE.MeshStandardMaterial({ color: 0x94a3b8, roughness: 0.2, metalness: 0.4, opacity: 0.65, transparent: true });
+      const brassMat = new THREE.MeshStandardMaterial({ color: 0xd97706, roughness: 0.3, metalness: 0.8 });
+
+      if (opts.doubleDoor) {
+        const leafW = totalW / 2 - 0.015;
+        [-1, 1].forEach((side) => {
+          const lx = side * (leafW / 2 + 0.01);
+          const leaf = new THREE.Mesh(new THREE.BoxGeometry(leafW, doorH, 0.055), leafMat);
+          leaf.position.set(lx, doorH / 2, 0);
+          grp.add(leaf);
+
+          const kick = new THREE.Mesh(new THREE.BoxGeometry(leafW - 0.08, 0.42, 0.012), matChrome);
+          kick.position.set(lx, 0.24, 0.032);
+          grp.add(kick);
+
+          const bumper = new THREE.Mesh(new THREE.BoxGeometry(leafW - 0.14, 0.10, 0.025), matSteel);
+          bumper.position.set(lx, 1.06, 0.036);
+          grp.add(bumper);
+
+          const winFrame = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.56, 0.014), matSteelFrame);
+          winFrame.position.set(lx - side * 0.12, 1.62, 0.030);
+          grp.add(winFrame);
+          const pane = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.50, 0.018), glassMat);
+          pane.position.set(lx - side * 0.12, 1.62, 0.032);
+          grp.add(pane);
+        });
+      } else {
+        const leaf = new THREE.Mesh(new THREE.BoxGeometry(totalW, doorH, 0.055), leafMat);
+        leaf.position.set(0, doorH / 2, 0);
+        grp.add(leaf);
+
+        const kick = new THREE.Mesh(new THREE.BoxGeometry(totalW - 0.08, 0.24, 0.01), matChrome);
+        kick.position.set(0, 0.14, 0.03);
+        grp.add(kick);
+
+        if (opts.window) {
+          const pane = new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.52, 0.014), glassMat);
+          pane.position.set(0, 1.60, 0.028);
+          grp.add(pane);
+        }
+        if (opts.louvers) {
+          for (let v = 0; v < 5; v++) {
+            const slat = new THREE.Mesh(new THREE.BoxGeometry(totalW * 0.58, 0.025, 0.014), matSteelFrame);
+            slat.position.set(0, 0.42 + v * 0.06, 0.03);
+            grp.add(slat);
+          }
+        }
+        const lever = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.032, 0.045), opts.brass ? brassMat : matChrome);
+        lever.position.set(totalW * 0.34, 1.02, 0.042);
+        grp.add(lever);
+      }
+
+      if (opts.signTitle) {
+        const placard = new THREE.Mesh(
+          new THREE.PlaneGeometry(opts.doubleDoor ? 1.48 : 0.78, 0.22),
+          new THREE.MeshBasicMaterial({
+            map: createHallwayDoorSignTexture(opts.signTitle, opts.signSub || '', opts.signBg || '#0f172a', opts.signFg || '#f8fafc')
+          })
+        );
+        placard.position.set(0, doorH + 0.24, 0.02);
+        grp.add(placard);
+      }
+
+      scene.add(grp);
+    }
+
+    // Broom Closet, Breakroom, & Store Manager's Office along South Wall
+    createDecorativeHallDoor({
+      x: 6.80,
+      width: 0.90,
+      color: 0x64748b,
+      louvers: true,
+      signTitle: 'BROOM CLOSET',
+      signSub: 'JANITORIAL SUPPLIES',
+      signBg: '#1e293b',
+      signFg: '#cbd5e1'
+    });
+    createDecorativeHallDoor({
+      x: 2.40,
+      width: 1.08,
+      color: 0x0f766e,
+      window: true,
+      signTitle: 'BREAKROOM',
+      signSub: 'STAFF LOUNGE',
+      signBg: '#064e3b',
+      signFg: '#6ee7b7'
+    });
+    createDecorativeHallDoor({
+      x: -2.60,
+      width: 0.98,
+      color: 0x78350f,
+      window: true,
+      brass: true,
+      signTitle: 'STORE MANAGER',
+      signSub: 'OFFICE',
+      signBg: '#451a03',
+      signFg: '#fde68a'
+    });
+
+    // Double Black Doors to Sales Floor on West End Wall (facing East into Hallway, leading West away from Dock/Freezer/Cooler)
+    createDecorativeHallDoor({
+      x: hallWestX + 0.05,
+      z: hallWestCenterZ,
+      ry: Math.PI / 2,
+      width: 2.34,
+      height: 2.34,
+      doubleDoor: true,
+      blackDoor: true,
+      color: 0x111827,
+      signTitle: 'SALES FLOOR',
+      signSub: 'KEEP DOORS CLOSED',
+      signBg: '#090d16',
+      signFg: '#f8fafc'
+    });
+
+    // Detailed Fire Extinguisher Station & First Aid Cabinet on South Wall (swapped from West end, around X = -8.60)
+    {
+    const safetyGrp = new THREE.Group();
+    safetyGrp.position.set(-8.60, 0, hallEndZ - 0.05);
+    safetyGrp.rotation.y = Math.PI; // local +Z faces North into hallway
+
+    createFireExtinguisherStation({ parentGroup: safetyGrp, offsetX: -0.34 });
+
+    // Adjacent White First Aid Metal Cabinet with Bold Red Cross
+    const faBody = new THREE.Mesh(
+      new THREE.BoxGeometry(0.42, 0.46, 0.14),
+      new THREE.MeshStandardMaterial({ color: 0xf8fafc, roughness: 0.42, metalness: 0.15 })
+    );
+    faBody.position.set(0.32, 1.46, 0.07);
+    safetyGrp.add(faBody);
+    const crossMat = new THREE.MeshBasicMaterial({ color: 0xdc2626 });
+    const crossH = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.06, 0.01), crossMat);
+    crossH.position.set(0.32, 1.50, 0.144);
+    safetyGrp.add(crossH);
+    const crossV = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.18, 0.01), crossMat);
+    crossV.position.set(0.32, 1.50, 0.144);
+    safetyGrp.add(crossV);
+    const faClasp = new THREE.Mesh(new THREE.BoxGeometry(0.025, 0.07, 0.02), matChrome);
+    faClasp.position.set(0.12, 1.46, 0.142);
+    safetyGrp.add(faClasp);
+    const faSign = new THREE.Mesh(
+      new THREE.PlaneGeometry(0.42, 0.14),
+      new THREE.MeshBasicMaterial({ map: createHallwayDoorSignTexture('FIRST AID KIT', '', '#1e293b', '#f8fafc') })
+    );
+    faSign.position.set(0.32, 1.79, 0.01);
+    safetyGrp.add(faSign);
+    scene.add(safetyGrp);
+    }
+
+    solidWalls.push({
+      minX: -9.18,
+      maxX: -8.02,
+      minZ: hallEndZ - 0.24,
+      maxZ: hallEndZ + 0.05
+    });
 
     const hallwayTimeclock = {
       setTime(hours, minutes) {

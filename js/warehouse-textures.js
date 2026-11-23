@@ -799,79 +799,200 @@
     return new THREE.CanvasTexture(canvas);
   }
 
-  // 8c. Keyboard Face Texture with Ctrl, Alt, and Status LEDs (matching reference image)
-  function createKeyboardTexture() {
+  // 8c. Textured 90s Chunky Mechanical Keyboard (Model-M Cream/Pebble Keycaps & ABS Pebble Housing)
+  function createKeyboardShellTexture() {
     const canvas = document.createElement('canvas');
-    canvas.width = 512; canvas.height = 180;
+    canvas.width = 256;
+    canvas.height = 256;
     const ctx = canvas.getContext('2d');
 
-    // Beige casing
-    ctx.fillStyle = '#d1ccc0';
-    ctx.fillRect(0, 0, 512, 180);
+    ctx.fillStyle = '#d7d1c3';
+    ctx.fillRect(0, 0, 256, 256);
 
-    // Recessed keybed
-    ctx.fillStyle = '#374151';
+    // Classic 90s injection-molded ABS pebble grain
+    for (let i = 0; i < 480; i++) {
+      const px = (i * 61 + 13) % 254;
+      const py = (i * 107 + 23) % 254;
+      ctx.fillStyle = (i % 2 === 0) ? 'rgba(255, 252, 244, 0.14)' : 'rgba(110, 102, 88, 0.12)';
+      ctx.fillRect(px, py, 2, 2);
+    }
+
+    // Subtle molded bezel rim shadow
+    ctx.strokeStyle = 'rgba(92, 86, 74, 0.22)';
+    ctx.lineWidth = 4;
+    ctx.strokeRect(2, 2, 252, 252);
+
+    return new THREE.CanvasTexture(canvas);
+  }
+
+  function createKeyboardTexture(section = 'full') {
+    const dims = {
+      main: [512, 192],
+      func: [512, 48],
+      nav: [128, 192],
+      numpad: [160, 192],
+      badge: [256, 48],
+      full: [512, 180]
+    };
+    const [w, h] = dims[section] || dims.full;
+    const canvas = document.createElement('canvas');
+    canvas.width = w;
+    canvas.height = h;
+    const ctx = canvas.getContext('2d');
+
+    function drawKeycap(x, y, kw, kh, label, isModifier) {
+      // Dark keywell gap under skirt
+      ctx.fillStyle = '#1e2128';
+      ctx.fillRect(x - 1, y - 1, kw + 2, kh + 2);
+      // Keycap skirt (darker beveled base)
+      ctx.fillStyle = isModifier ? '#857f72' : '#bab3a3';
+      ctx.fillRect(x, y, kw, kh);
+      // Top highlight rim & sculpted dish face
+      ctx.fillStyle = isModifier ? '#ada697' : '#ebe5d7';
+      ctx.fillRect(x + 2, y + 1.5, Math.max(4, kw - 4), Math.max(4, kh - 5));
+      ctx.strokeStyle = isModifier ? 'rgba(235, 229, 215, 0.32)' : 'rgba(255, 255, 250, 0.50)';
+      ctx.lineWidth = 1;
+      ctx.strokeRect(x + 2.5, y + 2, Math.max(3, kw - 5), Math.max(3, kh - 6));
+
+      if (label) {
+        ctx.fillStyle = '#1f2329';
+        ctx.font = label.length > 2 ? 'bold 8px monospace' : 'bold 10px monospace';
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'top';
+        ctx.fillText(label, x + 4.5, y + 4);
+      }
+    }
+
+    if (section === 'badge') {
+      // Dark brushed-slate top indicator strip + 90s asset plate
+      ctx.fillStyle = '#24272d';
+      ctx.fillRect(0, 0, w, h);
+      ctx.strokeStyle = '#6b7280';
+      ctx.lineWidth = 2;
+      ctx.strokeRect(1, 1, w - 2, h - 2);
+
+      // Left terminal tag ("DSD-3270")
+      ctx.fillStyle = '#d1ccc0';
+      ctx.fillRect(10, 9, 86, 30);
+      ctx.fillStyle = '#18181b';
+      ctx.font = 'bold 11px monospace';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText('DSD-3270', 53, 24);
+
+      // Right 3 status indicator windows (NUM, CAPS, SCRL)
+      const leds = [
+        { label: 'NUM', x: 132, on: true },
+        { label: 'CAPS', x: 174, on: false },
+        { label: 'SCRL', x: 216, on: false }
+      ];
+      leds.forEach((led) => {
+        ctx.fillStyle = led.on ? '#22c55e' : '#14532d';
+        ctx.fillRect(led.x, 12, 18, 8);
+        ctx.fillStyle = '#cbd5e1';
+        ctx.font = 'bold 8px monospace';
+        ctx.fillText(led.label, led.x + 9, 34);
+      });
+      return new THREE.CanvasTexture(canvas);
+    }
+
+    ctx.fillStyle = '#2b2f38';
+    ctx.fillRect(0, 0, w, h);
+
+    if (section === 'func') {
+      drawKeycap(6, 7, 30, 34, 'Esc', true);
+      const fGroups = [
+        { startX: 60, labels: ['F1', 'F2', 'F3', 'F4'], mod: false },
+        { startX: 204, labels: ['F5', 'F6', 'F7', 'F8'], mod: true },
+        { startX: 348, labels: ['F9', 'F10', 'F11', 'F12'], mod: false }
+      ];
+      fGroups.forEach((grp) => {
+        grp.labels.forEach((lbl, idx) => {
+          drawKeycap(grp.startX + idx * 33, 7, 30, 34, lbl, grp.mod);
+        });
+      });
+      return new THREE.CanvasTexture(canvas);
+    }
+
+    if (section === 'nav') {
+      const topLabels = [
+        ['Ins', 'Hm', 'PU'],
+        ['Del', 'End', 'PD']
+      ];
+      for (let r = 0; r < 2; r++) {
+        for (let c = 0; c < 3; c++) {
+          drawKeycap(6 + c * 39, 6 + r * 36, 35, 32, topLabels[r][c], false);
+        }
+      }
+      // Inverted-T arrow cluster
+      drawKeycap(45, 114, 35, 32, '↑', true);
+      drawKeycap(6, 150, 35, 32, '←', true);
+      drawKeycap(45, 150, 35, 32, '↓', true);
+      drawKeycap(84, 150, 35, 32, '→', true);
+      return new THREE.CanvasTexture(canvas);
+    }
+
+    if (section === 'numpad') {
+      const cw = 36;
+      const ch = 33;
+      const topKeys = [
+        ['Num', true], ['/', true], ['*', true], ['-', true]
+      ];
+      topKeys.forEach(([lbl, mod], c) => drawKeycap(6 + c * 38, 6, 35, ch, lbl, mod));
+      const rows = [
+        [['7', false], ['8', false], ['9', false]],
+        [['4', false], ['5', false], ['6', false]],
+        [['1', false], ['2', false], ['3', false]]
+      ];
+      rows.forEach((row, r) => {
+        row.forEach(([lbl, mod], c) => {
+          drawKeycap(6 + c * 38, 42 + r * 36, 35, ch, lbl, mod);
+        });
+      });
+      // Tall '+' and 'Ent' on right column, double-wide '0' + '.'
+      drawKeycap(120, 42, 35, 69, '+', true);
+      drawKeycap(120, 114, 35, 69, 'Ent', true);
+      drawKeycap(6, 150, 73, ch, '0', false);
+      drawKeycap(82, 150, 35, ch, '.', false);
+      return new THREE.CanvasTexture(canvas);
+    }
+
+    if (section === 'main') {
+      const row0 = [['~', 28, false], ['1', 30, false], ['2', 30, false], ['3', 30, false], ['4', 30, false], ['5', 30, false], ['6', 30, false], ['7', 30, false], ['8', 30, false], ['9', 30, false], ['0', 30, false], ['-', 30, false], ['=', 30, false], ['Bksp', 62, true]];
+      const row1 = [['Tab', 46, true], ['Q', 30, false], ['W', 30, false], ['E', 30, false], ['R', 30, false], ['T', 30, false], ['Y', 30, false], ['U', 30, false], ['I', 30, false], ['O', 30, false], ['P', 30, false], ['[', 30, false], [']', 30, false], ['\\', 44, false]];
+      const row2 = [['Caps', 56, true], ['A', 30, false], ['S', 30, false], ['D', 30, false], ['F', 30, false], ['G', 30, false], ['H', 30, false], ['J', 30, false], ['K', 30, false], ['L', 30, false], [';', 30, false], ['\'', 30, false], ['Enter', 68, true]];
+      const row3 = [['Shift', 72, true], ['Z', 30, false], ['X', 30, false], ['C', 30, false], ['V', 30, false], ['B', 30, false], ['N', 30, false], ['M', 30, false], [',', 30, false], ['.', 30, false], ['/', 30, false], ['Shift', 86, true]];
+      const row4 = [['Ctrl', 48, true], [' ', 28, true], ['Alt', 44, true], ['', 206, false], ['Alt', 44, true], [' ', 28, true], ['Ctrl', 50, true]];
+
+      [row0, row1, row2, row3, row4].forEach((keys, rIdx) => {
+        let kx = 6;
+        const ky = 6 + rIdx * 36;
+        keys.forEach(([lbl, kw, isMod]) => {
+          drawKeycap(kx, ky, kw, 33, lbl, isMod);
+          kx += kw + 3;
+        });
+      });
+      return new THREE.CanvasTexture(canvas);
+    }
+
+    // Fallback 'full' compact layout
+    ctx.fillStyle = '#d7d1c3';
+    ctx.fillRect(0, 0, w, h);
+    ctx.fillStyle = '#2b2f38';
     ctx.fillRect(10, 10, 492, 160);
-
-    // Keycaps
-    ctx.fillStyle = '#4b5563';
-    ctx.strokeStyle = '#1f2937';
-    ctx.lineWidth = 1.5;
-
-    // Function row
     for (let x = 16; x < 496; x += 30) {
-      ctx.fillRect(x, 14, 24, 18);
-      ctx.strokeRect(x, 14, 24, 18);
+      drawKeycap(x, 14, 24, 18, '', false);
     }
-
-    // Alphanumeric keys
     for (let row = 0; row < 4; row++) {
-      const y = 38 + row * 24;
       for (let col = 0; col < 14; col++) {
-        const x = 16 + col * 24;
-        ctx.fillRect(x, y, 20, 20);
-        ctx.strokeRect(x, y, 20, 20);
+        drawKeycap(16 + col * 24, 38 + row * 24, 20, 20, '', col === 0 || col === 13);
       }
     }
-
-    // Spacebar
-    ctx.fillStyle = '#9ca3af';
-    ctx.fillRect(112, 134, 150, 22);
-    ctx.strokeRect(112, 134, 150, 22);
-
-    // Ctrl & Alt labels from reference image
-    ctx.fillStyle = '#e5e7eb';
-    ctx.font = 'bold 9px monospace';
-    ctx.fillText('Ctrl', 20, 148);
-    ctx.fillText('Alt', 75, 148);
-    ctx.fillText('Alt', 272, 148);
-    ctx.fillText('Ctrl', 320, 148);
-
-    // Inverted-T arrow cluster
-    ctx.fillStyle = '#4b5563';
-    ctx.fillRect(366, 134, 20, 20);
-    ctx.fillRect(366, 110, 20, 20);
-    ctx.fillRect(342, 134, 20, 20);
-    ctx.fillRect(390, 134, 20, 20);
-
-    // Numpad
-    for (let r = 0; r < 4; r++) {
-      for (let c = 0; c < 3; c++) {
-        const x = 422 + c * 24;
-        const y = 62 + r * 24;
-        ctx.fillRect(x, y, 20, 20);
-        ctx.strokeRect(x, y, 20, 20);
-      }
-    }
-
-    // 3 Green LED status lights
-    ctx.fillStyle = '#22c55e';
-    [430, 452, 474].forEach(x => {
-      ctx.beginPath();
-      ctx.arc(x, 24, 3, 0, Math.PI * 2);
-      ctx.fill();
-    });
-
+    drawKeycap(112, 134, 150, 22, '', false);
+    drawKeycap(16, 134, 36, 22, 'Ctrl', true);
+    drawKeycap(68, 134, 34, 22, 'Alt', true);
+    drawKeycap(270, 134, 34, 22, 'Alt', true);
+    drawKeycap(310, 134, 36, 22, 'Ctrl', true);
     return new THREE.CanvasTexture(canvas);
   }
 
@@ -916,8 +1037,226 @@
     ctx.fillText('EMPLOYEE BREAK HALL', 256, 52);
 
     ctx.fillStyle = '#e2e8f0';
-    ctx.font = 'bold 22px sans-serif';
-    ctx.fillText('LOCKERS  •  TIMECLOCK', 256, 94);
+    ctx.font = 'bold 20px sans-serif';
+    ctx.fillText('LOCKERS  •  TIMECLOCK  •  BREAKROOM', 256, 94);
+    return new THREE.CanvasTexture(canvas);
+  }
+
+  function createHallwayPosterTexture(variant) {
+    const canvas = document.createElement('canvas');
+    canvas.width = 256;
+    canvas.height = 320;
+    const ctx = canvas.getContext('2d');
+
+    const presets = {
+      safety_lift: {
+        hdrBg: '#b45309',
+        accent: '#f59e0b',
+        badge: 'SAFETY FIRST',
+        title: 'PROPER LIFTING',
+        lines: ['1. TEST LOAD WEIGHT', '2. BEND AT KNEES', '3. KEEP BACK STRAIGHT', '4. TEAM LIFT 50+ LBS', '5. USE PALLET JACKS']
+      },
+      guidelines: {
+        hdrBg: '#1d4ed8',
+        accent: '#38bdf8',
+        badge: 'TEAM GUIDELINES',
+        title: 'DOCK STANDARDS',
+        lines: ['• PUNCH IN / OUT ON TIME', '• SCAN EVERY DSD CASE', '• TEMP-CHECK ALL COLD', '• KEEP AISLES & EXITS', '  CLEAR AT ALL TIMES']
+      },
+      safety_exit: {
+        hdrBg: '#991b1b',
+        accent: '#ef4444',
+        badge: 'DOCK SAFETY',
+        title: 'AISLE & SPILL RULES',
+        lines: ['• WATCH ELECTRIC JACKS', '• NO PALLETS IN YELLOW', '• REPORT SPILLS NOW', '• PPE VEST & BOOTS REQ', '• SECURE EXTERIOR DOORS']
+      }
+    };
+    const cfg = presets[variant] || presets.safety_lift;
+
+    ctx.fillStyle = '#f8fafc';
+    ctx.fillRect(0, 0, 256, 320);
+    ctx.strokeStyle = '#1e293b';
+    ctx.lineWidth = 10;
+    ctx.strokeRect(5, 5, 246, 310);
+
+    ctx.fillStyle = cfg.hdrBg;
+    ctx.fillRect(14, 14, 228, 72);
+    ctx.fillStyle = '#fef08a';
+    ctx.font = '900 18px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText(cfg.badge, 128, 42);
+    ctx.fillStyle = '#ffffff';
+    ctx.font = 'bold 17px sans-serif';
+    ctx.fillText(cfg.title, 128, 70);
+
+    ctx.fillStyle = cfg.accent;
+    ctx.fillRect(22, 98, 212, 6);
+
+    ctx.fillStyle = '#0f172a';
+    ctx.font = 'bold 14px sans-serif';
+    ctx.textAlign = 'left';
+    cfg.lines.forEach((line, idx) => {
+      ctx.fillText(line, 24, 134 + idx * 34);
+    });
+
+    ctx.fillStyle = '#334155';
+    ctx.font = 'bold 11px monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText('KGS DISTRIBUTION · RECEIVING', 128, 300);
+    return new THREE.CanvasTexture(canvas);
+  }
+
+  function createNoPalletZoneTexture() {
+    const canvas = document.createElement('canvas');
+    canvas.width = 256;
+    canvas.height = 256;
+    const ctx = canvas.getContext('2d');
+
+    ctx.fillStyle = '#475569';
+    ctx.fillRect(0, 0, 256, 256);
+
+    // Subtle brushed concrete grain
+    for (let i = 0; i < 650; i++) {
+      ctx.fillStyle = (i % 2 === 0) ? 'rgba(255,255,255,0.035)' : 'rgba(0,0,0,0.05)';
+      ctx.fillRect((i * 53) % 256, (i * 97) % 256, 2, 2);
+    }
+
+    // Safety yellow diagonal hazard stripes along left/door border and crisp inner keep-clear frame
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(0, 0, 256, 256);
+    ctx.clip();
+    ctx.strokeStyle = 'rgba(250, 204, 21, 0.72)';
+    ctx.lineWidth = 14;
+    for (let s = -256; s < 512; s += 44) {
+      ctx.beginPath();
+      ctx.moveTo(s, 0);
+      ctx.lineTo(s + 256, 256);
+      ctx.stroke();
+    }
+    ctx.restore();
+
+    // Inner dark charcoal pad with "NO PALLETS" stencil text
+    ctx.fillStyle = 'rgba(15, 23, 42, 0.84)';
+    ctx.fillRect(28, 28, 200, 200);
+    ctx.strokeStyle = '#facc15';
+    ctx.lineWidth = 8;
+    ctx.strokeRect(28, 28, 200, 200);
+
+    ctx.fillStyle = '#facc15';
+    ctx.textAlign = 'center';
+    ctx.font = '900 32px sans-serif';
+    ctx.fillText('NO', 128, 114);
+    ctx.fillText('PALLETS', 128, 152);
+    ctx.fillStyle = '#e2e8f0';
+    ctx.font = 'bold 15px sans-serif';
+    ctx.fillText('KEEP DOOR CLEAR', 128, 186);
+
+    return new THREE.CanvasTexture(canvas);
+  }
+
+  function createHallwayDoorSignTexture(title, subtitle, bgColor, textColor) {
+    const canvas = document.createElement('canvas');
+    canvas.width = 256;
+    canvas.height = 72;
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = bgColor || '#0f172a';
+    ctx.fillRect(0, 0, 256, 72);
+    ctx.strokeStyle = textColor || '#e2e8f0';
+    ctx.lineWidth = 4;
+    ctx.strokeRect(4, 4, 248, 64);
+
+    ctx.fillStyle = textColor || '#f8fafc';
+    ctx.textAlign = 'center';
+    ctx.font = '900 19px sans-serif';
+    ctx.fillText(String(title || ''), 128, subtitle ? 32 : 43);
+    if (subtitle) {
+      ctx.font = 'bold 12px sans-serif';
+      ctx.fillStyle = '#cbd5e1';
+      ctx.fillText(String(subtitle), 128, 55);
+    }
+    return new THREE.CanvasTexture(canvas);
+  }
+
+  function createVendingFrontTexture(kind) {
+    const canvas = document.createElement('canvas');
+    canvas.width = 256;
+    canvas.height = 384;
+    const ctx = canvas.getContext('2d');
+
+    if (kind === 'soda') {
+      ctx.fillStyle = '#991b1b';
+      ctx.fillRect(0, 0, 256, 384);
+      const grad = ctx.createLinearGradient(0, 14, 0, 265);
+      grad.addColorStop(0, '#0284c7');
+      grad.addColorStop(0.55, '#dc2626');
+      grad.addColorStop(1, '#7f1d1d');
+      ctx.fillStyle = grad;
+      ctx.fillRect(18, 16, 220, 246);
+      ctx.strokeStyle = '#f8fafc';
+      ctx.lineWidth = 4;
+      ctx.strokeRect(18, 16, 220, 246);
+      ctx.fillStyle = '#ffffff';
+      ctx.textAlign = 'center';
+      ctx.font = '900 26px sans-serif';
+      ctx.fillText('ICE COLD', 128, 86);
+      ctx.fillStyle = '#fde047';
+      ctx.font = '900 30px sans-serif';
+      ctx.fillText('DRINKS', 128, 124);
+      ctx.fillStyle = '#e0f2fe';
+      ctx.font = 'bold 14px sans-serif';
+      ctx.fillText('75¢ · COLA · LIME · TEA', 128, 166);
+      // Selection buttons column & vend chute
+      for (let bi = 0; bi < 6; bi++) {
+        ctx.fillStyle = ['#ef4444', '#38bdf8', '#22c55e', '#f59e0b', '#e2e8f0', '#7c3aed'][bi];
+        ctx.fillRect(36 + (bi % 3) * 64, 194 + Math.floor(bi / 3) * 26, 52, 18);
+      }
+      ctx.fillStyle = '#0f172a';
+      ctx.fillRect(34, 286, 188, 62);
+      ctx.strokeStyle = '#94a3b8';
+      ctx.lineWidth = 3;
+      ctx.strokeRect(34, 286, 188, 62);
+      ctx.fillStyle = '#94a3b8';
+      ctx.font = 'bold 12px monospace';
+      ctx.fillText('PUSH', 128, 322);
+    } else {
+      ctx.fillStyle = '#1e293b';
+      ctx.fillRect(0, 0, 256, 384);
+      // Glass display window
+      ctx.fillStyle = '#0f172a';
+      ctx.fillRect(16, 16, 162, 244);
+      ctx.strokeStyle = '#64748b';
+      ctx.lineWidth = 4;
+      ctx.strokeRect(16, 16, 162, 244);
+      const colors = ['#f97316', '#ef4444', '#eab308', '#22c55e', '#38bdf8', '#ec4899'];
+      for (let row = 0; row < 5; row++) {
+        ctx.fillStyle = '#475569';
+        ctx.fillRect(22, 56 + row * 44, 150, 4);
+        for (let col = 0; col < 4; col++) {
+          ctx.fillStyle = colors[(row * 4 + col) % colors.length];
+          ctx.fillRect(26 + col * 36, 26 + row * 44, 26, 28);
+        }
+      }
+      // Side keypad strip
+      ctx.fillStyle = '#334155';
+      ctx.fillRect(188, 34, 52, 180);
+      ctx.fillStyle = '#22c55e';
+      ctx.fillRect(194, 44, 40, 22);
+      ctx.fillStyle = '#e2e8f0';
+      for (let k = 0; k < 12; k++) {
+        ctx.fillRect(194 + (k % 3) * 14, 80 + Math.floor(k / 3) * 16, 10, 11);
+      }
+      // Bottom pickup bin
+      ctx.fillStyle = '#090d16';
+      ctx.fillRect(26, 284, 204, 66);
+      ctx.strokeStyle = '#64748b';
+      ctx.strokeRect(26, 284, 204, 66);
+      ctx.fillStyle = '#94a3b8';
+      ctx.textAlign = 'center';
+      ctx.font = 'bold 12px monospace';
+      ctx.fillText('SNACKS · 50¢', 128, 322);
+    }
+
     return new THREE.CanvasTexture(canvas);
   }
 
@@ -1710,6 +2049,121 @@
     return new THREE.CanvasTexture(canvas);
   }
 
+  // 90s Dark Walnut-Oak Formica Laminate Desktop Texture (fine lengthwise oak veneer + satin melamine sheen)
+  function createOfficeDeskLaminateTexture() {
+    const canvas = document.createElement('canvas');
+    canvas.width = 512;
+    canvas.height = 512;
+    const ctx = canvas.getContext('2d');
+
+    ctx.fillStyle = '#6e492c';
+    ctx.fillRect(0, 0, 512, 512);
+
+    // Subtle multi-band plank tone variation across width (matches laminated walnut-oak strip top)
+    const stripBands = ['#744d2f', '#684327', '#785032', '#6b462a'];
+    for (let sx = 0; sx < 512; sx += 128) {
+      ctx.fillStyle = stripBands[(sx / 128) % stripBands.length];
+      ctx.fillRect(sx, 0, 128, 512);
+    }
+
+    // Fine directional lengthwise oak fibers & cathedral grain waves
+    for (let x = 2; x < 512; x += 4) {
+      ctx.strokeStyle = (x % 8 === 0) ? 'rgba(56, 33, 16, 0.28)' : 'rgba(148, 108, 72, 0.16)';
+      ctx.lineWidth = 1.1;
+      ctx.beginPath();
+      for (let y = 0; y <= 512; y += 16) {
+        const wave = Math.sin(y * 0.022 + x * 0.11) * 2.4 + Math.cos(y * 0.05 + x * 0.04) * 1.1;
+        if (y === 0) ctx.moveTo(x + wave, y);
+        else ctx.lineTo(x + wave, y);
+      }
+      ctx.stroke();
+    }
+
+    // Cathedral grain arches along panel strips
+    [64, 192, 320, 448].forEach((cx, bi) => {
+      const cy = 140 + bi * 85;
+      for (let ring = 1; ring <= 4; ring++) {
+        ctx.strokeStyle = 'rgba(48, 28, 12, 0.24)';
+        ctx.lineWidth = 1.4;
+        ctx.beginPath();
+        ctx.ellipse(cx, cy, ring * 11, ring * 44, 0.04, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+    });
+
+    // Ultra-fine oak pores & faint laminated seam lines between oak strips
+    ctx.fillStyle = 'rgba(38, 21, 9, 0.30)';
+    for (let i = 0; i < 180; i++) {
+      const px = (i * 73 + 17) % 508;
+      const py = (i * 139 + 29) % 496;
+      ctx.fillRect(px, py, 1.5, 8 + (i % 9));
+    }
+    ctx.strokeStyle = 'rgba(42, 24, 11, 0.28)';
+    ctx.lineWidth = 1.5;
+    [128, 256, 384].forEach((sx) => {
+      ctx.beginPath();
+      ctx.moveTo(sx, 0);
+      ctx.lineTo(sx, 512);
+      ctx.stroke();
+    });
+
+    const tex = new THREE.CanvasTexture(canvas);
+    tex.wrapS = THREE.RepeatWrapping;
+    tex.wrapT = THREE.RepeatWrapping;
+    return tex;
+  }
+
+  // 90s Steelcase / HON Putty-Grey Baked Enamel Steel Texture (chassis/legs vs beveled file drawers)
+  function createOfficeDeskEnamelTexture(variant = 'chassis') {
+    const canvas = document.createElement('canvas');
+    canvas.width = 256;
+    canvas.height = 256;
+    const ctx = canvas.getContext('2d');
+    const isDrawer = variant === 'drawer';
+
+    const grad = ctx.createLinearGradient(0, 0, 0, 256);
+    grad.addColorStop(0, isDrawer ? '#85887f' : '#96988f');
+    grad.addColorStop(0.5, isDrawer ? '#777a71' : '#898b82');
+    grad.addColorStop(1, isDrawer ? '#696c63' : '#7b7d74');
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, 256, 256);
+
+    // Subtle hammered baked-enamel powder-coat stipple grain
+    for (let i = 0; i < 420; i++) {
+      const sx = (i * 53 + 11) % 252;
+      const sy = (i * 97 + 19) % 252;
+      ctx.fillStyle = (i % 2 === 0) ? 'rgba(255, 255, 248, 0.07)' : 'rgba(30, 34, 28, 0.08)';
+      ctx.fillRect(sx, sy, 2, 2);
+    }
+
+    // Faint brushed horizontal enamel sheen bands
+    ctx.fillStyle = 'rgba(255, 255, 250, 0.04)';
+    for (let y = 0; y < 256; y += 6) {
+      if ((y / 6) % 3 === 0) ctx.fillRect(0, y, 256, 2);
+    }
+
+    if (isDrawer) {
+      // Crisply stamped 90s office file-drawer bezel border + top finger-channel shadow
+      ctx.strokeStyle = 'rgba(24, 28, 26, 0.45)';
+      ctx.lineWidth = 8;
+      ctx.strokeRect(4, 4, 248, 248);
+
+      ctx.strokeStyle = 'rgba(241, 243, 236, 0.26)';
+      ctx.lineWidth = 3;
+      ctx.strokeRect(10, 10, 236, 236);
+
+      ctx.fillStyle = 'rgba(20, 24, 22, 0.22)';
+      ctx.fillRect(10, 10, 236, 8);
+    }
+
+    const tex = new THREE.CanvasTexture(canvas);
+    if (!isDrawer) {
+      tex.wrapS = THREE.RepeatWrapping;
+      tex.wrapT = THREE.RepeatWrapping;
+    }
+    return tex;
+  }
+
   const cardboardTextureCache = new Map();
 
   function createCardboardBoxTexture(sku, name, tempType, notScannable, unitsPerCase, opts) {
@@ -2347,9 +2801,14 @@
     createCrtScreenTexture: createCrtScreenTexture,
     createCrtScreenDisplay: createCrtScreenDisplay,
     createInvoiceSheetTexture: createInvoiceSheetTexture,
+    createKeyboardShellTexture: createKeyboardShellTexture,
     createKeyboardTexture: createKeyboardTexture,
     createBrickTexture: createBrickTexture,
     createHallwaySignTexture: createHallwaySignTexture,
+    createHallwayPosterTexture: createHallwayPosterTexture,
+    createHallwayDoorSignTexture: createHallwayDoorSignTexture,
+    createNoPalletZoneTexture: createNoPalletZoneTexture,
+    createVendingFrontTexture: createVendingFrontTexture,
     createTrailerDoorTexture: createTrailerDoorTexture,
     createHallwayTimeclockDisplay: createHallwayTimeclockDisplay,
     createTruckFloorTexture: createTruckFloorTexture,
@@ -2366,6 +2825,8 @@
     createBatteryChargerTexture: createBatteryChargerTexture,
     createBatteryChargerDisplay: createBatteryChargerDisplay,
     createWoodGrainTexture: createWoodGrainTexture,
+    createOfficeDeskLaminateTexture: createOfficeDeskLaminateTexture,
+    createOfficeDeskEnamelTexture: createOfficeDeskEnamelTexture,
     createCardboardBoxTexture: createCardboardBoxTexture,
     createKgsCapTexture: createKgsCapTexture,
     createDriverBadgeTexture: createDriverBadgeTexture,

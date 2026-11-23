@@ -13,6 +13,7 @@
     mainMenuOpen: true,
     saveLoadModalOpen: false,
     infoModalOpen: false,
+    noonPunchOutNotified: false,
     hooks: {
       showAlert: null,
       showNotification: null,
@@ -32,6 +33,7 @@
     state.dom = {
       clockTime: document.getElementById('hud-shift-time'),
       clockDate: document.getElementById('hud-shift-date'),
+      retroClock: document.getElementById('retro-digital-clock'),
       rdcLeadZero: document.getElementById('rdc-lead-zero'),
       rdcHourMain: document.getElementById('rdc-hour-main'),
       rdcMinute: document.getElementById('rdc-minute'),
@@ -62,7 +64,6 @@
       remLegend: document.getElementById('hud-remaining-legend'),
       remLegendGrid: document.getElementById('hud-rem-legend-grid'),
       scoreValue: document.getElementById('hud-shift-score'),
-      endShiftBtn: document.getElementById('end-shift-btn'),
       summaryModal: document.getElementById('shift-summary-modal'),
       summarySubtitle: document.getElementById('summary-shift-subtitle'),
       summaryRank: document.getElementById('summary-shift-rank'),
@@ -114,12 +115,14 @@
 
     const colonOn = (Math.floor(Date.now() / 500) % 2 === 0);
     const pctInt = Math.round((snap.progressPct || 0) * 100);
-    const timeKey = `${snap.formatted12h}|${snap.dateLabel}|${snap.workdayIndex}|${pctInt}|${colonOn ? 1 : 0}|${snap.afterNoon ? 1 : 0}|${snap.shiftEnded ? 1 : 0}`;
+    const timeKey = `${snap.formatted12h}|${snap.dateLabel}|${snap.workdayIndex}|${pctInt}|${colonOn ? 1 : 0}|${snap.afterNoon ? 1 : 0}|${snap.overtime ? 1 : 0}|${snap.shiftEnded ? 1 : 0}`;
     if (force || timeKey !== lastHudTimeKey) {
       lastHudTimeKey = timeKey;
       if (d.clockTime) {
         d.clockTime.textContent = snap.formatted12h;
-        d.clockTime.style.color = snap.afterNoon ? '#f59e0b' : '#38bdf8';
+      }
+      if (d.retroClock) {
+        d.retroClock.classList.toggle('is-overtime', Boolean(snap.overtime));
       }
       if (d.clockDate) {
         d.clockDate.textContent = snap.dateLabel + ' · DAY ' + snap.workdayIndex + '/21';
@@ -146,8 +149,11 @@
       if (d.rdcDow) d.rdcDow.textContent = snap.dayName || 'MON';
       if (d.rdcMonDay) d.rdcMonDay.textContent = (snap.monthName || 'JAN') + ' ' + (snap.dayOfMonth || '01');
       if (d.rdcYear) d.rdcYear.textContent = String(snap.year || 1996);
-      if (d.endShiftBtn) {
-        d.endShiftBtn.style.display = (snap.afterNoon && !snap.shiftEnded) ? 'inline-block' : 'none';
+      if (snap.afterNoon && !snap.shiftEnded && !state.noonPunchOutNotified) {
+        state.noonPunchOutNotified = true;
+        if (typeof state.hooks.showNotification === 'function') {
+          state.hooks.showNotification('🕛 12:00 PM — Walk to the Hallway Timeclock [E] when ready to punch out for end of shift.', 'high');
+        }
       }
     }
 
@@ -221,7 +227,12 @@
     const st = summary.stats;
 
     if (d.summarySubtitle) {
-      const reasonText = reason === 'clock_reached_end' ? 'SHIFT ENDED AT 2:00 PM' : 'SHIFT CONCLUDED EARLY';
+      let reasonText = 'SHIFT CONCLUDED (' + snap.formatted12h + ')';
+      if (reason === 'hard_cutoff_3pm' || reason === 'clock_reached_end') {
+        reasonText = '3:00 PM HARD CUTOFF (AUTO PUNCH-OUT)';
+      } else if (reason === 'timeclock') {
+        reasonText = 'PUNCHED OUT AT TIMECLOCK (' + snap.formatted12h + (snap.overtime ? ' · OVERTIME' : '') + ')';
+      }
       d.summarySubtitle.textContent = snap.dateLabel + ' (DAY ' + snap.workdayIndex + '/21) — ' + reasonText;
     }
     if (d.summaryRank) {
@@ -285,15 +296,16 @@
       typeof state.hooks.getUnfinishedWork === 'function' ? state.hooks.getUnfinishedWork() : {}
     );
     const summary = global.ShiftStats.computeShiftSummary(unfinished);
-    renderShiftSummary(summary, reason || 'manual');
+    renderShiftSummary(summary, reason || 'timeclock');
 
     if (state.dom.summaryModal) {
       state.dom.summaryModal.style.display = 'flex';
     }
+    syncClockPauseFlag();
     if (typeof state.hooks.playSuccessChime === 'function') {
       state.hooks.playSuccessChime();
     }
-    updateHud();
+    updateHud(true);
   }
 
   function startNextShift() {
@@ -310,7 +322,9 @@
 
     global.ShiftStats.resetDailyStats();
     state.shiftSummaryOpen = false;
+    state.noonPunchOutNotified = false;
     global.ShiftClock.setPaused(false);
+    syncClockPauseFlag();
 
     if (state.dom.summaryModal) {
       state.dom.summaryModal.style.display = 'none';
@@ -424,12 +438,40 @@
 
   function bindEvents() {
     bindRemainingLegend();
-    if (state.dom.endShiftBtn) {
-      state.dom.endShiftBtn.addEventListener('click', () => endShift('manual'));
-    }
     if (state.dom.nextShiftBtn) {
       state.dom.nextShiftBtn.addEventListener('click', startNextShift);
     }
+
+    global.ShiftClock.on('onPreShiftEndWarning', () => {
+      if (typeof state.hooks.showNotification === 'function') {
+        state.hooks.showNotification('⚠️ 1:50 PM: 10 minutes until 2:00 PM shift end! Wrap up tasks & punch out at the Hallway Timeclock [E] before overtime.', 'high');
+      }
+    });
+
+    global.ShiftClock.on('onOvertime', (evt) => {
+      if (!evt) return;
+      if (evt.isStart) {
+        if (typeof state.hooks.playDoorAlarm === 'function') state.hooks.playDoorAlarm();
+        if (typeof state.hooks.showNotification === 'function') {
+          state.hooks.showNotification('🚨 2:00 PM OVERTIME ALERT: Scheduled shift ended! Punch out at the Hallway Timeclock [E] now — overtime penalties accrue every 10 min until 3:00 PM.', 'critical');
+        }
+        updateHud(true);
+        return;
+      }
+
+      global.ShiftStats.increment('overtimePenalties', 1);
+      if (typeof state.hooks.playDoorAlarm === 'function') state.hooks.playDoorAlarm();
+      if (typeof state.hooks.showNotification === 'function') {
+        if (evt.isCutoff) {
+          const totalOtPts = (global.ShiftStats.getStats().overtimePenalties || 1) * (Number(evt.penaltyPoints) || 100);
+          state.hooks.showNotification('🚨 3:00 PM HARD CUTOFF: Kicked off timeclock! Shift force-ended with -' + totalOtPts + ' pts in overtime penalties.', 'critical');
+        } else {
+          const timeLbl = evt.time && evt.time.formatted12h ? evt.time.formatted12h : ('2:' + String(evt.overtimeMinutes).padStart(2, '0') + ' PM');
+          state.hooks.showNotification('🚨 OVERTIME PENALTY (-' + (Number(evt.penaltyPoints) || 100) + ' pts): ' + timeLbl + ' (' + evt.overtimeMinutes + 'm past 2:00 PM). Punch out at Timeclock [E] before 3:00 PM!', 'critical');
+        }
+      }
+      updateHud(true);
+    });
 
     global.ShiftClock.on('onDoorWarning', (evt) => {
       if (typeof state.hooks.showAlert === 'function') {
@@ -562,6 +604,7 @@
     state.saveLoadModalOpen = false;
     state.infoModalOpen = false;
     state.mainMenuOpen = false;
+    state.noonPunchOutNotified = false;
     if (state.dom.summaryModal) {
       state.dom.summaryModal.style.display = 'none';
     }
@@ -606,10 +649,31 @@
     updateHud(true);
   }
 
+  function punchOutAtTimeclock() {
+    if (state.shiftSummaryOpen) return false;
+    const snap = global.ShiftClock && typeof global.ShiftClock.getTimeSnapshot === 'function'
+      ? global.ShiftClock.getTimeSnapshot()
+      : null;
+    if (snap && snap.shiftEnded) return false;
+    if (!snap || !snap.afterNoon) {
+      if (typeof state.hooks.playButtonClick === 'function') state.hooks.playButtonClick();
+      if (typeof state.hooks.showNotification === 'function') {
+        state.hooks.showNotification('⏱️ Timeclock punch-out opens at 12:00 PM noon.', 'high');
+      }
+      return false;
+    }
+    if (typeof state.hooks.playSuccessChime === 'function') {
+      state.hooks.playSuccessChime();
+    }
+    endShift('timeclock');
+    return true;
+  }
+
   global.DSDGame = {
     init: init,
     updateHud: updateHud,
     endShift: endShift,
+    punchOutAtTimeclock: punchOutAtTimeclock,
     startNextShift: startNextShift,
     registerResetHandler: registerResetHandler,
     isModalOpen: isModalOpen,

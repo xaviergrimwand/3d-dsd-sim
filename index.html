@@ -6,24 +6,24 @@
   <title>3D DSD Receiving Simulator</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
-  <script src="./js/dsd-catalog.js?v=20261122i"></script>
-  <script src="./js/shift-clock.js?v=20261122i"></script>
-  <script src="./js/shift-stats.js?v=20261122i"></script>
-  <script src="./js/hud-messages.js?v=20261122i"></script>
-  <script src="./js/dsd-receipts.js?v=20261122w"></script>
-  <script src="./js/warehouse-trucks.js?v=20261122w"></script>
-  <script src="./js/backstock-racks.js?v=20261122i"></script>
+  <script src="./js/dsd-catalog.js?v=20261123c"></script>
+  <script src="./js/shift-clock.js?v=20261123a"></script>
+  <script src="./js/shift-stats.js?v=20261123a"></script>
+  <script src="./js/hud-messages.js?v=20261123b"></script>
+  <script src="./js/dsd-receipts.js?v=20261123g"></script>
+  <script src="./js/warehouse-trucks.js?v=20261123c"></script>
+  <script src="./js/backstock-racks.js?v=20261123a"></script>
   <script src="./js/claims-totes.js?v=20261122i"></script>
   <script src="./js/sound-system.js?v=20261122q"></script>
-  <script src="./js/warehouse-textures.js?v=20261122q"></script>
-  <script src="./js/warehouse-world.js?v=20261122q"></script>
-  <script src="./js/warehouse-models.js?v=20261122q"></script>
-  <script src="./js/delivery-system.js?v=20261122u"></script>
+  <script src="./js/warehouse-textures.js?v=20261123e"></script>
+  <script src="./js/warehouse-world.js?v=20261123k"></script>
+  <script src="./js/warehouse-models.js?v=20261123a"></script>
+  <script src="./js/delivery-system.js?v=20261123k"></script>
   <script src="./js/save-system.js?v=20261122w"></script>
   <script src="./js/menu-ui.js?v=20261122q"></script>
-  <script src="./game.js?v=20261122q"></script>
-  <script src="./js/dock-runtime.js?v=20261122x"></script>
-  <link rel="stylesheet" href="./css/styles.css?v=20261122z">
+  <script src="./game.js?v=20261123d"></script>
+  <script src="./js/dock-runtime.js?v=20261123i"></script>
+  <link rel="stylesheet" href="./css/styles.css?v=20261123h">
 </head>
 
 <body>
@@ -77,7 +77,6 @@
             </span>
           </div>
         </div>
-        <button id="end-shift-btn" type="button">END SHIFT</button>
         <button id="pause-menu-btn" type="button" title="System &amp; Pause Menu [ESC]" aria-label="System Menu">
           <span>SYSTEM</span>
           <span>MENU</span>
@@ -194,8 +193,8 @@
           <button type="button" class="hud-msg-filter-btn active" data-filter="all">ALL</button>
           <button type="button" class="hud-msg-filter-btn" data-filter="critical">ALERTS</button>
           <button type="button" class="hud-msg-filter-btn" data-filter="high">WARNINGS</button>
-          <button type="button" class="hud-msg-filter-btn" data-filter="status">INFO</button>
           <button type="button" class="hud-msg-filter-btn" data-filter="low">TASKS</button>
+          <button type="button" class="hud-msg-filter-btn" data-filter="status">INFO</button>
         </div>
         <div id="hud-msg-list"></div>
       </div>
@@ -794,11 +793,11 @@
       </div>
     </div>
 
-    <!-- Phase 2: 32-Day File Cabinet Archive Modal -->
+    <!-- Phase 2: 90-Day File Cabinet Archive Modal -->
     <div id="invoice-archive-overlay">
       <div class="phase2-modal-card">
         <div class="phase2-modal-hdr">
-          <h3>🗄️ RECEIVING FILE CABINET ARCHIVE (32 DAYS)</h3>
+          <h3>🗄️ RECEIVING FILE CABINET ARCHIVE (90 DAYS)</h3>
           <button id="archive-close-btn" class="nd-close-btn" type="button">CLOSE</button>
         </div>
         <div class="archive-body">
@@ -930,6 +929,20 @@
           <button id="mim-close-btn" class="nd-close-btn" type="button">[ESC] CLOSE</button>
         </div>
         <div id="mim-body" class="mim-body"></div>
+      </div>
+    </div>
+
+    <!-- In-Game Notice / Alert Modal -->
+    <div id="game-alert-modal" role="dialog" aria-modal="true" aria-labelledby="gam-title">
+      <div class="gam-card">
+        <div class="gam-hdr">
+          <h3 id="gam-title">⚠️ NOTICE</h3>
+          <button id="gam-close-btn" class="nd-close-btn" type="button">[ESC] CLOSE</button>
+        </div>
+        <div id="gam-body" class="gam-body"></div>
+        <div class="gam-ftr">
+          <button id="gam-ok-btn" class="gam-ok-btn" type="button">OK [ENTER]</button>
+        </div>
       </div>
     </div>
 

@@ -30,7 +30,8 @@
       supplyOutOfStockCount: 0,
       wrongClaimDispositions: 0,
       wrongHazwasteDispositions: 0,
-      wrongTaskActions: 0
+      wrongTaskActions: 0,
+      overtimePenalties: 0
     };
   }
 
@@ -73,7 +74,8 @@
         supplyOutOfStock: -200,
         wrongClaimDisposition: -50,
         wrongHazwasteDisposition: -150,
-        wrongTaskAction: -100
+        wrongTaskAction: -100,
+        overtimePenalty: -100
       }
     };
   }
@@ -147,7 +149,8 @@
       stats.supplyOutOfStockCount * scn.supplyOutOfStock +
       (stats.wrongClaimDispositions || 0) * (scn.wrongClaimDisposition !== undefined ? scn.wrongClaimDisposition : -50) +
       (stats.wrongHazwasteDispositions || 0) * (scn.wrongHazwasteDisposition !== undefined ? scn.wrongHazwasteDisposition : -150) +
-      (stats.wrongTaskActions || 0) * (scn.wrongTaskAction !== undefined ? scn.wrongTaskAction : -100)
+      (stats.wrongTaskActions || 0) * (scn.wrongTaskAction !== undefined ? scn.wrongTaskAction : -100) +
+      (stats.overtimePenalties || 0) * (scn.overtimePenalty !== undefined ? scn.overtimePenalty : -100)
     );
   }
 
@@ -193,9 +196,15 @@
     const wrongClaimPenalty = (stats.wrongClaimDispositions || 0) * Math.abs(scn.wrongClaimDisposition !== undefined ? scn.wrongClaimDisposition : 50);
     const wrongHazwastePenalty = (stats.wrongHazwasteDispositions || 0) * Math.abs(scn.wrongHazwasteDisposition !== undefined ? scn.wrongHazwasteDisposition : 150);
     const wrongTaskPenalty = (stats.wrongTaskActions || 0) * Math.abs(scn.wrongTaskAction !== undefined ? scn.wrongTaskAction : 100);
+    const overtimePenaltyCount = Number(stats.overtimePenalties) || 0;
+    const overtimePenalty = overtimePenaltyCount * Math.abs(scn.overtimePenalty !== undefined ? scn.overtimePenalty : 100);
 
     let endOfDayPenalty = 0;
     const endOfDayDetails = [];
+
+    if (overtimePenaltyCount > 0) {
+      endOfDayDetails.push('Overtime past 2:00 PM (' + (overtimePenaltyCount * 10) + 'm · -' + overtimePenalty + ' pts)');
+    }
 
     if (u.outstandingSideDoor) {
       endOfDayPenalty += Math.abs(scn.outstandingSideDoor);
@@ -243,7 +252,7 @@
     }
 
     const operationalErrorsPenalty = refuseGoodPenalty + acceptTempPenalty + missedTempPenalty + inaccuratePenalty + wrongClaimPenalty + wrongTaskPenalty;
-    const compliancePenalty = violationsPenalty + doorOpenPenalty + doorProlongedPenalty + supplyOutPenalty + wrongHazwastePenalty + endOfDayPenalty;
+    const compliancePenalty = violationsPenalty + doorOpenPenalty + doorProlongedPenalty + supplyOutPenalty + wrongHazwastePenalty + overtimePenalty + endOfDayPenalty;
     const totalNegative = operationalErrorsPenalty + compliancePenalty;
     const totalScore = totalPositive - totalNegative;
 
@@ -256,6 +265,7 @@
         tasksScore: tasksScore + recallScore,
         checklistScore: claimsScore + suppliesScore + backstockPlacedScore + backstockInvScore + filingScore,
         compliancePenalty: compliancePenalty,
+        overtimePenalty: overtimePenalty,
         operationalErrorsPenalty: operationalErrorsPenalty
       },
       endOfDayDetails: endOfDayDetails,

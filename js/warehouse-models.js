@@ -310,7 +310,9 @@
           const bz = (row - 1) * (caseD + caseSpacing);
           box.position.set(bx, by, bz);
           box.userData.physicalBoxRef = physBox;
+          box.userData.deliveryId = data.deliveryId || null;
           physBox.mesh = box;
+          applyBoxScannedVisual(physBox);
           group.add(box);
           topCaseMeshes.push(box);
         });
@@ -740,17 +742,30 @@
       // If createPallet3D already bound each physical box directly onto its invoice pallet mesh, preserve direct refs.
       const alreadyBound = list.length > 0 && list.every((box) => box && box.mesh);
       if (!alreadyBound) {
-        const bayPallets = pallets.filter((p) => p.data && p.data.truck === delivery.dockBay);
+        const bayPallets = pallets.filter((p) =>
+          p.data && (p.data.deliveryId ? p.data.deliveryId === delivery.id : p.data.truck === delivery.dockBay)
+        );
         const candidateMeshes = [];
         bayPallets.forEach((p) => {
           if (Array.isArray(p.topCaseMeshes)) {
             p.topCaseMeshes.forEach((m) => candidateMeshes.push(m));
           }
         });
+        const usedMeshes = new Set();
         const texCache = {};
         list.forEach((box, idx) => {
-          const mesh = candidateMeshes[idx % Math.max(1, candidateMeshes.length)];
+          let mesh = candidateMeshes.find((m) =>
+            !usedMeshes.has(m) &&
+            m.userData &&
+            m.userData.physicalBoxRef &&
+            box.boxId &&
+            m.userData.physicalBoxRef.boxId === box.boxId
+          );
+          if (!mesh) {
+            mesh = candidateMeshes.find((m) => !usedMeshes.has(m)) || candidateMeshes[idx % Math.max(1, candidateMeshes.length)];
+          }
           if (!mesh) return;
+          usedMeshes.add(mesh);
           const boxQty = Number(box.unitsPerCase) || 0;
           const cacheKey = `${box.code}|${box.type}|${Boolean(box.notScannable)}|${boxQty}`;
           if (!texCache[cacheKey]) {
@@ -871,6 +886,7 @@
         boxMesh.userData.physicalBoxRef = cBox;
         boxMesh.userData.deliveryId = delivery ? delivery.id : null;
         cBox.mesh = boxMesh;
+        applyBoxScannedVisual(cBox);
         targetGroup.add(boxMesh);
         boxMeshes.push(boxMesh);
       });
@@ -1112,7 +1128,9 @@
         const by = (layer * caseH) + (caseH / 2);
         boxMesh.position.set(bx, by, bz);
         boxMesh.userData.physicalBoxRef = physBox;
+        boxMesh.userData.deliveryId = delivery ? (delivery.id || null) : null;
         physBox.mesh = boxMesh;
+        applyBoxScannedVisual(physBox);
         cargoCasesGroup.add(boxMesh);
 
         const boxData = {

@@ -161,6 +161,62 @@
       4: { x: 12.0, z: 2.8 }  // East side of Dock 4, away from the charger
     };
 
+    // Computer desk keepout bounds (desk is x: 11.565..12.915, z: 3.938..6.238) + shoulder clearance
+    const DESK_KEEPOUT = { minX: 10.95, maxX: 13.40, minZ: 3.35, maxZ: 6.85, laneX: 10.20, northZ: 3.15, southZ: 7.05 };
+
+    function segmentHitsRect(a, b, r) {
+      let t0 = 0;
+      let t1 = 1;
+      const dx = b.x - a.x;
+      const dz = b.z - a.z;
+      const checks = [
+        [-dx, a.x - r.minX],
+        [dx, r.maxX - a.x],
+        [-dz, a.z - r.minZ],
+        [dz, r.maxZ - a.z]
+      ];
+      for (let i = 0; i < checks.length; i++) {
+        const p = checks[i][0];
+        const q = checks[i][1];
+        if (Math.abs(p) < 1e-6) {
+          if (q < 0) return false;
+        } else {
+          const t = q / p;
+          if (p < 0) {
+            if (t > t1) return false;
+            if (t > t0) t0 = t;
+          } else {
+            if (t < t0) return false;
+            if (t < t1) t1 = t;
+          }
+        }
+      }
+      return t0 <= t1;
+    }
+
+    function buildDeskSafeWaypoints(startPos, rawTargets) {
+      const out = [];
+      let prev = startPos ? { x: Number(startPos.x) || 0, z: Number(startPos.z) || 0 } : null;
+      (rawTargets || []).forEach((pt) => {
+        if (!pt) return;
+        const target = pt instanceof THREE.Vector3 ? pt : new THREE.Vector3(pt.x, 0, pt.z);
+        if (prev && segmentHitsRect(prev, target, DESK_KEEPOUT)) {
+          if (prev.z > target.z) {
+            if (prev.z > DESK_KEEPOUT.southZ) out.push(new THREE.Vector3(DESK_KEEPOUT.laneX, 0, DESK_KEEPOUT.southZ));
+            if (target.z < DESK_KEEPOUT.northZ) out.push(new THREE.Vector3(DESK_KEEPOUT.laneX, 0, DESK_KEEPOUT.northZ));
+            else out.push(new THREE.Vector3(DESK_KEEPOUT.laneX, 0, target.z));
+          } else {
+            if (prev.z < DESK_KEEPOUT.northZ) out.push(new THREE.Vector3(DESK_KEEPOUT.laneX, 0, DESK_KEEPOUT.northZ));
+            if (target.z > DESK_KEEPOUT.southZ) out.push(new THREE.Vector3(DESK_KEEPOUT.laneX, 0, DESK_KEEPOUT.southZ));
+            else out.push(new THREE.Vector3(DESK_KEEPOUT.laneX, 0, target.z));
+          }
+        }
+        out.push(target);
+        prev = { x: target.x, z: target.z };
+      });
+      return out;
+    }
+
     uiState.currentInvoiceTab = 'invoice';
     let currentOpenedInvoiceDelivery = null;
 
@@ -371,6 +427,7 @@
       }
       if (window.DSDReceipts) window.DSDReceipts.enrichDelivery(delivery);
       currentOpenedInvoiceDelivery = delivery;
+      delivery._receivingStarted = true;
       if (typeof DeliverySystem !== 'undefined' && DeliverySystem && typeof DeliverySystem.focusDelivery === 'function') {
         DeliverySystem.focusDelivery(delivery.id);
       }
@@ -871,6 +928,14 @@
         }
       });
     }
+    function showInvoiceAlertPopup(title, message) {
+      if (typeof hooks.showPopupModal === 'function') {
+        hooks.showPopupModal({ title, message, tone: 'warn' });
+      } else if (typeof hooks.showAlert === 'function') {
+        hooks.showAlert(`${title}\n\n${message}`);
+      }
+    }
+
     btnSignInvoice.addEventListener('click', () => {
       const d = currentOpenedInvoiceDelivery || DeliverySystem.activeDelivery;
       if (d) {
@@ -880,11 +945,20 @@
           const invDone = Boolean(d.docStates && d.docStates.invoiceCreated);
           const credDone = Boolean(d.docStates && d.docStates.creditCreated);
           if (hasCred && invDone && !credDone) {
-            alert(`⚠️ CREDIT MEMO STILL PENDING!\n\nMain Invoice #${d.invoiceNo} is receipted, but you still need to check in Credit Memo #${d.creditInvoiceNo} on the Handheld Scanner [F] (using [NEG] mode) and press [DONE] before signing.`);
+            showInvoiceAlertPopup(
+              '⚠️ CREDIT MEMO STILL PENDING!',
+              `Main Invoice #${d.invoiceNo} is receipted, but you still need to check in Credit Memo #${d.creditInvoiceNo} on the Handheld Scanner [F] (using [NEG] mode) and press [DONE] before signing.`
+            );
           } else if (hasCred && credDone && !invDone) {
-            alert(`⚠️ MAIN INVOICE STILL PENDING!\n\nCredit Memo #${d.creditInvoiceNo} is receipted, but you still need to check in Main Invoice #${d.invoiceNo} on the Handheld Scanner [F] and press [DONE] before signing.`);
+            showInvoiceAlertPopup(
+              '⚠️ MAIN INVOICE STILL PENDING!',
+              `Credit Memo #${d.creditInvoiceNo} is receipted, but you still need to check in Main Invoice #${d.invoiceNo} on the Handheld Scanner [F] and press [DONE] before signing.`
+            );
           } else {
-            alert(`⚠️ DSD CHECK-IN INCOMPLETE!\n\nStandard Receiving Protocol requires opening your Handheld Scanner [F] to create a digital receipt (Vendor #${d.vendorNo}, Dept #${d.deptNo}, Invoice #${d.invoiceNo || d.docNum}) and pressing [DONE] before signing.`);
+            showInvoiceAlertPopup(
+              '⚠️ DSD CHECK-IN INCOMPLETE!',
+              `Standard Receiving Protocol requires opening your Handheld Scanner [F] to create a digital receipt (Vendor #${d.vendorNo}, Dept #${d.deptNo}, Invoice #${d.invoiceNo || d.docNum}) and pressing [DONE] before signing.`
+            );
           }
           return;
         }
@@ -892,7 +966,10 @@
         const scannedNonOver = nonOverageBoxes.filter((b) => b.scanned).length;
         if (scannedNonOver < nonOverageBoxes.length) {
           SoundSystem.playErrorBuzzer();
-          alert(`⚠️ CARGO NOT FULLY SCANNED!\n\nOnly ${scannedNonOver} of ${nonOverageBoxes.length} unflagged cases verified. Aim your scanner [F] at the shipment and press [SCAN] (or key PLU + Qty) — or flag any excess cases under [OVERAGE].`);
+          showInvoiceAlertPopup(
+            '⚠️ CARGO NOT FULLY SCANNED!',
+            `Only ${scannedNonOver} of ${nonOverageBoxes.length} unflagged cases verified. Aim your scanner [F] at the shipment and press [SCAN] (or key PLU + Qty) — or flag any excess cases under [OVERAGE].`
+          );
           return;
         }
       }
@@ -974,6 +1051,28 @@
       }
     }
 
+    function getDeliveryStageLabel(d, session) {
+      const st = session ? session.state : '';
+      if (st === 'WALKING_TO_EXIT' || st === 'WAITING_EXIT' || st === 'LEAVING') {
+        return 'WAIT TO LEAVE';
+      }
+      if (st === 'OUTSIDE_WAITING') {
+        return 'AT DOOR';
+      }
+      if (d && d.type === 'warehouse') {
+        if (st === 'ENTERING' || st === 'WAITING_CHECKIN') return 'CHECK IN';
+        if (st === 'WAITING_SIGN') return 'SIGN BOL';
+        return 'UNLOADING';
+      }
+      if (st === 'ENTERING' || st === 'WAITING_CHECKIN') {
+        const receivingStarted = Boolean(
+          d && (d._receivingStarted || d.casesScanned > 0 || d.tempChecked || d.receiptCreated)
+        );
+        return receivingStarted ? 'RECEIVING' : 'CHECK IN';
+      }
+      return 'RECEIVING';
+    }
+
     function renderPendingDeliveriesPanel() {
       if (!pendingDeliveriesList) return;
       const snap = window.ShiftClock ? window.ShiftClock.getTimeSnapshot() : { hour: 6, minute: 0 };
@@ -1001,12 +1100,17 @@
       if (barSummaryEl || alertDotEl) {
         let lateCount = 0;
         let firstLate = null;
-        let firstArrived = null;
+        let firstInsideActive = null;
+        let firstAtDoor = null;
+        let focusedActive = null;
+        const focusedId = (typeof DeliverySystem !== 'undefined' && DeliverySystem) ? DeliverySystem.focusedDeliveryId : null;
+        const getSess = (typeof DeliverySystem !== 'undefined' && DeliverySystem && typeof DeliverySystem.getSessionForDelivery === 'function')
+          ? (id) => DeliverySystem.getSessionForDelivery(id)
+          : () => null;
+
         allOpen.forEach((d) => {
           const etaMins = (d.etaHour || 6) * 60 + (d.etaMinute || 0);
-          const session = (typeof DeliverySystem !== 'undefined' && DeliverySystem && typeof DeliverySystem.getSessionForDelivery === 'function')
-            ? DeliverySystem.getSessionForDelivery(d.id)
-            : null;
+          const session = getSess(d.id);
           const isWhActive = Boolean(d.type === 'warehouse' && (d.status === 'ARRIVED' || d.status === 'UNLOADING'));
           const isSessionActive = Boolean(session && session.state !== 'FINISHED');
           const isWaitingOutside = Boolean(session && session.state === 'OUTSIDE_WAITING');
@@ -1014,26 +1118,50 @@
           if (isLate) {
             lateCount++;
             if (!firstLate) firstLate = d;
-          } else if ((isWhActive || isSessionActive) && !firstArrived) {
-            firstArrived = d;
+          } else if (isWhActive || isSessionActive) {
+            const item = { d: d, session: session };
+            if (focusedId && d.id === focusedId && !isWaitingOutside) {
+              focusedActive = item;
+            }
+            if (isWaitingOutside) {
+              if (!firstAtDoor) firstAtDoor = item;
+            } else if (!firstInsideActive) {
+              firstInsideActive = item;
+            }
           }
         });
+
+        let exitSession = null;
+        if (typeof DeliverySystem !== 'undefined' && DeliverySystem && Array.isArray(DeliverySystem.sessions)) {
+          exitSession = DeliverySystem.sessions.find((s) =>
+            s && s.delivery && (s.state === 'WAITING_EXIT' || s.state === 'WALKING_TO_EXIT' || s.state === 'LEAVING')
+          ) || null;
+        }
+        const activeTop = focusedActive || firstInsideActive ||
+          (exitSession ? { d: exitSession.delivery, session: exitSession } : null) ||
+          firstAtDoor;
+
         if (barSummaryEl) {
-          barSummaryEl.classList.remove('is-urgent', 'is-arrived');
+          barSummaryEl.classList.remove('is-urgent', 'is-arrived', 'is-due-soon');
           let summaryText = 'No pending deliveries';
           let summaryDelivery = null;
           if (lateCount > 0 && firstLate) {
             summaryText = `${lateCount} LATE · ${firstLate.carrier || 'TRUCK'}`;
             summaryDelivery = firstLate;
             barSummaryEl.classList.add('is-urgent');
-          } else if (firstArrived) {
-            summaryText = `AT DOOR · ${firstArrived.carrier || 'DELIVERY'}`;
-            summaryDelivery = firstArrived;
+          } else if (activeTop && activeTop.d) {
+            const stageLabel = getDeliveryStageLabel(activeTop.d, activeTop.session);
+            summaryText = `${stageLabel} · ${activeTop.d.carrier || 'DELIVERY'}`;
+            summaryDelivery = activeTop.d;
             barSummaryEl.classList.add('is-arrived');
           } else if (visible.length > 0) {
             const nxt = visible[0];
+            const nxtEtaMins = ((nxt.etaHour || 6) * 60) + (nxt.etaMinute || 0);
             summaryText = `NEXT ${nxt.etaText || '6:00 AM'} · ${nxt.carrier || 'DELIVERY'}`;
             summaryDelivery = nxt;
+            if ((nxtEtaMins - nowMins) <= 10) {
+              barSummaryEl.classList.add('is-due-soon');
+            }
           }
           const barIcoEl = barSummaryEl.querySelector('.pd-bar-ico');
           const barTxtEl = barSummaryEl.querySelector('.pd-bar-txt');
@@ -1098,7 +1226,7 @@
 
         let etaLabel = d.etaText || '6:00 AM';
         if (isWaitingOutside) {
-          etaLabel = 'WAITNG';
+          etaLabel = 'AT DOOR';
         } else if (isWhActive) {
           etaLabel = `${d.stagedCount || 0}/${d.totalPallets || 0}`;
         } else if (isSessionActive) {
@@ -1233,7 +1361,16 @@
         this.focusedDeliveryId = deliveryId;
         if (changed && window.DSDReceipts) {
           window.DSDReceipts.enrichDelivery(s.delivery);
-          if (!s.delivery.receiptCreated && !s.delivery.isFinalized) {
+          const scState = typeof window.DSDReceipts.exportState === 'function'
+            ? (window.DSDReceipts.exportState().scanner || null)
+            : null;
+          const keepOpenScannerWork = Boolean(
+            scState && (
+              scState.activeReceiptNo ||
+              ['scanning', 'list', 'totals', 'totals-edit', 'confirm-finalize', 'supply', 'supply-cart', 'supply-confirm', 'inventory', 'label-cases', 'damage', 'damage-cond', 'damage-disp', 'damage-ready'].includes(scState.screen)
+            )
+          );
+          if (!s.delivery.receiptCreated && !s.delivery.isFinalized && !keepOpenScannerWork) {
             window.DSDReceipts.resetScannerSession(s.delivery);
           }
         }
@@ -1501,44 +1638,45 @@
         }
 
         SoundSystem.playSideDoorChime();
-        hooks.showNotification(`🔔 ${doorKey} Arrival: ${d.driverName} (${d.carrier}) is waiting outside the Side Door.`);
+        hooks.showNotification(`🔔 ${doorKey} Arrival: ${d.driverName} (${d.carrier}) is waiting outside the Side Door.`, 'low');
         this.updateDeliveryHud();
         return session;
       },
 
       updateDeliveryHud: function () {
-        if (!deliveryHudTitle) return;
-        const waitingCount = this.getWaitingOutsideSessions().length;
-        const insideCount = this.getInsideDeliveries().length;
-        const cur = this.getFocusedSession();
+        if (deliveryHudTitle) {
+          const waitingCount = this.getWaitingOutsideSessions().length;
+          const insideCount = this.getInsideDeliveries().length;
+          const cur = this.getFocusedSession();
 
-        if (waitingCount > 0 && insideCount === 0) {
-          deliveryHudTitle.textContent = waitingCount === 1
-            ? `${this.getWaitingOutsideSessions()[0].doorKey} Waiting at Side Door`
-            : `${waitingCount} Drivers/Vendors Waiting Outside SD`;
-        } else if (cur && cur.delivery) {
-          const d = cur.delivery;
-          let statusLabel = d.carrier;
-          if (cur.state === 'OUTSIDE_WAITING') statusLabel = `${cur.doorKey} Waiting Outside`;
-          else if (cur.state === 'ENTERING') statusLabel = `Entering (${cur.doorKey})`;
-          else if (cur.state === 'WAITING_CHECKIN') {
-            statusLabel = d.type === 'vendor_truck'
-              ? `Waiting at Dock ${d.dockBay} (${cur.doorKey})`
-              : `At Side Door (${cur.doorKey})`;
+          if (waitingCount > 0 && insideCount === 0) {
+            deliveryHudTitle.textContent = waitingCount === 1
+              ? `${this.getWaitingOutsideSessions()[0].doorKey} Waiting at Side Door`
+              : `${waitingCount} Drivers/Vendors Waiting Outside SD`;
+          } else if (cur && cur.delivery) {
+            const d = cur.delivery;
+            let statusLabel = d.carrier;
+            if (cur.state === 'OUTSIDE_WAITING') statusLabel = `${cur.doorKey} Waiting Outside`;
+            else if (cur.state === 'ENTERING') statusLabel = `Entering (${cur.doorKey})`;
+            else if (cur.state === 'WAITING_CHECKIN') {
+              statusLabel = d.type === 'vendor_truck'
+                ? `Waiting at Dock ${d.dockBay} (${cur.doorKey})`
+                : `At Side Door (${cur.doorKey})`;
+            }
+            else if (cur.state === 'MOVING_TO_DOCK_STAND') statusLabel = `Walking to Dock ${d.dockBay}`;
+            else if (cur.state === 'AWAITING_PLAYER_UNLOAD') statusLabel = `Unload Dock ${d.dockBay} with Walkie`;
+            else if (cur.state === 'VENDOR_WAIT_DOOR_OPEN') statusLabel = `Open Dock ${d.dockBay} for Driver`;
+            else if (cur.state === 'WAREHOUSE_RETURNING_FOR_SIGN') statusLabel = `Returning for BOL Sign`;
+            else if (cur.state.startsWith('VENDOR_')) statusLabel = `Vendor Unloading Bay ${d.dockBay}`;
+            else if (cur.state === 'WAITING_SIGN') statusLabel = `Ready to Sign (${cur.doorKey})`;
+            else if (cur.state === 'WALKING_TO_EXIT' || cur.state === 'WAITING_EXIT') statusLabel = 'Waiting by Side Door to Exit';
+            else if (cur.state === 'LEAVING') statusLabel = 'Exiting';
+            const extra = this.sessions.length > 1 ? ` [+${this.sessions.length - 1} active]` : '';
+            deliveryHudTitle.textContent = `${d.driverName}: ${statusLabel}${extra}`;
+          } else {
+            const pendingCount = DELIVERY_MANIFEST.filter((d) => !d.completed && !d.refused).length;
+            deliveryHudTitle.textContent = pendingCount > 0 ? `${pendingCount} Delivery Queued / Scheduled` : 'All DSD Vendors Complete';
           }
-          else if (cur.state === 'MOVING_TO_DOCK_STAND') statusLabel = `Walking to Dock ${d.dockBay}`;
-          else if (cur.state === 'AWAITING_PLAYER_UNLOAD') statusLabel = `Unload Dock ${d.dockBay} with Walkie`;
-          else if (cur.state === 'VENDOR_WAIT_DOOR_OPEN') statusLabel = `Open Dock ${d.dockBay} for Driver`;
-          else if (cur.state === 'WAREHOUSE_RETURNING_FOR_SIGN') statusLabel = `Returning for BOL Sign`;
-          else if (cur.state.startsWith('VENDOR_')) statusLabel = `Vendor Unloading Bay ${d.dockBay}`;
-          else if (cur.state === 'WAITING_SIGN') statusLabel = `Ready to Sign (${cur.doorKey})`;
-          else if (cur.state === 'WALKING_TO_EXIT' || cur.state === 'WAITING_EXIT') statusLabel = 'Waiting by Side Door to Exit';
-          else if (cur.state === 'LEAVING') statusLabel = 'Exiting';
-          const extra = this.sessions.length > 1 ? ` [+${this.sessions.length - 1} active]` : '';
-          deliveryHudTitle.textContent = `${d.driverName}: ${statusLabel}${extra}`;
-        } else {
-          const pendingCount = DELIVERY_MANIFEST.filter((d) => !d.completed && !d.refused).length;
-          deliveryHudTitle.textContent = pendingCount > 0 ? `${pendingCount} Delivery Queued / Scheduled` : 'All DSD Vendors Complete';
         }
         renderPendingDeliveriesPanel();
       },
@@ -1550,13 +1688,15 @@
           ? WAREHOUSE_DRIVER_STANDS[d.dockBay]
           : (INSIDE_CHECKIN_POSITIONS[session.slotIdx] || INSIDE_CHECKIN_POSITIONS[0]);
         session.state = 'ENTERING';
-        session.waypoints = [
-          new THREE.Vector3(12.2, 0, 8.4),
-          new THREE.Vector3(targetSpot.x, 0, targetSpot.z)
-        ];
+        session.waypoints = buildDeskSafeWaypoints(
+          session.driver && session.driver.mesh ? session.driver.mesh.position : { x: 12.2, z: 8.4 },
+          [
+            new THREE.Vector3(12.2, 0, 8.4),
+            new THREE.Vector3(targetSpot.x, 0, targetSpot.z)
+          ]
+        );
         session.currentWaypointIdx = 0;
         this.focusDelivery(d.id);
-        hooks.showNotification(`🚶 Letting in ${d.driverName} (${session.doorKey} · ${d.carrier})`);
         this.updateDeliveryHud();
       },
 
@@ -1586,27 +1726,32 @@
           if (d.type === 'sidedoor') {
             openInvoice(d);
           } else if (d.type === 'warehouse') {
-            hooks.showNotification(`📋 Checked in ${d.driverName}. Open Bay ${d.dockBay} dock door [E] so trailer opens!`);
+            hooks.showNotification(`📋 Checked in ${d.driverName}. Open Bay ${d.dockBay} dock door [E] so trailer opens!`, 'low');
             SoundSystem.playPaperRustle();
             session.state = 'MOVING_TO_DOCK_STAND';
             const stand = WAREHOUSE_DRIVER_STANDS[d.dockBay] || WAREHOUSE_DRIVER_STANDS[2];
-            session.waypoints = [new THREE.Vector3(stand.x, 0, stand.z)];
+            session.waypoints = buildDeskSafeWaypoints(
+              session.driver && session.driver.mesh ? session.driver.mesh.position : null,
+              [new THREE.Vector3(stand.x, 0, stand.z)]
+            );
             session.currentWaypointIdx = 0;
             this.updateDeliveryHud();
           } else if (d.type === 'vendor_truck') {
             const bay = d.dockBay || 3;
             SoundSystem.playPaperRustle();
-            hooks.showNotification(`📋 Checked in ${d.driverName}. Open Bay ${bay} dock door [E] so vendor can open trailer & unload!`);
+            hooks.showNotification(`📋 Checked in ${d.driverName}. Open Bay ${bay} dock door [E] so vendor can open trailer & unload!`, 'low');
             this.startVendorUnload(session);
           }
         } else if (session.state === 'AWAITING_PLAYER_UNLOAD') {
           const bay = d.dockBay || 2;
-          const bayPallets = pallets.filter((p) => p.data && p.data.truck === bay);
+          const bayPallets = pallets.filter((p) =>
+            p.data && (p.data.deliveryId ? p.data.deliveryId === d.id : p.data.truck === bay)
+          );
           const correctStaged = bayPallets.filter((p) => p.data.status === 'STAGED_CORRECT').length;
           if (correctStaged >= bayPallets.length) {
             openWarehouseBol(d);
           } else {
-            hooks.showNotification(`⚡ Bay ${bay} warehouse unload: ${correctStaged}/${bayPallets.length} pallets staged into zones.`);
+            hooks.showNotification(`⚠️ Bay ${bay} warehouse unload incomplete: ${correctStaged}/${bayPallets.length} pallets staged into zones.`, 'high');
           }
         } else if (session.state === 'WAITING_SIGN') {
           if (d.type === 'warehouse') {
@@ -1622,18 +1767,18 @@
                 this.updateDeliveryHud();
                 if (res && res.complete) {
                   if (session.state === 'WAITING_EXIT' && sideRollupDoor.isOpen && sideRollupDoor.currentProgress >= 0.65) {
-                    hooks.showNotification(`📄 Handed printed receipt(s) to ${d.driverName} — exiting Side Door!`);
+                    hooks.showNotification(`📄 Handed printed receipt(s) to ${d.driverName} — exiting Side Door!`, 'status');
                   } else {
-                    hooks.showNotification(`📄 Handed printed receipt(s) to ${d.driverName}! Press [E] on Side Rollup Door button to let them out.`);
+                    hooks.showNotification(`📄 Handed printed receipt(s) to ${d.driverName}! Press [E] on Side Rollup Door button to let them out.`, 'high');
                   }
                 } else if (res && res.missing && res.missing.length > 0) {
-                  hooks.showNotification(`📄 ${d.driverName} still needs printed receipt(s): ${res.missing.map((rn) => '#' + rn).join(', ')}.`);
+                  hooks.showNotification(`⚠️ ${d.driverName} still needs printed receipt(s): ${res.missing.map((rn) => '#' + rn).join(', ')}.`, 'high');
                 }
               }
             });
           } else {
             SoundSystem.playButtonClick();
-            hooks.showNotification(`💬 ${d.driverName}: "Ready to head out — press [E] on the Side Rollup Door button when you can!"`);
+            hooks.showNotification(`⚠️ ${d.driverName}: "Ready to head out — press [E] on the Side Rollup Door button when you can!"`, 'high');
           }
         }
       },
@@ -1768,7 +1913,10 @@
         if (!session || session.state === 'LEAVING' || session.state === 'WAITING_SIGN') return;
         const standSpot = INSIDE_CHECKIN_POSITIONS[session.slotIdx] || INSIDE_CHECKIN_POSITIONS[1];
         session.state = 'WAREHOUSE_RETURNING_FOR_SIGN';
-        session.waypoints = [new THREE.Vector3(standSpot.x, 0, standSpot.z)];
+        session.waypoints = buildDeskSafeWaypoints(
+          session.driver && session.driver.mesh ? session.driver.mesh.position : null,
+          [new THREE.Vector3(standSpot.x, 0, standSpot.z)]
+        );
         session.currentWaypointIdx = 0;
         this.updateDeliveryHud();
       },
@@ -1788,22 +1936,23 @@
         if (!session) return;
         const d = session.delivery;
         const receiptsReady = !d || !window.DSDReceipts || window.DSDReceipts.areAllRequiredReceiptsHanded(d);
+        const curPos = session.driver && session.driver.mesh ? session.driver.mesh.position : null;
         if (sideRollupDoor.isOpen && sideRollupDoor.currentProgress >= 0.65 && receiptsReady) {
           session.state = 'LEAVING';
-          session.waypoints = [
+          session.waypoints = buildDeskSafeWaypoints(curPos, [
             new THREE.Vector3(12.2, 0, 8.4),
             new THREE.Vector3(15.2, 0, 8.4)
-          ];
+          ]);
           session.currentWaypointIdx = 0;
         } else {
           const zSlot = ((session.slotIdx || 0) % 3 - 1) * 0.50;
           session.state = 'WALKING_TO_EXIT';
-          session.waypoints = [
+          session.waypoints = buildDeskSafeWaypoints(curPos, [
             new THREE.Vector3(11.15, 0, 8.4 + zSlot)
-          ];
+          ]);
           session.currentWaypointIdx = 0;
           if (!receiptsReady && d) {
-            hooks.showNotification(`📄 ${d.driverName} is waiting by Side Door — hand over printed receipt(s) [E] before exit!`);
+            hooks.showNotification(`⚠️ ${d.driverName} is waiting by Side Door — hand over printed receipt(s) [E] before exit!`, 'high');
           }
         }
         this.updateDeliveryHud();
@@ -1841,7 +1990,10 @@
         const bayX = dock ? dock.worldX : 7.20;
         session.vendorDroppedCount = 0;
         session.state = 'VENDOR_WALK_TO_BAY';
-        session.waypoints = [new THREE.Vector3(bayX, 0, 2.0)];
+        session.waypoints = buildDeskSafeWaypoints(
+          session.driver && session.driver.mesh ? session.driver.mesh.position : null,
+          [new THREE.Vector3(bayX, 0, 2.0)]
+        );
         session.currentWaypointIdx = 0;
         this.updateDeliveryHud();
       },
@@ -2035,7 +2187,8 @@
           hooks.showNotification(
             d.type === 'vendor_truck' && d.dockBay
               ? `💬 ${d.driverName} (${session.doorKey}) is waiting near Bay ${d.dockBay}: [E] to Check In`
-              : `💬 ${d.driverName} (${session.doorKey}) is inside by the Side Door: [E] to Check In`
+              : `💬 ${d.driverName} (${session.doorKey}) is inside by the Side Door: [E] to Check In`,
+            'low'
           );
           this.updateDeliveryHud();
         } else if (session.state === 'WALKING_TO_EXIT') {
@@ -2055,8 +2208,9 @@
             }
             hooks.showNotification(
               receiptsReady
-                ? `🚪 ${d.driverName} is waiting by the Side Door — push the Side Door button [E] to let them out.`
-                : `📄 ${d.driverName} is waiting by the Side Door — hand over printed receipt(s) [E] before letting them out.`
+                ? `⚠️ ${d.driverName} is waiting by the Side Door — push the Side Door button [E] to let them out.`
+                : `⚠️ ${d.driverName} is waiting by the Side Door — hand over printed receipt(s) [E] before letting them out.`,
+              'high'
             );
           }
           this.updateDeliveryHud();
@@ -2069,12 +2223,11 @@
           }
           session.state = 'AWAITING_PLAYER_UNLOAD';
           this.updateDeliveryHud();
-          hooks.showNotification(`${d.driverName} standing clear beside Bay ${d.dockBay}.`);
         } else if (session.state === 'WAREHOUSE_RETURNING_FOR_SIGN') {
           session.state = 'WAITING_SIGN';
           session.driver.mesh.rotation.y = -Math.PI / 2;
           this.updateDeliveryHud();
-          hooks.showNotification(`📋 ${d.driverName} ready at receiving area: [E] to sign Bill of Lading for Bay ${d.dockBay}!`);
+          hooks.showNotification(`📋 ${d.driverName} ready at receiving area: [E] to sign Bill of Lading for Bay ${d.dockBay}!`, 'low');
         } else if (session.state === 'VENDOR_WALK_TO_BAY') {
           const bay = (d && d.dockBay) ? d.dockBay : 3;
           const dd = dockDoors.find((dItem) => dItem.id === bay);
@@ -2085,7 +2238,7 @@
             session.currentWaypointIdx = 0;
           } else {
             session.state = 'VENDOR_WAIT_DOOR_OPEN';
-            hooks.showNotification(`⏳ ${d.driverName} is at Bay ${bay} — open Dock Door ${bay} [E] so he can open his trailer.`);
+            hooks.showNotification(`⏳ ${d.driverName} is at Bay ${bay} — open Dock Door ${bay} [E] so he can open his trailer.`, 'high');
           }
           this.updateDeliveryHud();
         } else if (session.state === 'VENDOR_GETTING_OWN_JACK') {
@@ -2113,7 +2266,6 @@
           }
 
           const nextPallet = remainingBayPallets[0];
-          hooks.showNotification(`⚡ ${d.driverName} using onboard jack in Bay ${bay} (${remainingBayPallets.length} pallet(s))`);
 
           session.state = 'VENDOR_UNLOADING_DRIVE_IN';
           session.waypoints = [
@@ -2138,7 +2290,6 @@
           }
 
           const dropPos = this.getBackroomStagingSpot(bay, session.vendorDroppedCount);
-          hooks.showNotification(`⚡ ${d.driverName} hauling ${bayPallet ? bayPallet.data.po : 'pallet'} to backroom staging`);
 
           session.state = 'VENDOR_UNLOADING_DRIVE_OUT';
           session.waypoints = [
@@ -2165,7 +2316,6 @@
             SoundSystem.playHydraulicLower();
             SoundSystem.playSuccessChime();
             hooks.updateStagedCounter();
-            hooks.showNotification(`✅ ${d.driverName} staged ${p.data.po} in backroom`);
           }
 
           const remainingBayPallets = pallets
@@ -2182,7 +2332,6 @@
             ];
             session.currentWaypointIdx = 0;
           } else {
-            hooks.showNotification(`⚡ All ${session.vendorDroppedCount} pallets unloaded! ${d.driverName} parking onboard jack on trailer.`);
             session.state = 'VENDOR_RETURNING_JACK';
             session.waypoints = [
               new THREE.Vector3(bayX, 0, 1.5),
@@ -2206,7 +2355,6 @@
           SoundSystem.playDropSound();
 
           const dockStand = WAREHOUSE_DRIVER_STANDS[bay] || INSIDE_CHECKIN_POSITIONS[session.slotIdx] || INSIDE_CHECKIN_POSITIONS[1];
-          hooks.showNotification(`⚡ Onboard jack stowed in trailer. ${d.driverName} stepping clear beside Bay ${bay} for sign-off.`);
           session.state = 'VENDOR_RETURNING_TO_SIDE_DOOR';
           session.waypoints = [
             new THREE.Vector3(bayX, 0, 2.2),
@@ -2217,7 +2365,7 @@
           session.state = 'WAITING_SIGN';
           session.driver.mesh.rotation.y = 0;
           this.updateDeliveryHud();
-          hooks.showNotification(`📦 ${d.driverName} unloaded all pallets by Bay ${d.dockBay}! Scan cases [F], then [E] to sign.`);
+          hooks.showNotification(`📦 ${d.driverName} unloaded all pallets by Bay ${d.dockBay}! Scan cases [F], then [E] to sign.`, 'low');
         }
       },
 

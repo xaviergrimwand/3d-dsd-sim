@@ -201,6 +201,13 @@
     return global.ShiftClock || null;
   }
 
+  function getWorkdayIndex() {
+    const clock = getClock();
+    const snap = clock && typeof clock.getTimeSnapshot === 'function' ? clock.getTimeSnapshot() : null;
+    const idx = Number(snap && snap.workdayIndex);
+    return Number.isFinite(idx) && idx >= 1 ? idx : 1;
+  }
+
   function getStats() {
     return global.ShiftStats || null;
   }
@@ -229,17 +236,19 @@
     if (typeof state.hooks.playPaper === 'function') state.hooks.playPaper();
   }
 
-  function notify(msg, duration) {
+  function notify(msg, durationOrPriority, explicitPriority) {
     if (typeof state.hooks.showNotification === 'function') {
-      state.hooks.showNotification(msg, duration || 3200);
+      state.hooks.showNotification(msg, durationOrPriority || 3200, explicitPriority);
     }
   }
 
   function alertMsg(msg) {
-    if (typeof state.hooks.showAlert === 'function') {
+    if (typeof state.hooks.showPopupModal === 'function') {
+      state.hooks.showPopupModal(msg);
+    } else if (typeof state.hooks.showAlert === 'function') {
       state.hooks.showAlert(msg);
-    } else if (global.alert) {
-      global.alert(msg);
+    } else {
+      notify(msg, 4000);
     }
   }
 
@@ -287,7 +296,18 @@
    */
   function enrichDelivery(delivery) {
     if (!delivery) return null;
-    if (delivery._dsdEnriched) return delivery;
+    if (delivery._dsdEnriched) {
+      const delivId = delivery.id || null;
+      if (delivId) {
+        if (Array.isArray(delivery.physicalBoxes)) {
+          delivery.physicalBoxes.forEach((b) => { if (b && !b.deliveryId) b.deliveryId = delivId; });
+        }
+        if (Array.isArray(delivery.creditBoxes)) {
+          delivery.creditBoxes.forEach((b) => { if (b && !b.deliveryId) b.deliveryId = delivId; });
+        }
+      }
+      return delivery;
+    }
 
     const catalog = getCatalog();
     const vendorEntry = catalog ? catalog.getVendor(delivery.vendorNo) : null;
@@ -447,6 +467,7 @@
       for (let q = 0; q < physCases; q++) {
         boxes.push({
           boxId: 'B' + boxSeq++,
+          deliveryId: delivery.id || null,
           code: it.code,
           name: it.name,
           price: it.price,
@@ -466,6 +487,7 @@
       for (let q = 0; q < cQty; q++) {
         crdBoxes.push({
           boxId: 'C' + crdSeq++,
+          deliveryId: delivery.id || null,
           code: it.code,
           name: it.name,
           price: it.price,
@@ -674,12 +696,16 @@
     }
 
     const sc = state.scanner;
+    const matchedDelivery = (rec.deliveryId ? getDeliveryById(rec.deliveryId) : null) ||
+      findMatchingInsideDeliveryByHeaders({ deptNo: rec.deptNo, vendorNo: rec.vendorNo, invoiceNo: rec.invoiceNo }) ||
+      (activeDelivery ? enrichDelivery(activeDelivery) : null);
     const matchesDelivery = Boolean(
-      activeDelivery &&
-      (rec.deliveryId === activeDelivery.id ||
-        (rec.deptNo === activeDelivery.deptNo &&
-          rec.vendorNo === activeDelivery.vendorNo &&
-          (rec.invoiceNo === activeDelivery.invoiceNo || rec.invoiceNo === getCreditInvoiceNo(activeDelivery))))
+      matchedDelivery &&
+      isDeliveryCheckInReady(matchedDelivery) &&
+      (rec.deliveryId === matchedDelivery.id ||
+        (rec.deptNo === matchedDelivery.deptNo &&
+          rec.vendorNo === matchedDelivery.vendorNo &&
+          (rec.invoiceNo === matchedDelivery.invoiceNo || rec.invoiceNo === getCreditInvoiceNo(matchedDelivery))))
     );
 
     sc.screen = 'scanning';
@@ -704,20 +730,23 @@
     sc.scannedItems = (rec.items || []).map((it) => Object.assign({}, it));
     sc.listScroll = 0;
 
-    if (matchesDelivery && activeDelivery) {
+    if (matchesDelivery && matchedDelivery) {
       const isCreditDoc = sc.negativeMode ||
         rec.type === 'credit' ||
-        (activeDelivery.docStates && activeDelivery.docStates.creditRequired && sc.headers.invoiceNo === getCreditInvoiceNo(activeDelivery));
+        (matchedDelivery.docStates && matchedDelivery.docStates.creditRequired && sc.headers.invoiceNo === getCreditInvoiceNo(matchedDelivery));
       if (isCreditDoc) {
         sc.scannedItems.forEach((it) => {
-          const committedCreditOther = getCommittedCreditQtyForCode(activeDelivery, it.code, rec.receiptNumber);
-          syncCreditBoxesForCode(activeDelivery, it.code, committedCreditOther + Math.abs(Number(it.qty) || 0));
+          const committedCreditOther = getCommittedCreditQtyForCode(matchedDelivery, it.code, rec.receiptNumber);
+          syncCreditBoxesForCode(matchedDelivery, it.code, committedCreditOther + Math.abs(Number(it.qty) || 0));
         });
       } else {
         sc.scannedItems.forEach((it) => {
-          const committedOther = getCommittedInvoiceQtyForCode(activeDelivery, it.code, rec.receiptNumber);
-          syncScannedBoxesForCode(activeDelivery, it.code, committedOther + Math.max(0, Number(it.qty) || 0));
+          const committedOther = getCommittedInvoiceQtyForCode(matchedDelivery, it.code, rec.receiptNumber);
+          syncScannedBoxesForCode(matchedDelivery, it.code, committedOther + Math.max(0, Number(it.qty) || 0));
         });
+      }
+      if (typeof state.hooks.onReceiptUpdated === 'function') {
+        state.hooks.onReceiptUpdated(matchedDelivery);
       }
     }
 
@@ -988,7 +1017,46 @@
       resolveNightDropByInvoiceNo(rec.invoiceNo, rec.receiptNumber);
       syncActiveDeliveryLinkForReceipt(rec);
     }
+    reconcileDeliveriesForReceipt(rec, true);
     return { ok: true, receipt: rec };
+  }
+
+  function reconcileDeliveriesForReceipt(rec, clearLinkedFlags) {
+    if (!rec) return;
+    const candidates = collectInsideDeliveryCandidates();
+    candidates.forEach((d) => {
+      if (!isDeliveryCheckInReady(d)) return;
+      const creditInv = getCreditInvoiceNo(d);
+      const linkedInv = d.lastReceiptNumber === rec.receiptNumber;
+      const linkedCred = d.lastCreditReceiptNumber === rec.receiptNumber;
+      const headerMatches = (
+        rec.vendorNo === d.vendorNo &&
+        rec.deptNo === d.deptNo &&
+        (rec.invoiceNo === d.invoiceNo || (creditInv && rec.invoiceNo === creditInv))
+      );
+      if (!linkedInv && !linkedCred && rec.deliveryId !== d.id && !headerMatches) return;
+
+      if (clearLinkedFlags && d.docStates) {
+        if (linkedInv && (rec.voided || rec.invoiceNo !== d.invoiceNo || rec.vendorNo !== d.vendorNo || rec.deptNo !== d.deptNo)) {
+          d.docStates.invoiceCreated = false;
+          d.lastReceiptNumber = null;
+        }
+        if (linkedCred && (rec.voided || rec.invoiceNo !== creditInv || rec.vendorNo !== d.vendorNo || rec.deptNo !== d.deptNo)) {
+          d.docStates.creditCreated = false;
+          d.lastCreditReceiptNumber = null;
+        }
+        if (d.docStates.invoiceRequired && !d.docStates.invoiceCreated) {
+          d.receiptCreated = false;
+        } else if (d.docStates.creditRequired && !d.docStates.creditCreated) {
+          d.receiptCreated = false;
+        }
+      }
+      reconcileDeliveryDocStates(d);
+      reconcileDeliveryBoxesFromReceipts(d);
+      if (typeof state.hooks.onReceiptUpdated === 'function') {
+        state.hooks.onReceiptUpdated(d);
+      }
+    });
   }
 
   function dNoSafe(val) {
@@ -1009,6 +1077,7 @@
     if (state.manualDraft && state.manualDraft.receiptNumber === receiptNumber) {
       startManualDraft();
     }
+    reconcileDeliveriesForReceipt(rec, true);
     return { ok: true, receipt: rec };
   }
 
@@ -1048,26 +1117,28 @@
 
     generateNightDropInvoices();
 
-    if (prevFilingComplete && prevTodayEntry) {
-      // Unshift a fresh Today placeholder while preserving completed shift folders & restoring clean historical January folders
-      const snap = getClock() ? getClock().getTimeSnapshot() : { dateLabel: 'FEB 2, 1996' };
+    const snap = getClock() ? getClock().getTimeSnapshot() : { dateLabel: 'FRI FEB 02, 1996' };
+    if (prevTodayEntry && (prevFilingComplete || (Array.isArray(prevTodayEntry.vendors) && prevTodayEntry.vendors.length > 0))) {
       prevTodayEntry.isToday = false;
-      restoreHistoricalArchiveDays();
-      state.archiveData.unshift({
-        dateStr: snap.dateLabel + ' (TODAY)',
-        isToday: true,
-        placeholder: true,
-        colorHex: '#22c55e',
-        vendors: []
-      });
-      if (state.archiveData.length > 32) {
-        state.archiveData.length = 32;
-      }
-      state.archiveSelectedDay = 1;
-    } else {
-      state.archiveSelectedDay = 1;
+      prevTodayEntry.isCampaignDay = true;
+      prevTodayEntry.dateStr = String(prevTodayEntry.dateStr || '').replace(/\s*\((?:FILED TODAY|TODAY)\)\s*$/i, '').trim() || snap.dateLabel;
+    } else if (state.archiveData.length > 0 && state.archiveData[0].isToday && state.archiveData[0].placeholder) {
+      state.archiveData.shift();
+    }
+
+    state.archiveData.unshift({
+      dateStr: snap.dateLabel + ' (TODAY)',
+      isToday: true,
+      isCampaignDay: true,
+      placeholder: true,
+      colorHex: '#22c55e',
+      vendors: []
+    });
+    restoreHistoricalArchiveDays();
+    if (state.archiveData.length <= 1) {
       generateArchiveData(true);
     }
+    state.archiveSelectedDay = 1;
     generateHomeOfficeTasksForShift();
 
     state.scanner.inventoryMenuIdx = 0;
@@ -1206,7 +1277,7 @@
 
   function togglePrintedReceiptHud(forceExpand) {
     if (!state.printedSlips || state.printedSlips.length === 0) {
-      notify('🖨️ No printed receipts held. Receipts can be printed from Terminal [2].', 3200);
+      notify('🖨️ No printed receipts held. Receipts can be printed from Terminal [2].', 'high');
       playBeep();
       return;
     }
@@ -1293,15 +1364,12 @@
     renderPrintedReceiptHud();
     notifyDeskStateChanged();
 
-    const cnt = collected.length;
-    notify('📄 Picked up ' + cnt + ' printed receipt' + (cnt > 1 ? 's' : '') + ' from Dot-Matrix Printer.', 3400);
-    return cnt;
+    return collected.length;
   }
 
   function discardActivePrintedReceipt() {
     if (!state.printedSlips || state.printedSlips.length === 0) {
       playBeep();
-      notify('🗑️ No held receipt print-outs to discard in trash can.', 2800);
       return false;
     }
     const idx = Math.max(0, Math.min(state.activeSlipIndex, state.printedSlips.length - 1));
@@ -1310,7 +1378,6 @@
     renderPrintedReceiptHud();
     if (typeof state.hooks.onReceiptDiscarded === 'function') state.hooks.onReceiptDiscarded([removed]);
     if (typeof state.hooks.onReceiptUpdated === 'function') state.hooks.onReceiptUpdated(null);
-    notify('🗑️ Discarded receipt print-out #' + removed.receiptNumber + (removed.isCopy ? ' (Copy)' : '') + ' in trash can.', 3200);
     return true;
   }
 
@@ -1382,7 +1449,6 @@
     const slips = state.printedSlips || [];
     if (slips.length === 0) {
       playBeep();
-      notify('🗑️ Trash Can: You have no printed receipt slips held to discard.', 2800);
       return false;
     }
 
@@ -1439,12 +1505,6 @@
     if (typeof state.hooks.onReceiptDiscarded === 'function') state.hooks.onReceiptDiscarded(discarded);
     if (typeof state.hooks.onReceiptUpdated === 'function') state.hooks.onReceiptUpdated(null);
 
-    if (discarded.length === 1) {
-      const r = discarded[0];
-      notify('🗑️ Discarded receipt #' + r.receiptNumber + (r.isCopy ? ' (Copy)' : '') + ' in trash can.', 3200);
-    } else {
-      notify('🗑️ Discarded ' + discarded.length + ' printed receipt slips in trash can.', 3200);
-    }
     return discarded.length;
   }
 
@@ -1795,6 +1855,42 @@
     return true;
   }
 
+  function collectInsideDeliveryCandidates() {
+    const list = [];
+    const seenIds = new Set();
+    const pushCand = (entry) => {
+      if (!entry) return;
+      const e = enrichDelivery(entry);
+      if (!e || (e.id && seenIds.has(e.id))) return;
+      if (e.id) seenIds.add(e.id);
+      list.push(e);
+    };
+    pushCand(getActiveDeliveryEnriched());
+    if (typeof state.hooks.getDeliveryManifest === 'function') {
+      (state.hooks.getDeliveryManifest() || []).forEach(pushCand);
+    }
+    return list;
+  }
+
+  function getDeliveryById(deliveryId) {
+    if (!deliveryId) return null;
+    return collectInsideDeliveryCandidates().find((d) => d && d.id === deliveryId) || null;
+  }
+
+  function findMatchingInsideDeliveryByHeaders(headers) {
+    if (!headers || !headers.deptNo || !headers.vendorNo || !headers.invoiceNo) return null;
+    const deptNo = padDigits(headers.deptNo, 2);
+    const vendorNo = padDigits(headers.vendorNo, 3);
+    const invoiceNo = padDigits(headers.invoiceNo, 6);
+    const candidates = collectInsideDeliveryCandidates();
+    return candidates.find((d) => {
+      if (!isDeliveryCheckInReady(d)) return false;
+      if (d.deptNo !== deptNo || d.vendorNo !== vendorNo) return false;
+      const creditInv = d.docStates && d.docStates.creditRequired ? getCreditInvoiceNo(d) : '';
+      return d.invoiceNo === invoiceNo || (creditInv && creditInv === invoiceNo);
+    }) || null;
+  }
+
   function getActiveScannerContext() {
     const sc = state.scanner;
     const isNear = typeof state.hooks.isScannerNearDelivery === 'function'
@@ -1802,9 +1898,32 @@
       : true;
     const rawD = getActiveDeliveryEnriched();
 
-    // If Night Drop is open or player already opened a standalone receipt, keep scanner in general receipt entry mode
+    // If Night Drop panel is open, keep scanner in general receipt entry mode
+    if (state.nightDropPanelOpen) {
+      return { delivery: null, isPalletTarget: false };
+    }
+
+    const inReceiptWorkScreen = Boolean(
+      sc.activeReceiptNo ||
+      ['scanning', 'list', 'totals', 'totals-edit', 'confirm-finalize', 'finalized'].includes(sc.screen)
+    );
+    if (inReceiptWorkScreen) {
+      const headerMatch = findMatchingInsideDeliveryByHeaders(sc.headers);
+      if (headerMatch) {
+        sc.standaloneMode = false;
+        return { delivery: headerMatch, isPalletTarget: false };
+      }
+      if (!sc.standaloneMode && sc.activeReceiptNo) {
+        const rec = findReceipt(sc.activeReceiptNo);
+        const recD = rec && rec.deliveryId ? getDeliveryById(rec.deliveryId) : null;
+        if (recD && isDeliveryCheckInReady(recD)) {
+          return { delivery: recD, isPalletTarget: false };
+        }
+      }
+    }
+
     let delivery = null;
-    if (!state.nightDropPanelOpen && !sc.standaloneMode && rawD && isDeliveryCheckInReady(rawD) && isNear) {
+    if (!sc.standaloneMode && rawD && isDeliveryCheckInReady(rawD) && isNear) {
       delivery = rawD;
     }
     return { delivery: delivery, isPalletTarget: false };
@@ -2330,7 +2449,7 @@
   function handleScannerKey(rawAction, val) {
     const action = rawAction === 'neg' ? 'minus' : (rawAction === 'done' ? 'plus' : rawAction);
     const ctx = getActiveScannerContext();
-    const d = ctx.delivery;
+    let d = ctx.delivery;
 
     ensureScannerSession(d);
     const sc = state.scanner;
@@ -2449,7 +2568,9 @@
         if (res && res.ok && (res.loaded || res.scanned) && typeof state.hooks.onBarcodeScanned === 'function') {
           state.hooks.onBarcodeScanned();
         }
-        const curD = getActiveDeliveryEnriched() || d;
+        const curD = (hoveredBox.deliveryId ? getDeliveryById(hoveredBox.deliveryId) : null) ||
+          getActiveDeliveryEnriched() ||
+          d;
         if (curD && typeof state.hooks.onReceiptUpdated === 'function') state.hooks.onReceiptUpdated(curD);
         return true;
       }
@@ -2790,6 +2911,7 @@
 
         const expUnitsVal = rawU;
         const expCostVal = rawCents > 0 ? Number((rawCents / 100).toFixed(2)) : null;
+        const targetD = (!state.nightDropPanelOpen ? (d || findMatchingInsideDeliveryByHeaders(sc.headers)) : null);
 
         const blankRes = validateAndCreateBlankReceipt({
           vendorNo: sc.headers.vendorNo,
@@ -2798,7 +2920,7 @@
           expectedUnits: expUnitsVal,
           expectedCost: expCostVal,
           source: 'scanner',
-          deliveryId: d ? d.id : null
+          deliveryId: targetD ? targetD.id : null
         });
         if (!blankRes.ok) {
           playError();
@@ -2818,7 +2940,8 @@
         sc.expectedCost = expCostVal;
         sc.expectedNegative = false;
         sc.activeReceiptNo = blankRec.receiptNumber;
-        sc.standaloneMode = !d;
+        sc.standaloneMode = !targetD;
+        d = targetD;
         sc.screen = 'scanning';
         sc.phase = 'scanning';
         sc.activeField = 'productCode';
@@ -2907,10 +3030,13 @@
           if (res && res.ok && (res.loaded || res.scanned) && typeof state.hooks.onBarcodeScanned === 'function') {
             state.hooks.onBarcodeScanned();
           }
+          d = (hoveredBox.deliveryId ? getDeliveryById(hoveredBox.deliveryId) : null) ||
+            getActiveDeliveryEnriched() ||
+            d;
           if (d && typeof state.hooks.onReceiptUpdated === 'function') state.hooks.onReceiptUpdated(d);
           return true;
         }
-        const scanDeliv = getActiveDeliveryEnriched() || d;
+        const scanDeliv = d || getActiveDeliveryEnriched();
         if (!scanDeliv) {
           playBeep();
           setScannerMessage('', 'info');
@@ -3117,7 +3243,10 @@
   }
 
   function scanSpecificBox(box) {
-    const d = getActiveDeliveryEnriched();
+    if (box && box.deliveryId && typeof state.hooks.focusDeliveryById === 'function') {
+      state.hooks.focusDeliveryById(box.deliveryId);
+    }
+    const d = (box && box.deliveryId ? getDeliveryById(box.deliveryId) : null) || getActiveDeliveryEnriched();
     if (!d || !isDeliveryCheckInReady(d)) {
       return { ok: false, reason: 'no_delivery' };
     }
@@ -4419,6 +4548,7 @@
 
   function commitManualLineItem(d) {
     const sc = state.scanner;
+    d = d || getActiveScannerContext().delivery || (!state.nightDropPanelOpen ? findMatchingInsideDeliveryByHeaders(sc.headers) : null);
     const prod = lookupProductForDelivery(d, sc.productCode);
     if (!prod) {
       playError();
@@ -4500,6 +4630,7 @@
 
   function finalizeScannerDocument(d) {
     const sc = state.scanner;
+    d = d || getActiveScannerContext().delivery || (!state.nightDropPanelOpen ? findMatchingInsideDeliveryByHeaders(sc.headers) : null);
     const stats = getStats();
     const finalItems = sc.scannedItems.filter((it) => it.qty !== 0);
 
@@ -4652,7 +4783,7 @@
     if (!headerMatchesDelivery) {
       playError();
       setScannerMessage('WRONG HEADER — EDIT IN [2]', 'warn');
-      notify('⚠️ Receipt #' + latestNo + ' saved, but header differs from paperwork! Edit Receipt Header in Terminal [2].', 5000);
+      notify('⚠️ Receipt #' + latestNo + ' saved, but header differs from paperwork! Edit Receipt Header in Terminal [2].', 'high');
     } else if (!bothDone) {
       playSuccess();
       const needsInvoice = Boolean(d.docStates.invoiceRequired && !d.docStates.invoiceCreated);
@@ -4682,7 +4813,7 @@
       const reason = (d.requiresTempCheck && !d.tempChecked)
         ? 'Refused cold delivery without running Temp Probe!'
         : 'Refused delivery when temp check did not fail!';
-      notify('❌ PENALTY (-300 pts): ' + reason, 5000);
+      notify('❌ PENALTY (-300 pts): ' + reason, 'critical');
     } else {
       playSuccess();
       if (stats) {
@@ -6832,8 +6963,9 @@
     if (!Array.isArray(state.archiveData) || state.archiveData.length <= 1) return;
 
     const cfg = (getCatalog() && getCatalog().SHIFT_CONFIG) || {};
-    const minT = Number(cfg.minTasks) || 2;
-    const maxT = Number(cfg.maxTasks) || 4;
+    const isDay1 = getWorkdayIndex() === 1;
+    const minT = isDay1 ? 1 : (Number(cfg.minTasks) || 1);
+    const maxT = isDay1 ? 1 : (Number(cfg.maxTasks) || 2);
     const cutoffMinute = Number(cfg.taskCutoffMinute) || 690; // 11:30 AM
     const desiredCount = minT + Math.floor(Math.random() * (Math.max(minT, maxT) - minT + 1));
 
@@ -7389,16 +7521,16 @@
         const res = ct.submitRecallCount(state.terminalRecallCount);
         if (!res || !res.ok) {
           playError();
-          notify('❌ Enter a valid affected unit count!');
+          notify('❌ Enter a valid affected unit count!', 'high');
           return;
         }
         state.terminalRecallCount = '';
         if (res.matched) {
           playSuccess();
-          notify('🎉 RECALL COMPLETE! "' + res.productName + '" verified (+500 pts).', 4200);
+          notify('🎉 RECALL COMPLETE! "' + res.productName + '" verified (+500 pts).', 'status');
         } else {
           playError();
-          notify('⚠️ Recall count mismatch recorded. Task completed with error (-100 pts).', 4200);
+          notify('⚠️ Recall count mismatch recorded. Task completed with error (-100 pts).', 'critical');
         }
         renderTerminalUI();
       });
@@ -7895,7 +8027,8 @@
     state.resolvedNightDrops = [];
     if (pool.length === 0) return;
 
-    const count = Math.min(pool.length, 1 + Math.floor(Math.random() * 2)); // 1 to 2 overnight vendor invoices
+    const maxNd = getWorkdayIndex() === 1 ? 1 : 2;
+    const count = Math.min(pool.length, 1 + Math.floor(Math.random() * maxNd)); // Day 1: max 1; Day 2+: 1 to 2 overnight vendor invoices
     const usedVendorKeys = new Set();
     const usedInvNos = new Set();
 
@@ -8302,7 +8435,7 @@
     if (rec.voided) return { ok: false, error: 'Cannot print Store Copy of a VOID receipt.' };
     if (!rec.finalized) return { ok: false, error: 'Finalize INITIAL receipt before printing a Store Copy.' };
     if (isPreviousDayReceipt(rec) || rec.cleared) return { ok: false, error: 'Receipt already cleared from prior shift.' };
-    if (isHomeOfficeTaskArchiveReceipt(rec)) return { ok: false, error: 'Home Office archive corrections file automatically to the 32-Day Archive.' };
+    if (isHomeOfficeTaskArchiveReceipt(rec)) return { ok: false, error: 'Home Office archive corrections file automatically to the 90-Day Archive.' };
 
     rec.storeCopyPrinted = true;
     if (typeof state.hooks.onReceiptPrinted === 'function') {
@@ -8837,15 +8970,23 @@
       vendorFolders.push(folder);
     });
 
+    generateArchiveData(false);
+    const archivedTodayEntry = {
+      dateStr: snap.dateLabel + ' (FILED TODAY)',
+      shortDate: formatShortDateFromSnap(snap),
+      isToday: true,
+      isCampaignDay: true,
+      placeholder: false,
+      colorHex: '#22c55e',
+      vendors: vendorFolders
+    };
     if (state.archiveData.length > 0 && state.archiveData[0].isToday) {
-      state.archiveData[0] = {
-        dateStr: snap.dateLabel + ' (FILED TODAY)',
-        shortDate: formatShortDateFromSnap(snap),
-        isToday: true,
-        placeholder: false,
-        colorHex: '#22c55e',
-        vendors: vendorFolders
-      };
+      state.archiveData[0] = archivedTodayEntry;
+    } else {
+      state.archiveData.unshift(archivedTodayEntry);
+      if (state.archiveData.length > MAX_ARCHIVE_DAYS) {
+        state.archiveData.length = MAX_ARCHIVE_DAYS;
+      }
     }
 
     playSuccess();
@@ -8855,7 +8996,8 @@
     notifyDeskStateChanged();
   }
 
-  // ---- 32-DAY FILE CABINET ARCHIVE ----
+  // ---- 90-DAY FILE CABINET ARCHIVE ----
+  const MAX_ARCHIVE_DAYS = 90;
   const ARCHIVE_COLORS = ['#ef4444', '#f97316', '#eab308', '#22c55e', '#3b82f6', '#a855f7', '#ec4899'];
   const MONTHS = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
 
@@ -8941,39 +9083,48 @@
     return state.archiveHistoryPromise;
   }
 
+  function isCampaignArchiveDay(day) {
+    if (!day) return false;
+    if (day.isToday || day.isCampaignDay) return true;
+    const ds = String(day.dateStr || '');
+    return !day.placeholder && /(?:FEB|MAR)\s+\d{1,2},\s+\d{4}/i.test(ds);
+  }
+
   function restoreHistoricalArchiveDays() {
-    const todayAndFiledFeb = state.archiveData.filter((day) => day && (day.isToday || String(day.dateStr || '').startsWith('FEB')));
+    const todayAndFiledCampaign = state.archiveData.filter(isCampaignArchiveDay);
     if (state.staticArchiveHistory && Array.isArray(state.staticArchiveHistory.days) && state.staticArchiveHistory.days.length > 0) {
       const freshJan = state.staticArchiveHistory.days.map((rawDay) => cloneArchiveDataPayload(rawDay));
-      state.archiveData = todayAndFiledFeb.concat(freshJan);
+      state.archiveData = todayAndFiledCampaign.concat(freshJan);
     } else if (Array.isArray(state.proceduralArchiveSnapshot) && state.proceduralArchiveSnapshot.length > 0) {
       const freshJan = state.proceduralArchiveSnapshot.map((rawDay) => cloneArchiveDataPayload(rawDay));
-      state.archiveData = todayAndFiledFeb.concat(freshJan);
+      state.archiveData = todayAndFiledCampaign.concat(freshJan);
     }
-    if (state.archiveData.length > 32) {
-      state.archiveData.length = 32;
+    if (state.archiveData.length > MAX_ARCHIVE_DAYS) {
+      state.archiveData.length = MAX_ARCHIVE_DAYS;
     }
   }
 
   function generateArchiveData(forceHistorical) {
-    const snap = getClock() ? getClock().getTimeSnapshot() : { dateLabel: 'FEB 1, 1996' };
+    const snap = getClock() ? getClock().getTimeSnapshot() : { dateLabel: 'THU FEB 01, 1996' };
     const existingToday = (state.archiveData.length > 0 && state.archiveData[0].isToday)
       ? state.archiveData[0]
       : {
         dateStr: snap.dateLabel + ' (TODAY)',
         isToday: true,
+        isCampaignDay: true,
         placeholder: true,
         colorHex: '#22c55e',
         vendors: []
       };
 
-    const needsHistorical = Boolean(forceHistorical) || state.archiveData.length <= 1;
+    const existingFiledCampaign = state.archiveData.filter((day) => day && !day.isToday && isCampaignArchiveDay(day));
+    const needsHistorical = Boolean(forceHistorical) || state.archiveData.length <= (1 + existingFiledCampaign.length);
     if (!needsHistorical) {
       state.archiveData[0] = existingToday;
       return;
     }
 
-    state.archiveData = [existingToday];
+    state.archiveData = [existingToday].concat(existingFiledCampaign);
 
     // Prefer the loaded static January 1996 archive dataset (from dsd-archive-history.json / fallback)
     if (state.staticArchiveHistory && Array.isArray(state.staticArchiveHistory.days) && state.staticArchiveHistory.days.length > 0) {
@@ -9090,7 +9241,6 @@
     if (existsIdx !== -1) {
       state.pinnedArchiveItems.splice(existsIdx, 1);
       playBeep();
-      notify('📌 Document #' + item.docNo + ' unpinned from desk.');
     } else {
       // Strictly 1 pinned document slot to prevent desk clutter (matches 2D rule)
       state.pinnedArchiveItems = [{
@@ -9105,7 +9255,6 @@
         totalAmount: Number(item.totalAmount) || 0
       }];
       playSuccess();
-      notify('📌 Document #' + item.docNo + ' pinned to Desk Inbox Tray (1/1 slot)!', 3500);
     }
     notifyDeskStateChanged();
     if (state.archiveOpen) renderInvoiceArchive();
@@ -9148,7 +9297,7 @@
     const vIdx = Math.max(0, Math.min(vendors.length - 1, state.archiveSelectedVendorIdx));
     const currentVendor = vendors[vIdx] || null;
 
-    let sidebarHtml = '<div class="arch-sidebar-hdr">32-DAY FILE CABINET ARCHIVE<br><span style="font-size:10px;color:#94a3b8;">PINNED DESK SLOT: ' + state.pinnedArchiveItems.length + '/1</span></div>';
+    let sidebarHtml = '<div class="arch-sidebar-hdr">90-DAY FILE CABINET ARCHIVE<br><span style="font-size:10px;color:#94a3b8;">PINNED DESK SLOT: ' + state.pinnedArchiveItems.length + '/1</span></div>';
     state.archiveData.forEach((day, dIdx) => {
       const expanded = dIdx === dayIdx;
       const docCount = (day.vendors || []).reduce((s, v) => s + 1 + (v.creditDoc ? 1 : 0), 0);
@@ -9578,7 +9727,7 @@
 
   function exportState() {
     const archiveFebDays = (state.archiveData || [])
-      .filter((day) => day && (day.isToday || String(day.dateStr || '').startsWith('FEB')))
+      .filter(isCampaignArchiveDay)
       .map((day) => deepCloneData(day));
 
     return {

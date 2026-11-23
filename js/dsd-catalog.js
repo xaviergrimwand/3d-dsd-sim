@@ -8,6 +8,7 @@
   const SHIFT_CONFIG = Object.freeze({
     shiftStartHour: 6,
     shiftDurationHours: 8,
+    overtimeWindowHours: 1,
     timeSpeedMultiplier: 1,
     msPerGameMinute: 6000,
     deliveryCutoffHour: 12,
@@ -22,8 +23,8 @@
     maxNightDrops: 2,
     minNightDropCases: 2,
     maxNightDropCases: 4,
-    minTasks: 2,
-    maxTasks: 4,
+    minTasks: 1,
+    maxTasks: 2,
     taskCutoffMinute: 690, // 11:30 AM stop dropping daily Home Office tasks
     taskFrequencySec: 180,
     discrepancyRate: 25,
@@ -68,7 +69,8 @@
       supplyOutOfStock: -200,
       wrongClaimDisposition: -50,
       wrongHazwasteDisposition: -150,
-      wrongTaskAction: -100
+      wrongTaskAction: -100,
+      overtimePenalty: -100
     })
   });
 

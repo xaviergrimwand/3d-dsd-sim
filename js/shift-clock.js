@@ -40,6 +40,9 @@
     workdayIndex: 1,
     paused: false,
     systemPaused: false, // Reserved for a future in-game system/pause menu (not active yet)
+    preEndWarned: false,
+    shiftEndAlerted: false,
+    lastOvertimeMark: 840,
     shiftEnded: false,
     campaignComplete: false,
     doorTimers: {
@@ -51,6 +54,8 @@
     },
     listeners: {
       onShiftEnd: [],
+      onPreShiftEndWarning: [],
+      onOvertime: [],
       onDoorWarning: [],
       onDoorPenalty: [],
       onMinuteTick: []
@@ -80,11 +85,21 @@
 
   function getShiftEndHour() {
     const cfg = getConfig();
-    return cfg.shiftStartHour + cfg.shiftDurationHours;
+    return cfg.shiftStartHour + cfg.shiftDurationHours; // Scheduled shift end (2:00 PM)
   }
 
   function getShiftEndMinutes() {
     return getShiftEndHour() * 60;
+  }
+
+  function getHardCutoffHour() {
+    const cfg = getConfig();
+    const otWindow = cfg.overtimeWindowHours !== undefined ? cfg.overtimeWindowHours : 1;
+    return getShiftEndHour() + otWindow; // Hard cutoff (3:00 PM)
+  }
+
+  function getHardCutoffMinutes() {
+    return getHardCutoffHour() * 60;
   }
 
   function getCurrentTotalMinutes() {
@@ -99,8 +114,12 @@
     return state.hour >= (getConfig().deliveryCutoffHour || 12);
   }
 
-  function isShiftOver() {
+  function isOvertime() {
     return getCurrentTotalMinutes() >= getShiftEndMinutes();
+  }
+
+  function isShiftOver() {
+    return getCurrentTotalMinutes() >= getHardCutoffMinutes();
   }
 
   function resetClockToShiftStart() {
@@ -110,6 +129,9 @@
     state.second = 0;
     state.millisecond = 0;
     state.gameMinuteProgress = 0;
+    state.preEndWarned = false;
+    state.shiftEndAlerted = false;
+    state.lastOvertimeMark = getShiftEndMinutes();
     state.shiftEnded = false;
     Object.keys(state.doorTimers).forEach((k) => {
       state.doorTimers[k] = createDoorTimerState();
@@ -228,15 +250,50 @@
 
     checkDoorTimers();
 
+    const nowTotalMin = getCurrentTotalMinutes();
+    const scheduledEndMin = getShiftEndMinutes();
+    const hardCutoffMin = getHardCutoffMinutes();
+
+    if (!state.preEndWarned && nowTotalMin >= scheduledEndMin - 10 && nowTotalMin < hardCutoffMin) {
+      state.preEndWarned = true;
+      emit('onPreShiftEndWarning', {
+        minutesRemaining: Math.max(0, scheduledEndMin - nowTotalMin),
+        time: getTimeSnapshot()
+      });
+    }
+
+    if (!state.shiftEndAlerted && nowTotalMin >= scheduledEndMin) {
+      state.shiftEndAlerted = true;
+      emit('onOvertime', {
+        isStart: true,
+        isCutoff: false,
+        overtimeMinutes: 0,
+        penaltyPoints: 0,
+        time: getTimeSnapshot()
+      });
+    }
+
+    while (nowTotalMin >= state.lastOvertimeMark + 10 && state.lastOvertimeMark < hardCutoffMin) {
+      state.lastOvertimeMark += 10;
+      const otMin = Math.max(0, state.lastOvertimeMark - scheduledEndMin);
+      emit('onOvertime', {
+        isStart: false,
+        isCutoff: state.lastOvertimeMark >= hardCutoffMin,
+        overtimeMinutes: otMin,
+        penaltyPoints: 100,
+        time: getTimeSnapshot()
+      });
+    }
+
     if (isShiftOver() && !state.shiftEnded) {
-      const endHour = getShiftEndHour();
-      state.hour = Math.floor(endHour);
-      state.minute = Math.round((endHour % 1) * 60);
+      const cutoffHour = getHardCutoffHour();
+      state.hour = Math.floor(cutoffHour);
+      state.minute = Math.round((cutoffHour % 1) * 60);
       state.second = 0;
       state.millisecond = 0;
       state.gameMinuteProgress = 0;
       state.shiftEnded = true;
-      emit('onShiftEnd', { reason: 'clock_reached_end', time: getTimeSnapshot() });
+      emit('onShiftEnd', { reason: 'hard_cutoff_3pm', time: getTimeSnapshot() });
     }
   }
 
@@ -338,6 +395,8 @@
       dateLabel: formatDateShort(),
       workdayIndex: state.workdayIndex,
       afterNoon: isAfterNoon(),
+      overtime: isOvertime(),
+      overtimeMinutes: Math.max(0, getCurrentTotalMinutes() - getShiftEndMinutes()),
       shiftOver: isShiftOver(),
       shiftEnded: state.shiftEnded,
       campaignComplete: state.campaignComplete
@@ -369,6 +428,9 @@
       },
       workdayIndex: Number(state.workdayIndex) || 1,
       paused: Boolean(state.paused),
+      preEndWarned: Boolean(state.preEndWarned),
+      shiftEndAlerted: Boolean(state.shiftEndAlerted),
+      lastOvertimeMark: Number(state.lastOvertimeMark) || getShiftEndMinutes(),
       shiftEnded: Boolean(state.shiftEnded),
       campaignComplete: Boolean(state.campaignComplete),
       doorTimers: timersCopy
@@ -392,6 +454,13 @@
     state.workdayIndex = Number.isFinite(Number(data.workdayIndex)) ? Number(data.workdayIndex) : 1;
     state.paused = Boolean(data.paused);
     state.systemPaused = false;
+    const scheduledEndMin = getShiftEndMinutes();
+    const impTotalMin = getCurrentTotalMinutes();
+    state.preEndWarned = data.preEndWarned !== undefined ? Boolean(data.preEndWarned) : (impTotalMin >= scheduledEndMin - 10);
+    state.shiftEndAlerted = data.shiftEndAlerted !== undefined ? Boolean(data.shiftEndAlerted) : (impTotalMin >= scheduledEndMin);
+    state.lastOvertimeMark = Number.isFinite(Number(data.lastOvertimeMark))
+      ? Number(data.lastOvertimeMark)
+      : Math.max(scheduledEndMin, scheduledEndMin + Math.floor(Math.max(0, impTotalMin - scheduledEndMin) / 10) * 10);
     state.shiftEnded = Boolean(data.shiftEnded);
     state.campaignComplete = Boolean(data.campaignComplete);
     const savedTimers = (data.doorTimers && typeof data.doorTimers === 'object') ? data.doorTimers : {};
@@ -423,9 +492,12 @@
     getShiftStartMinutes: getShiftStartMinutes,
     getShiftEndHour: getShiftEndHour,
     getShiftEndMinutes: getShiftEndMinutes,
+    getHardCutoffHour: getHardCutoffHour,
+    getHardCutoffMinutes: getHardCutoffMinutes,
     getCurrentTotalMinutes: getCurrentTotalMinutes,
     getExactTotalMinutes: getExactTotalMinutes,
     isAfterNoon: isAfterNoon,
+    isOvertime: isOvertime,
     isShiftOver: isShiftOver,
     startDoorTimer: startDoorTimer,
     stopDoorTimer: stopDoorTimer,
