@@ -12,3 +12,6 @@ desktop.ini
 
 # Astrocade local session metadata (if copied)
 .astrocade_session.json
+
+# Standalone UI test sandboxes
+tooltip-testing.html
