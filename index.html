@@ -22,6 +22,8 @@
   <script src="./js/save-system.js?v=20261122w"></script>
   <script src="./js/menu-ui.js?v=20261122q"></script>
   <script src="./game.js?v=20261123d"></script>
+  <script src="./js/infotip-renderer.js?v=20261124a"></script>
+  <script src="./js/infotip-adapters.js?v=20261124a"></script>
   <script src="./js/dock-runtime.js?v=20261123i"></script>
   <link rel="stylesheet" href="./css/styles.css?v=20261123h">
 </head>
@@ -31,12 +33,10 @@
     <div id="command-ribbon-bg" aria-hidden="true"></div>
     <div id="reticle"></div>
 
-    <div id="box-hover-pill"
-      style="display:none; position:absolute; pointer-events:none; z-index:59; background:rgba(15,23,42,0.92); color:#f8fafc; border:1px solid #38bdf8; border-radius:6px; padding:4px 9px; font-size:11px; font-weight:700; white-space:nowrap; box-shadow:0 4px 12px rgba(0,0,0,0.5);">
-    </div>
+    <div id="hud-infotip" class="hud-infotip" role="status" aria-live="polite" style="display:none;"></div>
     <div id="overage-mode-pill" style="display:none;">
       <span id="overage-mode-text">🚩 OVERAGE MODE — Aim &amp; click excess case(s) on Cart/Pallet</span>
-      <button type="button" id="btn-overage-done">RETURN TO INVOICE [ESC]</button>
+      <button type="button" id="btn-overage-done">RETURN TO INVOICE</button>
     </div>
 
     <!-- Top HUD Info -->
@@ -46,7 +46,7 @@
         <span id="hitch-pallet-name" style="color: #fff;">None</span>
       </div>
       <div id="hud-top-right-row">
-        <div class="hud-card" id="door-lights-panel" aria-label="Live door beacon lights">
+        <div class="hud-card" id="door-lights-panel" tabindex="0" title="Hover or press [B] to view Dock Beacons" aria-label="Live door beacon lights and door status" aria-expanded="false" aria-controls="hud-door-lights-popup">
           <div class="dlp-lights-row">
             <div class="dlp-item">
               <span class="dlp-label">D1</span>
@@ -76,6 +76,23 @@
               <span id="dlp-sd-queue-txt" class="dlp-sd-val">0</span>
             </span>
           </div>
+          <div id="hud-door-lights-popup" role="tooltip" aria-hidden="true">
+            <div class="dlp-pop-hdr">
+              <span>SIDE DOOR QUEUE</span>
+              <span class="dlp-pop-sub" id="hud-door-lights-count">CLEAR</span>
+            </div>
+            <div class="dlp-pop-rows" id="hud-door-lights-rows"></div>
+            <div class="dlp-pop-leg-hdr">LIGHT &amp; PANEL KEY</div>
+            <div class="dlp-pop-key">
+              <span class="dlp-key-item"><span class="dlp-key-dot is-ok"></span>Closed / Empty</span>
+              <span class="dlp-key-item"><span class="dlp-key-dot is-warn"></span>Open · Active</span>
+              <span class="dlp-key-item"><span class="dlp-key-dot is-warn-flash"></span>Wait In / Out</span>
+              <span class="dlp-key-item"><span class="dlp-key-dot is-crit"></span>Open Empty</span>
+              <span class="dlp-key-item"><span class="dlp-key-dot is-crit-flash"></span>5m+ Alarm</span>
+              <span class="dlp-key-item"><span class="dlp-key-wh">WH</span>Whse Priority</span>
+              <span class="dlp-key-item"><span class="dlp-key-qbox">#</span>Outside Queue</span>
+            </div>
+          </div>
         </div>
         <button id="pause-menu-btn" type="button" title="System &amp; Pause Menu [ESC]" aria-label="System Menu">
           <span>SYSTEM</span>
@@ -86,7 +103,7 @@
 
     <!-- Centered Top-Middle Retro Red LCD Timeclock + Live Shift Stats & Points Tracker -->
     <div id="top-clock-cluster">
-      <div id="retro-digital-clock" aria-label="In-game digital clock">
+      <div id="retro-digital-clock" tabindex="0" title="Hover or press [C] to toggle February 1996 Calendar" aria-label="In-game digital clock and February 1996 shift calendar" aria-expanded="false" aria-controls="hud-clock-calendar">
         <div class="rdc-screws" aria-hidden="true"><span></span><span></span></div>
         <div class="rdc-bezel">
           <div class="rdc-screen">
@@ -113,9 +130,25 @@
             </div>
           </div>
         </div>
+        <div id="hud-clock-calendar" role="tooltip" aria-hidden="true">
+          <div class="cal-pop-hdr">
+            <span>FEBRUARY 1996</span>
+            <span class="cal-pop-day" id="hud-cal-workday">DAY 1/21</span>
+          </div>
+          <div class="cal-dow-row" aria-hidden="true">
+            <span class="is-wknd">SUN</span><span>MON</span><span>TUE</span><span>WED</span><span>THU</span><span>FRI</span><span class="is-wknd">SAT</span>
+          </div>
+          <div class="cal-grid" id="hud-clock-cal-grid"></div>
+          <div class="cal-pop-key">
+            <span class="cal-key-item"><span class="cal-key-swatch is-work" aria-hidden="true"></span><span>Workday</span></span>
+            <span class="cal-key-item"><span class="cal-key-swatch is-today" aria-hidden="true"></span><span>Today</span></span>
+            <span class="cal-key-item"><span class="cal-key-swatch is-done" aria-hidden="true"><svg viewBox="0 0 16 16"><path d="M3 3L13 13M13 3L3 13"/></svg></span><span>Completed</span></span>
+            <span class="cal-key-item"><span class="cal-key-swatch is-wknd" aria-hidden="true"></span><span>Weekend</span></span>
+          </div>
+        </div>
       </div>
 
-      <div class="hud-card" id="hud-remaining-tracker" tabindex="0" aria-label="Remaining Work and Points Tracker" aria-expanded="false" aria-controls="hud-remaining-legend">
+      <div class="hud-card" id="hud-remaining-tracker" tabindex="0" title="Hover or press [K] to toggle Remaining Work Guide" aria-label="Remaining Work and Points Tracker" aria-expanded="false" aria-controls="hud-remaining-legend">
         <div class="rem-hdr">
           <span class="rem-title">REMAINING WORK</span>
           <span class="rem-hdr-badges">
@@ -178,7 +211,10 @@
       <canvas id="minimap-canvas" width="110" height="240"></canvas>
     </div>
 
-    <button id="lock-hint" title="Toggle pointer lock">Click to lock mouse</button>
+    <div id="bottom-left-controls">
+      <button id="lock-hint" title="Toggle pointer lock (Hold Ctrl or press Esc to unlock)">Click to lock mouse</button>
+      <button id="btn-seed-test-receipts" type="button" title="Populate dummy interactive receipts for all departments">Seed Test Receipts</button>
+    </div>
 
     <!-- Command Bar Session Message Center -->
     <div id="hud-msg-center" aria-label="Session Message Log">
@@ -210,18 +246,6 @@
         <button id="pending-toggle-btn" type="button" aria-label="Toggle Pending Deliveries">▼</button>
       </div>
       <div id="pending-deliveries-list"></div>
-    </div>
-
-    <!-- Context Interaction Prompts -->
-    <div id="prompt-container">
-      <div id="prompt-door" class="action-prompt door-action">[E] Push Button - Toggle Dock Door</div>
-      <div id="prompt-side-door" class="action-prompt door-action">[E] Toggle Side Rollup Door (Vendor Entry)</div>
-      <div id="prompt-pallet" class="action-prompt">[Space] Hitch Pallet Jack</div>
-      <div id="prompt-terminal" class="action-prompt secondary">[E] Access Receiving Terminal</div>
-      <div id="prompt-desk" class="action-prompt secondary" style="border-left-color: #f59e0b;">[E] Inspect Desk
-        Paperwork</div>
-      <div id="prompt-driver" class="action-prompt secondary" style="border-left-color: #3b82f6;">[E] Speak with Driver
-        / Review Invoice</div>
     </div>
 
     <!-- Alert / Notice Banners -->
@@ -658,7 +682,7 @@
     <div id="door-queue-modal">
       <div class="dq-header">
         <div class="dq-title">SIDE DOOR ENTRY QUEUE</div>
-        <button type="button" class="dq-btn dq-btn-close" id="dq-close-btn">[ESC] WAIT</button>
+        <button type="button" class="dq-btn dq-btn-close" id="dq-close-btn">WAIT</button>
       </div>
       <div class="dq-subbar">
         <span id="dq-slot-summary">WAITING OUTSIDE: 0 / 5 (D1-D4 + SD)</span>
@@ -679,7 +703,7 @@
     <div id="trash-receipt-modal">
       <div class="dq-header">
         <div class="dq-title" style="color:#f87171;">🗑️ TRASH CAN — DISCARD PRINTED RECEIPTS</div>
-        <button type="button" class="dq-btn dq-btn-sec" id="trm-close-btn">[ESC] KEEP ALL</button>
+        <button type="button" class="dq-btn dq-btn-sec" id="trm-close-btn">KEEP ALL</button>
       </div>
       <div class="dq-subbar">
         <span id="trm-summary">HELD PRINT-OUTS: 0</span>
@@ -698,7 +722,7 @@
     <div id="hand-receipt-modal">
       <div class="dq-header">
         <div class="dq-title" id="hrm-title" style="color:#4ade80;">📄 HAND RECEIPTS TO DRIVER</div>
-        <button type="button" class="dq-btn dq-btn-close" id="hrm-close-btn">[ESC] WAIT</button>
+        <button type="button" class="dq-btn dq-btn-close" id="hrm-close-btn">WAIT</button>
       </div>
       <div class="dq-subbar">
         <span id="hrm-summary">HELD PRINT-OUTS: 0</span>
@@ -718,7 +742,7 @@
     <div id="shortage-qty-modal">
       <div class="dq-header">
         <div class="dq-title" style="color:#fbbf24;">📝 STAMP SHORTAGE QUANTITY</div>
-        <button type="button" class="dq-btn dq-btn-sec" id="sqm-close-btn">[ESC] CANCEL</button>
+        <button type="button" class="dq-btn dq-btn-sec" id="sqm-close-btn">CANCEL</button>
       </div>
       <div class="dq-subbar">
         <span id="sqm-item-code">ITEM #0000</span>
@@ -908,7 +932,7 @@
       <div class="slm-card">
         <div class="slm-hdr">
           <h3 id="slm-title">📂 LOAD SHIFT PROGRESS</h3>
-          <button id="slm-close-btn" class="nd-close-btn" type="button">[ESC] CLOSE</button>
+          <button id="slm-close-btn" class="nd-close-btn" type="button">CLOSE</button>
         </div>
         <div id="slm-subtitle" class="slm-subtitle">Choose a slot to continue or manage saved shifts.</div>
         <div id="slm-slots-list" class="slm-slots-list"></div>
@@ -926,7 +950,7 @@
       <div class="mim-card">
         <div class="slm-hdr">
           <h3 id="mim-title">ℹ️ ABOUT</h3>
-          <button id="mim-close-btn" class="nd-close-btn" type="button">[ESC] CLOSE</button>
+          <button id="mim-close-btn" class="nd-close-btn" type="button">CLOSE</button>
         </div>
         <div id="mim-body" class="mim-body"></div>
       </div>
@@ -937,11 +961,11 @@
       <div class="gam-card">
         <div class="gam-hdr">
           <h3 id="gam-title">⚠️ NOTICE</h3>
-          <button id="gam-close-btn" class="nd-close-btn" type="button">[ESC] CLOSE</button>
+          <button id="gam-close-btn" class="nd-close-btn" type="button">CLOSE</button>
         </div>
         <div id="gam-body" class="gam-body"></div>
         <div class="gam-ftr">
-          <button id="gam-ok-btn" class="gam-ok-btn" type="button">OK [ENTER]</button>
+          <button id="gam-ok-btn" class="gam-ok-btn" type="button">OK</button>
         </div>
       </div>
     </div>

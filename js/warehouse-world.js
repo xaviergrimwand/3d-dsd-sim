@@ -1554,13 +1554,13 @@
 
     scene.add(chargerGroup);
 
-    // Floor Recharging Bay Marking under Electric Jack Home Position (X = -7.20, Z = 0.50..2.38)
+    // Floor Recharging Bay Marking under Electric Jack Home Position (X = -7.20, Z = 0.57..2.47)
     const rechargeBayPad = new THREE.Mesh(
       new THREE.PlaneGeometry(1.12, 1.90),
       new THREE.MeshBasicMaterial({ color: 0xf59e0b, transparent: true, opacity: 0.20, depthWrite: false })
     );
     rechargeBayPad.rotation.x = -Math.PI / 2;
-    rechargeBayPad.position.set(-7.20, 0.005, doorZ + 1.45);
+    rechargeBayPad.position.set(-7.20, 0.005, doorZ + 1.52);
     scene.add(rechargeBayPad);
     const rechargeBorderMat = new THREE.MeshBasicMaterial({ color: 0xfacc15, depthWrite: false });
     [
@@ -1571,7 +1571,7 @@
     ].forEach(([bw, bh, ox, oz]) => {
       const stripe = new THREE.Mesh(new THREE.PlaneGeometry(bw, bh), rechargeBorderMat);
       stripe.rotation.x = -Math.PI / 2;
-      stripe.position.set(-7.20 + ox, 0.006, doorZ + 1.45 + oz);
+      stripe.position.set(-7.20 + ox, 0.006, doorZ + 1.52 + oz);
       scene.add(stripe);
     });
 
@@ -2786,6 +2786,8 @@
           : '[E] Trash Can Under Desk (No Held Receipt)';
       },
       interact: () => {
+        const slips = window.DSDReceipts && window.DSDReceipts.getPrintedSlipsCount ? window.DSDReceipts.getPrintedSlipsCount() : 0;
+        if (slips <= 0) return;
         if (document.exitPointerLock) document.exitPointerLock();
         if (typeof SoundSystem !== 'undefined' && SoundSystem.playMetalClang) SoundSystem.playMetalClang();
         if (window.DSDReceipts && typeof window.DSDReceipts.openTrashCanDialog === 'function') {
@@ -4948,22 +4950,92 @@
       solidWalls.push(bounds);
 
       const resolvedPalletId = palletId || `${rackId}_p${overstockPallets.length}`;
+      const hitbox = new THREE.Mesh(
+        new THREE.BoxGeometry(palletW + 0.16, 1.40, palletD + 0.16),
+        new THREE.MeshBasicMaterial({ visible: false })
+      );
+      hitbox.position.set(0, 0.70, 0);
+      group.add(hitbox);
+
       const rec = {
         palletId: resolvedPalletId,
         rackId,
         zone,
         label,
         accentCss,
+        homeX: x,
+        homeZ: z,
+        homeRotY: rotY,
         x,
         z,
         rotY,
         width: palletW,
         depth: palletD,
         topY: 0.136,
+        isHitched: false,
+        data: {
+          id: resolvedPalletId,
+          isOverstockPallet: true,
+          isWarehousePallet: false,
+          rackId,
+          targetZone: zone,
+          name: label || 'Overstock Floor Pallet',
+          caseCount: 0
+        },
+        position: group.position,
+        mesh: group,
+        hitbox,
         bounds,
         group,
         cargoGroup
       };
+
+      rec.syncPlacement = function (includeSolid) {
+        const px = rec.group.position.x;
+        const pz = rec.group.position.z;
+        const ry = rec.group.rotation.y;
+        rec.x = px;
+        rec.z = pz;
+        rec.rotY = ry;
+        const c = Math.abs(Math.cos(ry));
+        const s = Math.abs(Math.sin(ry));
+        const halfW = (c * rec.width + s * rec.depth) / 2;
+        const halfD = (s * rec.width + c * rec.depth) / 2;
+        rec.bounds.minX = px - halfW;
+        rec.bounds.maxX = px + halfW;
+        rec.bounds.minZ = pz - halfD;
+        rec.bounds.maxZ = pz + halfD;
+        const idx = solidWalls.indexOf(rec.bounds);
+        const shouldSolid = includeSolid !== undefined ? Boolean(includeSolid) : Boolean(rec.group.visible && !rec.isHitched);
+        if (shouldSolid && idx === -1) {
+          solidWalls.push(rec.bounds);
+        } else if (!shouldSolid && idx !== -1) {
+          solidWalls.splice(idx, 1);
+        }
+      };
+
+      const palletInteractible = {
+        id: `pallet_${resolvedPalletId}`,
+        type: 'pallet',
+        name: label || 'Overstock Pallet',
+        target: rec,
+        mesh: hitbox,
+        get boxCenter() {
+          return new THREE.Vector3(rec.group.position.x, 0.65, rec.group.position.z);
+        },
+        get boxQuaternion() {
+          return rec.group.quaternion;
+        },
+        boxSize: new THREE.Vector3(palletW + 0.06, 1.30, palletD + 0.06),
+        getPrompt: () => `[Space] Lift & Move Overstock Pallet (${label || resolvedPalletId})`,
+        interact: () => {
+          if (hooks.onHitchPallet) hooks.onHitchPallet(rec);
+        }
+      };
+      interactibles.push(palletInteractible);
+      hitbox.userData.interactible = palletInteractible;
+      rec.interactible = palletInteractible;
+
       overstockPallets.push(rec);
       return rec;
     }

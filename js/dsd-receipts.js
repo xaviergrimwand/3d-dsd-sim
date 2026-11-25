@@ -18,6 +18,7 @@
     selectedDeptNo: null,
     selectedVendorNo: null,
     supplierQuery: '',
+    receiptsDeptGroup: '01',
     manualDraft: null,
     terminalOpen: false,
     terminalActiveField: 'vendorNo', // create: 'vendorNo'|'deptNo'|'invoiceNo'|'productCode'|'quantity'; detail: 'vendorNo'|'deptNo'|'invoiceNo'; suppliers: 'search'
@@ -267,6 +268,33 @@
 
   function formatMoney(num) {
     return '$' + (Number(num) || 0).toFixed(2);
+  }
+
+  function formatIsoDateString(rawDate, snapFallback) {
+    const raw = String(rawDate || '').trim();
+    const isoM = /^(\d{4})-(\d{2})-(\d{2})$/.exec(raw);
+    if (isoM) return raw;
+    const months = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
+    const txtM = /(?:^|\s)([A-Z]{3})\s+(\d{1,2}),\s*(\d{4})/i.exec(raw);
+    if (txtM) {
+      const mIdx = months.indexOf(txtM[1].toUpperCase());
+      if (mIdx !== -1) {
+        return txtM[3] + '-' + String(mIdx + 1).padStart(2, '0') + '-' + String(parseInt(txtM[2], 10)).padStart(2, '0');
+      }
+    }
+    const slashM = /^(\d{1,2})\/(\d{1,2})\/(\d{2,4})$/.exec(raw);
+    if (slashM) {
+      const yr = slashM[3].length === 2 ? ('19' + slashM[3]) : slashM[3];
+      return yr + '-' + String(parseInt(slashM[1], 10)).padStart(2, '0') + '-' + String(parseInt(slashM[2], 10)).padStart(2, '0');
+    }
+    const s = snapFallback || (getClock() ? getClock().getTimeSnapshot() : null);
+    if (s) {
+      const mIdx = months.indexOf(String(s.monthName || 'FEB').toUpperCase());
+      const mm = String((mIdx >= 0 ? mIdx : 1) + 1).padStart(2, '0');
+      const dd = String(s.dayOfMonth || '01').padStart(2, '0');
+      return String(s.year || 1996) + '-' + mm + '-' + dd;
+    }
+    return '1996-02-01';
   }
 
   function formatShortDateFromSnap(snap, useFullYear) {
@@ -534,6 +562,15 @@
   // RECEIPT STORE (CREATE / EDIT HEADER / VOID)
   // =========================================================================
 
+  function resolveReceiptDocType(vendorNo, items, explicitType) {
+    const list = Array.isArray(items) ? items : [];
+    const isCredit = explicitType === 'credit' || (list.length > 0 && list.every((it) => Number(it.qty) < 0));
+    if (isCredit) return 'credit';
+    const vNo = padDigits(vendorNo, 3);
+    if (vNo === '011' || explicitType === 'po') return 'po';
+    return 'invoice';
+  }
+
   function createReceipt(params) {
     const stats = getStats();
     const clock = getClock();
@@ -542,9 +579,9 @@
     const deptNo = padDigits(params.deptNo, 2);
     const vendorNo = padDigits(params.vendorNo, 3);
     const invoiceNo = padDigits(params.invoiceNo, 6);
-    const receiptNumber = stats
+    const receiptNumber = params.receiptNumber || (stats
       ? stats.generateReceiptNumber(deptNo, state.processedReceipts)
-      : (deptNo + '-' + String(state.processedReceipts.length + 1).padStart(4, '0'));
+      : (deptNo + '-' + String(state.processedReceipts.length + 1).padStart(4, '0')));
 
     const items = (params.items || [])
       .filter((it) => (Number(it.qty) || 0) !== 0)
@@ -562,19 +599,22 @@
         };
       });
 
-    // A credit receipt is simply any receipt whose line items all have negative quantities
-    const isCreditReceipt = items.length > 0 && items.every((it) => it.qty < 0);
+    // Credit receipts have all negative quantities; V011 warehouse deliveries default to type 'po'
+    const resolvedType = resolveReceiptDocType(vendorNo, items, params.type);
     const totalAmount = items.reduce((sum, it) => sum + (it.qty * it.price), 0);
+    const recDate = params.date || snap.dateLabel;
+    const recDateIso = params.dateIso || formatIsoDateString(recDate, snap);
     const receipt = {
       receiptNumber: receiptNumber,
-      date: snap.dateLabel,
-      time: snap.formatted12h,
+      date: recDate,
+      dateIso: recDateIso,
+      time: params.time || snap.formatted12h,
       vendorNo: vendorNo,
       deptNo: deptNo,
       invoiceNo: invoiceNo,
       expectedUnits: params.expectedUnits !== undefined && params.expectedUnits !== null ? Number(params.expectedUnits) : null,
       expectedCost: params.expectedCost !== undefined && params.expectedCost !== null ? Number(params.expectedCost) : null,
-      type: isCreditReceipt ? 'credit' : 'invoice',
+      type: resolvedType,
       source: params.source || 'scanner',
       items: items,
       totalAmount: Number(totalAmount.toFixed(2)),
@@ -774,9 +814,8 @@
         };
       });
 
-    const isCreditReceipt = rec.items.length > 0 && rec.items.every((it) => it.qty < 0);
     const totalAmount = rec.items.reduce((sum, it) => sum + (it.qty * it.price), 0);
-    rec.type = isCreditReceipt ? 'credit' : 'invoice';
+    rec.type = resolveReceiptDocType(rec.vendorNo, rec.items, rec.items.length === 0 ? rec.type : undefined);
     rec.totalAmount = Number(totalAmount.toFixed(2));
 
     if (meta) {
@@ -998,6 +1037,7 @@
     rec.deptNo = deptNo;
     rec.vendorNo = vendorNo;
     rec.invoiceNo = invoiceNo;
+    rec.type = resolveReceiptDocType(vendorNo, rec.items, rec.items.length === 0 && rec.type === 'credit' ? 'credit' : undefined);
     rec.edited = true;
 
     // Keep open Scanner / Terminal header display synced if this receipt is currently open
@@ -1140,8 +1180,10 @@
     }
     state.archiveSelectedDay = 1;
     generateHomeOfficeTasksForShift();
+    syncArchiveReceiptsToLedger();
 
     state.scanner.inventoryMenuIdx = 0;
+    state.receiptsDeptGroup = '01';
     state.scanner.label = createInitialLabelState();
     state.scanner.inventory = createInitialInventoryState();
     state.scanner.supply = createInitialSupplyState();
@@ -1226,7 +1268,7 @@
 
         <div class="prh-store-hdr">
           STORE #0412 · RECEIVING DOCK<br/>
-          DSD ${slip.type === 'credit' ? 'CREDIT MEMO' : 'RECEIPT'} PRINT-OUT
+          DSD ${slip.type === 'credit' ? 'CREDIT MEMO' : (slip.type === 'po' ? 'PO RECEIPT' : 'RECEIPT')} PRINT-OUT
         </div>
 
         <div class="prh-meta">
@@ -1234,7 +1276,7 @@
           <span>TIME: ${escapeHtml(String(slip.time || ''))}</span>
           <span>VEND: #${escapeHtml(String(slip.vendorNo || '--'))}</span>
           <span>DEPT: #${escapeHtml(String(slip.deptNo || '--'))}</span>
-          <span>${slip.type === 'credit' ? 'CRED' : 'INV'}: #${escapeHtml(String(slip.invoiceNo || '--'))}</span>
+          <span>${slip.type === 'credit' ? 'CRED' : (slip.type === 'po' ? 'PO' : 'INV')}: #${escapeHtml(String(slip.invoiceNo || '--'))}</span>
           <span>DATE: ${escapeHtml(String(slip.dateStr || '02/01/1996'))}</span>
         </div>
 
@@ -1407,8 +1449,8 @@
       const checked = state.selectedTrashSlipIds.has(slip.slipId);
       const copyTag = slip.isCopy ? ('COPY #' + (slip.copyNumber || 2)) : 'ORIGINAL';
       const badgeCls = slip.isCopy ? 'wh' : 'sd';
-      const typeTxt = slip.type === 'credit' ? 'CREDIT MEMO' : 'INVOICE RECEIPT';
-      const invTag = (slip.type === 'credit' ? 'Cred #' : 'Inv #') + String(slip.invoiceNo || '--');
+      const typeTxt = slip.type === 'credit' ? 'CREDIT MEMO' : (slip.type === 'po' ? 'PO RECEIPT' : 'INVOICE RECEIPT');
+      const invTag = (slip.type === 'credit' ? 'Cred #' : (slip.type === 'po' ? 'PO #' : 'Inv #')) + String(slip.invoiceNo || '--');
       const totalStr = formatMoney(slip.totalAmount || 0);
       return '<div class="trm-row ' + (checked ? 'selected' : '') + '" data-slip-id="' + escapeHtml(slip.slipId) + '">' +
         '<input type="checkbox" ' + (checked ? 'checked' : '') + ' style="width:16px;height:16px;accent-color:#ef4444;cursor:pointer;">' +
@@ -1573,8 +1615,8 @@
       const badgeCls = isNeeded ? 'wh' : 'trk';
       const badgeTxt = isNeeded ? 'NEEDED ✓' : 'OTHER DOC';
       const copyTag = slip.isCopy ? ('COPY #' + (slip.copyNumber || 2)) : 'ORIGINAL';
-      const typeTxt = slip.type === 'credit' ? 'CREDIT' : 'INVOICE';
-      const invTag = (slip.type === 'credit' ? 'Cred #' : 'Inv #') + String(slip.invoiceNo || '--');
+      const typeTxt = slip.type === 'credit' ? 'CREDIT' : (slip.type === 'po' ? 'PO' : 'INVOICE');
+      const invTag = (slip.type === 'credit' ? 'Cred #' : (slip.type === 'po' ? 'PO #' : 'Inv #')) + String(slip.invoiceNo || '--');
       const totalStr = formatMoney(slip.totalAmount || 0);
       return '<div class="hrm-row ' + (checked ? 'selected ' : '') + (isNeeded ? '' : 'is-other') + '" data-hand-slip-id="' + escapeHtml(slip.slipId) + '">' +
         '<input type="checkbox" ' + (checked ? 'checked' : '') + ' style="width:16px;height:16px;accent-color:#22c55e;cursor:pointer;">' +
@@ -1929,12 +1971,15 @@
     return { delivery: delivery, isPalletTarget: false };
   }
 
-  const SCANNER_VALID_SCREENS = ['home', 'create', 'resume', 'scanning', 'list', 'totals', 'totals-edit', 'confirm-finalize', 'supply', 'supply-cart', 'supply-confirm', 'supply-done', 'inventory-menu', 'label-cases', 'inventory', 'inventory-list', 'inventory-confirm', 'inventory-done', 'damage', 'damage-cond', 'damage-disp', 'damage-ready'];
+  const SCANNER_VALID_SCREENS = ['home', 'create', 'resume', 'scanning', 'list', 'totals', 'totals-edit', 'confirm-finalize', 'supply', 'supply-cart', 'supply-totals', 'supply-confirm', 'supply-done', 'inventory-menu', 'label-cases', 'inventory', 'inventory-list', 'inventory-confirm', 'inventory-done', 'damage', 'damage-cond', 'damage-disp', 'damage-ready'];
   const SCANNER_HOME_SCREENS = ['create', 'supply', 'inventory-menu', 'damage'];
 
   function createInitialDamageState() {
     return {
+      productCode: '',
       pendingItemId: null,
+      pluTargetItemId: null,
+      isPluItem: false,
       selectedConditionIdx: 0,
       selectedConditionKey: 'leaking',
       computedDisposition: '',
@@ -1956,11 +2001,38 @@
       cartItems: [],
       cartScroll: 0,
       cartSelectedIdx: 0,
+      totalsReturnScreen: 'supply',
       pendingOrders: [],
       submittedToday: false,
       submittedEtaDate: '',
       lastSubmittedCases: 0,
       lastSubmittedSkus: 0
+    };
+  }
+
+  const SUPPLY_MAX_CASES_PER_SKU = 10;
+  const SUPPLY_MAX_ORDER_COST = 300;
+
+  function computeSupplyCartSummary(cart) {
+    const list = Array.isArray(cart) ? cart : [];
+    let totalCases = 0;
+    let totalUnits = 0;
+    let totalCost = 0;
+    list.forEach((ci) => {
+      const cs = Math.max(0, Number(ci && ci.cases) || 0);
+      const upc = Math.max(1, Number(ci && ci.unitsPerCase) || 8);
+      const price = Number(ci && ci.price) || 0;
+      totalCases += cs;
+      totalUnits += cs * upc;
+      totalCost += cs * upc * price;
+    });
+    const roundedCost = Number(totalCost.toFixed(2));
+    return {
+      skus: list.length,
+      totalCases: totalCases,
+      totalUnits: totalUnits,
+      totalCost: roundedCost,
+      overBudget: roundedCost > SUPPLY_MAX_ORDER_COST
     };
   }
 
@@ -1976,7 +2048,7 @@
   }
 
   function isScannerSupplyMode() {
-    return ['supply', 'supply-cart', 'supply-confirm', 'supply-done'].includes(state.scanner.screen);
+    return ['supply', 'supply-cart', 'supply-totals', 'supply-confirm', 'supply-done'].includes(state.scanner.screen);
   }
 
   function createInitialLabelState() {
@@ -2299,7 +2371,7 @@
     // Verify finalized invoice receipt line items and edited inputted Totals/Cost
     const invRec = d.lastReceiptNumber
       ? findReceipt(d.lastReceiptNumber)
-      : state.processedReceipts.find((r) => !r.voided && r.finalized && r.type === 'invoice' && r.deliveryId === d.id);
+      : state.processedReceipts.find((r) => !r.voided && r.finalized && (r.type === 'invoice' || r.type === 'po') && r.deliveryId === d.id);
     if (!invRec || invRec.voided || !invRec.finalized) {
       errors.push('Missing finalized invoice receipt');
     } else {
@@ -3688,10 +3760,7 @@
       return { ok: false, loaded: false, reason: 'not_supply' };
     }
 
-    if (!['supply', 'supply-cart'].includes(sc.screen)) {
-      sc.screen = 'supply';
-      sc.phase = 'supply';
-    } else if (sc.screen === 'supply-cart') {
+    if (sc.screen !== 'supply') {
       sc.screen = 'supply';
       sc.phase = 'supply';
     }
@@ -3753,53 +3822,110 @@
     }
 
     if (sc.screen === 'supply-confirm') {
+      const confirmSummary = computeSupplyCartSummary(cart);
       if (action === 'enter') {
-        if (!Array.isArray(sup.pendingOrders)) sup.pendingOrders = [];
-        let submittedCases = 0;
-        let submittedSkus = 0;
-        cart.forEach((ci) => {
-          const addCases = Math.max(0, Math.round(Number(ci.cases) || 0));
-          if (addCases <= 0) return;
-          submittedCases += addCases;
-          submittedSkus += 1;
-          const existing = sup.pendingOrders.find((po) => String(po.code) === String(ci.code));
-          if (existing) {
-            existing.cases = (Number(existing.cases) || 0) + addCases;
-            existing.qty = existing.cases;
-          } else {
-            sup.pendingOrders.push({
-              code: String(ci.code),
-              name: ci.name,
-              cases: addCases,
-              qty: addCases,
-              size: ci.size || 'medium',
-              unitsPerCase: Number(ci.unitsPerCase) || 8,
-              price: Number(ci.price) || 0,
-              type: ci.type || 'ambient'
-            });
-          }
-        });
-        const etaInfo = getNextSupplyEtaDateInfo();
-        sup.submittedToday = true;
-        sup.submittedEtaDate = etaInfo.mmddyyyy;
-        sup.lastSubmittedCases = submittedCases;
-        sup.lastSubmittedSkus = submittedSkus;
-        sup.cartItems = [];
-        sup.cartScroll = 0;
-        sup.cartSelectedIdx = 0;
-        sup.qtyInput = '';
-        sup.negativeMode = false;
-        sup.activeField = 'sku';
-        sc.screen = 'supply-done';
-        sc.phase = 'supply-done';
-        setScannerMessage('ORDER QUEUED!', 'ok');
-        playSuccess();
-        notify('🚚 Dept 60 order (' + submittedCases + ' case' + (submittedCases === 1 ? '' : 's') + ') finalized for Vendor #601 delivery on ' + etaInfo.mmddyyyy + '.', 4000);
+        if (cart.length === 0) {
+          playError();
+          setScannerMessage('CART IS EMPTY', 'err');
+        } else if (confirmSummary.overBudget) {
+          playError();
+          setScannerMessage('OVER $300: REDUCE CART', 'err');
+        } else {
+          if (!Array.isArray(sup.pendingOrders)) sup.pendingOrders = [];
+          let submittedCases = 0;
+          let submittedSkus = 0;
+          cart.forEach((ci) => {
+            const addCases = Math.min(SUPPLY_MAX_CASES_PER_SKU, Math.max(0, Math.round(Number(ci.cases) || 0)));
+            if (addCases <= 0) return;
+            submittedCases += addCases;
+            submittedSkus += 1;
+            const existing = sup.pendingOrders.find((po) => String(po.code) === String(ci.code));
+            if (existing) {
+              existing.cases = (Number(existing.cases) || 0) + addCases;
+              existing.qty = existing.cases;
+            } else {
+              sup.pendingOrders.push({
+                code: String(ci.code),
+                name: ci.name,
+                cases: addCases,
+                qty: addCases,
+                size: ci.size || 'medium',
+                unitsPerCase: Number(ci.unitsPerCase) || 8,
+                price: Number(ci.price) || 0,
+                type: ci.type || 'ambient'
+              });
+            }
+          });
+          const etaInfo = getNextSupplyEtaDateInfo();
+          sup.submittedToday = true;
+          sup.submittedEtaDate = etaInfo.mmddyyyy;
+          sup.lastSubmittedCases = submittedCases;
+          sup.lastSubmittedSkus = submittedSkus;
+          sup.cartItems = [];
+          sup.cartScroll = 0;
+          sup.cartSelectedIdx = 0;
+          sup.qtyInput = '';
+          sup.negativeMode = false;
+          sup.activeField = 'sku';
+          sc.screen = 'supply-done';
+          sc.phase = 'supply-done';
+          setScannerMessage('ORDER QUEUED!', 'ok');
+          playSuccess();
+          notify('🚚 Dept 60 order (' + submittedCases + ' case' + (submittedCases === 1 ? '' : 's') + ') finalized for Vendor #601 delivery on ' + etaInfo.mmddyyyy + '.', 4000);
+        }
+      } else if (action === 'slash') {
+        sup.cartSelectedIdx = Math.max(0, cart.length - 1);
+        sup.cartScroll = Math.max(0, cart.length - 5);
+        sc.screen = 'supply-cart';
+        sc.phase = 'supply-cart';
+        setScannerMessage('', 'info');
+        playBeep();
+      } else if (action === 'star') {
+        sup.totalsReturnScreen = 'supply';
+        sc.screen = 'supply-totals';
+        sc.phase = 'supply-totals';
+        setScannerMessage('', 'info');
+        playBeep();
       } else if (action === 'back') {
         sc.screen = 'supply';
         sc.phase = 'supply';
         setScannerMessage('', 'info');
         playBeep();
+      } else {
+        playBeep();
+      }
+      renderScannerUI();
+      return true;
+    }
+
+    if (sc.screen === 'supply-totals') {
+      const totSummary = computeSupplyCartSummary(cart);
+      if (action === 'star' || action === 'back' || action === 'left') {
+        const retScr = sup.totalsReturnScreen === 'supply-cart' ? 'supply-cart' : 'supply';
+        sc.screen = retScr;
+        sc.phase = retScr;
+        setScannerMessage('', 'info');
+        playBeep();
+      } else if (action === 'slash') {
+        sup.cartSelectedIdx = Math.max(0, cart.length - 1);
+        sup.cartScroll = Math.max(0, cart.length - 5);
+        sc.screen = 'supply-cart';
+        sc.phase = 'supply-cart';
+        setScannerMessage('', 'info');
+        playBeep();
+      } else if (action === 'plus') {
+        if (cart.length === 0) {
+          playError();
+          setScannerMessage('ADD ITEMS TO CART', 'err');
+        } else if (totSummary.overBudget) {
+          playError();
+          setScannerMessage('OVER $300 LIMIT!', 'err');
+        } else {
+          sc.screen = 'supply-confirm';
+          sc.phase = 'supply-confirm';
+          setScannerMessage('', 'info');
+          playBeep();
+        }
       } else {
         playBeep();
       }
@@ -3814,6 +3940,12 @@
       if (action === 'back' || action === 'slash') {
         sc.screen = 'supply';
         sc.phase = 'supply';
+        setScannerMessage('', 'info');
+        playBeep();
+      } else if (action === 'star') {
+        sup.totalsReturnScreen = 'supply-cart';
+        sc.screen = 'supply-totals';
+        sc.phase = 'supply-totals';
         setScannerMessage('', 'info');
         playBeep();
       } else if (action === 'up') {
@@ -3852,16 +3984,6 @@
           setScannerMessage('DEL ' + (removed ? removed.code : 'ITEM'), 'warn');
         }
         playBeep();
-      } else if (action === 'plus') {
-        if (cart.length === 0) {
-          playError();
-          setScannerMessage('CART IS EMPTY', 'err');
-        } else {
-          sc.screen = 'supply-confirm';
-          sc.phase = 'supply-confirm';
-          setScannerMessage('', 'info');
-          playBeep();
-        }
       } else {
         playBeep();
       }
@@ -3885,6 +4007,12 @@
       if (sup.negativeMode) sup.activeField = 'qty';
       playBeep();
       setScannerMessage(sup.negativeMode ? 'SUBTRACT CASES MODE' : '', sup.negativeMode ? 'warn' : 'info');
+    } else if (action === 'star') {
+      sup.totalsReturnScreen = 'supply';
+      sc.screen = 'supply-totals';
+      sc.phase = 'supply-totals';
+      setScannerMessage('', 'info');
+      playBeep();
     } else if (action === 'slash') {
       sup.cartSelectedIdx = Math.max(0, cart.length - 1);
       sup.cartScroll = Math.max(0, cart.length - 5);
@@ -3893,9 +4021,13 @@
       setScannerMessage('', 'info');
       playBeep();
     } else if (action === 'plus') {
+      const supplySummary = computeSupplyCartSummary(cart);
       if (cart.length === 0) {
         playError();
         setScannerMessage('ADD ITEMS TO CART', 'err');
+      } else if (supplySummary.overBudget) {
+        playError();
+        setScannerMessage('OVER $300 LIMIT!', 'err');
       } else {
         sc.screen = 'supply-confirm';
         sc.phase = 'supply-confirm';
@@ -3932,18 +4064,26 @@
             sup.activeField = 'qty';
           }
         }
+        setScannerMessage('', 'info');
         playBeep();
       } else {
-        if (sup.qtyInput.length < 3) {
-          if (sup.qtyInput.length === 0 && digit === '0') {
-            playBeep();
-          } else {
-            sup.qtyInput += digit;
-            playBeep();
+        if (sup.qtyInput.length === 0 && digit === '0') {
+          setScannerMessage('', 'info');
+          playBeep();
+        } else {
+          const nextQtyStr = sup.qtyInput + digit;
+          const nextQtyNum = parseInt(nextQtyStr, 10);
+          if (!Number.isFinite(nextQtyNum) || nextQtyNum > SUPPLY_MAX_CASES_PER_SKU) {
+            playError();
+            setScannerMessage('MAX 10 CASES / SKU', 'err');
+            renderScannerUI();
+            return true;
           }
+          sup.qtyInput = nextQtyStr;
+          setScannerMessage('', 'info');
+          playBeep();
         }
       }
-      setScannerMessage('', 'info');
     } else if (action === 'clear') {
       if (sup.activeField === 'qty') {
         if (sup.qtyInput.length > 0) {
@@ -3970,7 +4110,7 @@
         return true;
       }
       playBeep();
-      setScannerMessage('CLICK DEPT 60 BOX', 'info');
+      setScannerMessage('SCAN DEPT 60 BOX', 'info');
     } else if (action === 'enter') {
       if (sup.activeField === 'sku') {
         if (!sup.skuInput && products[sup.selectedIdx]) {
@@ -4005,6 +4145,13 @@
           renderScannerUI();
           return true;
         }
+        if (rawQty > SUPPLY_MAX_CASES_PER_SKU) {
+          sup.qtyInput = '';
+          playError();
+          setScannerMessage('MAX 10 CASES / SKU', 'err');
+          renderScannerUI();
+          return true;
+        }
         const prod = match.product;
         const deltaCases = sup.negativeMode ? -rawQty : rawQty;
         const existingIdx = cart.findIndex((ci) => String(ci.code) === String(prod.code));
@@ -4025,14 +4172,26 @@
           }
           playBeep();
         } else {
+          const curCases = existingIdx !== -1 ? (Number(cart[existingIdx].cases) || 0) : 0;
+          const totalAfterAdd = curCases + deltaCases;
+          if (totalAfterAdd > SUPPLY_MAX_CASES_PER_SKU) {
+            sup.qtyInput = '';
+            playError();
+            setScannerMessage(
+              existingIdx !== -1 ? ('MAX 10/SKU (HAS ' + curCases + 'cs)') : 'MAX 10 CASES / SKU',
+              'err'
+            );
+            renderScannerUI();
+            return true;
+          }
           if (existingIdx !== -1) {
-            cart[existingIdx].cases = Math.min(99, (Number(cart[existingIdx].cases) || 0) + deltaCases);
-            setScannerMessage('+' + deltaCases + 'cs ' + prod.code + ' (' + cart[existingIdx].cases + ')', 'ok');
+            cart[existingIdx].cases = totalAfterAdd;
+            setScannerMessage('+' + deltaCases + 'cs ' + prod.code + ' (' + totalAfterAdd + ')', 'ok');
           } else {
             cart.push({
               code: String(prod.code),
               name: prod.name,
-              cases: Math.min(99, deltaCases),
+              cases: totalAfterAdd,
               size: prod.size || 'medium',
               unitsPerCase: Number(prod.unitsPerCase) || 8,
               price: Number(prod.price) || 0,
@@ -4040,7 +4199,13 @@
             });
             setScannerMessage('ADD ' + deltaCases + 'cs ' + prod.code, 'ok');
           }
-          playSuccess();
+          const postAddSummary = computeSupplyCartSummary(cart);
+          if (postAddSummary.overBudget) {
+            playError();
+            setScannerMessage('OVER $300 LIMIT!', 'err');
+          } else {
+            playSuccess();
+          }
         }
         sup.qtyInput = '';
         sup.negativeMode = false;
@@ -4054,22 +4219,30 @@
     return true;
   }
 
-  function scanClaimsItem(itemRec) {
+  function isClaimItemNotScannable(itemRec) {
+    if (!itemRec) return false;
+    if (itemRec.notScannable !== undefined) return Boolean(itemRec.notScannable);
+    const cat = global.DSDCatalog;
+    const prod = (cat && typeof cat.getProduct === 'function' && itemRec.code)
+      ? cat.getProduct(String(itemRec.code))
+      : null;
+    if (prod && prod.notScannable !== undefined) return Boolean(prod.notScannable);
+    const deptNo = String(itemRec.deptNo || '').padStart(2, '0');
+    return deptNo === '01';
+  }
+
+  function loadClaimsItemToCondition(itemRec) {
     const sc = state.scanner;
     if (!sc.damage) sc.damage = createInitialDamageState();
     const dmg = sc.damage;
     const ct = global.ClaimsTotes;
 
-    if (!itemRec || itemRec.claimed) {
-      playError();
-      setScannerMessage('ITEM ALREADY CLAIMED', 'err');
-      renderScannerUI();
-      return { ok: false, loaded: false, reason: 'invalid_item' };
-    }
-
     sc.screen = 'damage-cond';
     sc.phase = 'damage-cond';
+    dmg.productCode = String(itemRec.code || '');
     dmg.pendingItemId = itemRec.id;
+    dmg.pluTargetItemId = null;
+    dmg.isPluItem = isClaimItemNotScannable(itemRec);
     dmg.selectedConditionIdx = 0;
     dmg.selectedConditionKey = 'leaking';
     dmg.computedDisposition = ct && typeof ct.computeDispositionForItem === 'function'
@@ -4080,7 +4253,42 @@
       : false;
     setScannerMessage('SCANNED ' + String(itemRec.code || '').slice(0, 8), 'ok');
     renderScannerUI();
-    return { ok: true, loaded: true, itemId: itemRec.id };
+    return { ok: true, loaded: true, isPlu: dmg.isPluItem, itemId: itemRec.id };
+  }
+
+  function scanClaimsItem(itemRec) {
+    const sc = state.scanner;
+    if (!sc.damage) sc.damage = createInitialDamageState();
+    const dmg = sc.damage;
+
+    if (!itemRec || itemRec.claimed) {
+      playError();
+      setScannerMessage('ITEM ALREADY CLAIMED', 'err');
+      renderScannerUI();
+      return { ok: false, loaded: false, reason: 'invalid_item' };
+    }
+
+    if (itemRec.scannerConfirmed) {
+      playBeep();
+      setScannerMessage('ALREADY CONFIRMED', 'warn');
+      renderScannerUI();
+      return { ok: false, loaded: false, reason: 'already_confirmed' };
+    }
+
+    if (isClaimItemNotScannable(itemRec)) {
+      sc.screen = 'damage';
+      sc.phase = 'damage';
+      dmg.pendingItemId = null;
+      dmg.pluTargetItemId = itemRec.id;
+      dmg.productCode = '';
+      dmg.isPluItem = true;
+      playError();
+      setScannerMessage('PLU: TYPE CODE + ENT', 'warn');
+      renderScannerUI();
+      return { ok: true, loaded: false, isPlu: true, itemId: itemRec.id };
+    }
+
+    return loadClaimsItemToCondition(itemRec);
   }
 
   function handleDamageScannerKey(action, val) {
@@ -4216,10 +4424,48 @@
 
     // Screen: 'damage'
     if (action === 'back') {
+      dmg.productCode = '';
+      dmg.pluTargetItemId = null;
       sc.screen = 'home';
       sc.phase = 'home';
       setScannerMessage('', 'info');
       playBeep();
+    } else if (action === 'num') {
+      const digit = String(val);
+      if (String(dmg.productCode || '').length < 4) {
+        dmg.productCode = String(dmg.productCode || '') + digit;
+        dmg.pendingItemId = null;
+      }
+      setScannerMessage('', 'info');
+      playBeep();
+    } else if (action === 'clear') {
+      if (dmg.productCode && dmg.productCode.length > 0) {
+        dmg.productCode = dmg.productCode.slice(0, -1);
+      }
+      dmg.pendingItemId = null;
+      if (!dmg.productCode) dmg.pluTargetItemId = null;
+      setScannerMessage('', 'info');
+      playBeep();
+    } else if (action === 'enter') {
+      if (!dmg.productCode) {
+        playError();
+        setScannerMessage('SCAN ITEM / ENTER PLU', 'err');
+      } else {
+        const hovered = typeof state.hooks.getHoveredClaimsItem === 'function'
+          ? state.hooks.getHoveredClaimsItem()
+          : null;
+        const preferredId = dmg.pluTargetItemId || (hovered ? hovered.id : null);
+        const foundItem = (ct && typeof ct.findClaimItemForCodeInput === 'function')
+          ? ct.findClaimItemForCodeInput(dmg.productCode, preferredId)
+          : null;
+        if (!foundItem) {
+          playError();
+          setScannerMessage('NO ITEM MATCH', 'err');
+        } else {
+          playBeep();
+          return loadClaimsItemToCondition(foundItem);
+        }
+      }
     } else if (action === 'scan') {
       const hovered = typeof state.hooks.getHoveredClaimsItem === 'function'
         ? state.hooks.getHoveredClaimsItem()
@@ -4237,7 +4483,7 @@
         }
       } else {
         playBeep();
-        setScannerMessage('CLICK ITEM IN TOTE', 'info');
+        setScannerMessage('SCAN ITEM / ENTER PLU', 'info');
       }
     } else {
       playBeep();
@@ -4945,21 +5191,26 @@
       const stockBucket = (stockMap && stockMap.byCode && stockMap.byCode[selCode]) ? stockMap.byCode[selCode] : null;
       const curStockUnits = stockBucket ? stockBucket.shelfUnits : 0;
       const cart = Array.isArray(sup.cartItems) ? sup.cartItems : [];
-      const totalCartCases = cart.reduce((s, ci) => s + Math.max(0, Number(ci.cases) || 0), 0);
+      const summary = computeSupplyCartSummary(cart);
       const skuDisp = formatLcdCell(sup.skuInput, 6, sup.activeField === 'sku');
       const qtyRaw = (sup.negativeMode ? '-' : '') + sup.qtyInput;
       const qtyDisp = formatLcdCell(qtyRaw, 5, sup.activeField === 'qty');
       const idxDisp = products.length > 0 ? ((match.idx + 1) + '/' + products.length) : '0/0';
       const itemLabel = selProd ? String(selProd.name || 'Supply Item').slice(0, 20) : (sup.skuInput ? 'Unknown SKU 6001-10' : 'Select/Key 6001-10');
-      const unitCostEach = Number(selProd.price || 0);
-      const packSz = Math.max(1, Number(selProd.unitsPerCase) || 8);
+      const unitCostEach = selProd ? Number(selProd.price || 0) : 0;
+      const packSz = selProd ? Math.max(1, Number(selProd.unitsPerCase) || 8) : 8;
       const caseCostEach = unitCostEach * packSz;
       const priceLabel = selProd
         ? ('$' + caseCostEach.toFixed(2) + '/cs | ' + String(packSz) + 'u')
         : 'Vendor #601 Dept 60';
       const line2Sup = noticeText
         ? '<div class="lcd-scr-line notice">' + escapeHtml(noticeText) + '</div>'
-        : '<div class="lcd-scr-line">Cart:' + escapeHtml(String(totalCartCases)) + 'cs | #601 Vnd</div>';
+        : (summary.overBudget
+          ? '<div class="lcd-scr-line notice">! OVER $300 LIMIT !</div>'
+          : '<div class="lcd-scr-line">Cart:' + escapeHtml(String(summary.totalCases)) + 'cs $' + escapeHtml(summary.totalCost.toFixed(2)) + '</div>');
+      const line7Sup = summary.overBudget
+        ? '<div class="lcd-scr-line notice">' + escapeHtml(('OVER $300: $' + summary.totalCost.toFixed(2)).slice(0, 20)) + '</div>'
+        : '<div class="lcd-scr-line">Up/Dn Item | - Adj</div>';
 
       linesHtml =
         '<div class="lcd-scr-line">DEPT 60 SUPPLY ORDER</div>' +
@@ -4968,13 +5219,14 @@
         '<div class="lcd-scr-line">Cases: <span class="lcd-input-box' + (sup.activeField === 'qty' ? ' active' : '') + '">' + qtyDisp + '</span> Stk:' + escapeHtml(String(curStockUnits)) + 'u</div>' +
         '<div class="lcd-scr-line">' + escapeHtml(itemLabel) + '</div>' +
         '<div class="lcd-scr-line">' + escapeHtml(priceLabel.slice(0, 20)) + '</div>' +
-        '<div class="lcd-scr-line">Up/Dn Item | - Adj</div>' +
-        '<div class="lcd-scr-line">F3 Back | F4 Cart(' + escapeHtml(String(cart.length)) + ')</div>' +
-        '<div class="lcd-scr-line">F5 PLACE ORDER</div>';
+        line7Sup +
+        '<div class="lcd-scr-line">F2 Totals | F3 Back</div>' +
+        '<div class="lcd-scr-line">F4 Cart(' + escapeHtml(String(cart.length)) + ') | F5 ORDER</div>';
     } else if (sc.screen === 'supply-cart') {
       if (!sc.supply) sc.supply = createInitialSupplyState();
       const sup = sc.supply;
       const cart = Array.isArray(sup.cartItems) ? sup.cartItems : [];
+      const summary = computeSupplyCartSummary(cart);
       const selIdx = Math.max(0, Math.min(Math.max(0, cart.length - 1), sup.cartSelectedIdx || 0));
       sup.cartSelectedIdx = selIdx;
       const scroll = Math.max(0, Math.min(Math.max(0, cart.length - 5), sup.cartScroll || 0));
@@ -4993,34 +5245,63 @@
       }
       const line2Cart = noticeText
         ? '<div class="lcd-scr-line notice">' + escapeHtml(noticeText) + '</div>'
-        : '<div class="lcd-scr-line">Item           Cases</div>';
+        : (summary.overBudget
+          ? '<div class="lcd-scr-line notice">! OVER $300 LIMIT !</div>'
+          : '<div class="lcd-scr-line">Item           Cases</div>');
+      const line8Cart = (summary.overBudget && noticeText)
+        ? '<div class="lcd-scr-line notice">' + escapeHtml(('OVER $300: $' + summary.totalCost.toFixed(2)).slice(0, 20)) + '</div>'
+        : '<div class="lcd-scr-line">Up/Dn Nav | -/BKSP</div>';
       linesHtml =
         '<div class="lcd-scr-line">Supply Cart (' + escapeHtml(String(cart.length)) + ')</div>' +
         line2Cart +
         cartRows +
-        '<div class="lcd-scr-line">Up/Dn Nav | -/BKSP</div>' +
-        '<div class="lcd-scr-line">F3 Back | F5 ORDER</div>';
+        line8Cart +
+        '<div class="lcd-scr-line">F2 Totals | F3 Back</div>';
+    } else if (sc.screen === 'supply-totals') {
+      if (!sc.supply) sc.supply = createInitialSupplyState();
+      const sup = sc.supply;
+      const cart = Array.isArray(sup.cartItems) ? sup.cartItems : [];
+      const summary = computeSupplyCartSummary(cart);
+      const line2Tot = noticeText
+        ? '<div class="lcd-scr-line notice">' + escapeHtml(noticeText) + '</div>'
+        : (summary.overBudget
+          ? '<div class="lcd-scr-line notice">! OVER $300 LIMIT !</div>'
+          : '<div class="lcd-scr-line">Vendor #601 Retail</div>');
+      const statusTotLine = summary.overBudget
+        ? '<div class="lcd-scr-line notice">' + escapeHtml(('OVER BY $' + (summary.totalCost - SUPPLY_MAX_ORDER_COST).toFixed(2)).slice(0, 20)) + '</div>'
+        : '<div class="lcd-scr-line">Budget: WITHIN LIMIT</div>';
+      linesHtml =
+        '<div class="lcd-scr-line">SUPPLY TOTALS</div>' +
+        line2Tot +
+        '<div class="lcd-scr-line">SKUs:   ' + escapeHtml(String(summary.skus)) + '</div>' +
+        '<div class="lcd-scr-line">Cases:  ' + escapeHtml(String(summary.totalCases)) + ' cs</div>' +
+        '<div class="lcd-scr-line">Units:  ' + escapeHtml(String(summary.totalUnits)) + ' u</div>' +
+        '<div class="lcd-scr-line">Cost:   $' + escapeHtml(summary.totalCost.toFixed(2)) + '</div>' +
+        '<div class="lcd-scr-line">Limit:  $' + escapeHtml(SUPPLY_MAX_ORDER_COST.toFixed(2)) + ' Max</div>' +
+        statusTotLine +
+        '<div class="lcd-scr-line">F2/F3 Back | F4 Cart</div>';
     } else if (sc.screen === 'supply-confirm') {
       if (!sc.supply) sc.supply = createInitialSupplyState();
       const sup = sc.supply;
       const cart = Array.isArray(sup.cartItems) ? sup.cartItems : [];
-      const totalCases = cart.reduce((s, ci) => s + Math.max(0, Number(ci.cases) || 0), 0);
-      const totalCost = cart.reduce((s, ci) => {
-        const cs = Math.max(0, Number(ci.cases) || 0);
-        const upc = Math.max(1, Number(ci.unitsPerCase) || 8);
-        return s + (cs * upc * (Number(ci.price) || 0));
-      }, 0);
+      const summary = computeSupplyCartSummary(cart);
       const etaInfo = getNextSupplyEtaDateInfo();
+      const line2Confirm = noticeText
+        ? '<div class="lcd-scr-line notice">' + escapeHtml(noticeText) + '</div>'
+        : '<div class="lcd-scr-line">Vendor #601 Retail</div>';
+      const limitLine = summary.overBudget
+        ? '<div class="lcd-scr-line notice">! OVER $300 BLOCKED !</div>'
+        : '<div class="lcd-scr-line notice">LIMIT: 1 ORDER / DAY</div>';
       linesHtml =
         '<div class="lcd-scr-line">SEND SUPPLY ORDER?</div>' +
-        '<div class="lcd-scr-line">Vendor #601 Retail</div>' +
-        '<div class="lcd-scr-line">SKUs:  ' + escapeHtml(String(cart.length)) + '</div>' +
-        '<div class="lcd-scr-line">Cases: ' + escapeHtml(String(totalCases)) + ' cs</div>' +
-        '<div class="lcd-scr-line">Est:   $' + escapeHtml(totalCost.toFixed(2)) + '</div>' +
+        line2Confirm +
+        '<div class="lcd-scr-line">SKUs:  ' + escapeHtml(String(summary.skus)) + '</div>' +
+        '<div class="lcd-scr-line">Cases: ' + escapeHtml(String(summary.totalCases)) + ' cs</div>' +
+        '<div class="lcd-scr-line">Est:   $' + escapeHtml(summary.totalCost.toFixed(2)) + '</div>' +
         '<div class="lcd-scr-line">ETA:   ' + escapeHtml(etaInfo.mmddyyyy) + '</div>' +
-        '<div class="lcd-scr-line notice">LIMIT: 1 ORDER / DAY</div>' +
+        limitLine +
         '<div class="lcd-scr-line"> </div>' +
-        '<div class="lcd-scr-line">ENT Confirm | F3 No</div>';
+        '<div class="lcd-scr-line">' + (summary.overBudget ? 'F4 Cart | F3 Back' : 'ENT Confirm | F3 No') + '</div>';
     } else if (sc.screen === 'supply-done') {
       if (!sc.supply) sc.supply = createInitialSupplyState();
       const sup = sc.supply;
@@ -5154,16 +5435,18 @@
         '<div class="lcd-scr-line">ENT Home | F3 Home</div>';
     } else if (sc.screen === 'damage') {
       if (!sc.damage) sc.damage = createInitialDamageState();
+      const dmg = sc.damage;
+      const codeDisp = formatLcdCell(dmg.productCode || '', 5, true);
       linesHtml =
         '<div class="lcd-scr-line">MARKDOWN CLAIMS</div>' +
         line2Notice +
+        '<div class="lcd-scr-line">Code: <span class="lcd-input-box active">' + codeDisp + '</span></div>' +
         '<div class="lcd-scr-line"> </div>' +
-        '<div class="lcd-scr-line">Scan item for</div>' +
-        '<div class="lcd-scr-line">disposition:</div>' +
+        '<div class="lcd-scr-line">Scan Item or Enter PLU</div>' +
         '<div class="lcd-scr-line"> </div>' +
         '<div class="lcd-scr-line"> </div>' +
-        '<div class="lcd-scr-line"> </div>' +
-        '<div class="lcd-scr-line">F3 Back</div>';
+        '<div class="lcd-scr-line">ENT Load | F3 Back</div>' +
+        '<div class="lcd-scr-line"> </div>';
     } else if (sc.screen === 'damage-cond') {
       if (!sc.damage) sc.damage = createInitialDamageState();
       const dmg = sc.damage;
@@ -5516,7 +5799,8 @@
       state.terminalSupplierKeypadOpen = false;
       state.terminalPage.create = 0;
     } else if (state.currentScreen === 'receipts') {
-      state.terminalPage.receipts = 0;
+      state.terminalPage.receipts = Number.MAX_SAFE_INTEGER;
+      state.receiptsScrollToBottom = true;
       state.terminalSupplierKeypadOpen = false;
       state.terminalLedgerMsg = '';
     } else if (state.currentScreen === 'receipt-detail') {
@@ -5676,8 +5960,19 @@
       return true;
     }
 
-    if (key === 'DEPT_PREV') {
-      if (screen === 'suppliers' && !(state.supplierQuery || '').trim()) {
+    if (key === 'DEPT_PREV' || key === 'DEPT_NEXT') {
+      if (screen === 'receipts') {
+        const idx = RECEIPT_LEDGER_DEPT_GROUPS.findIndex((g) => g.key === state.receiptsDeptGroup);
+        const curIdx = idx !== -1 ? idx : 0;
+        const delta = key === 'DEPT_PREV' ? -1 : 1;
+        const nextIdx = (curIdx + delta + RECEIPT_LEDGER_DEPT_GROUPS.length) % RECEIPT_LEDGER_DEPT_GROUPS.length;
+        state.receiptsDeptGroup = RECEIPT_LEDGER_DEPT_GROUPS[nextIdx].key;
+        state.terminalPage.receipts = 0;
+        playBeep();
+        renderTerminalUI();
+        return true;
+      }
+      if (key === 'DEPT_PREV' && screen === 'suppliers' && !(state.supplierQuery || '').trim()) {
         if (state.supplierTreeLevel === 'items') {
           state.supplierTreeLevel = 'vendors';
           playBeep();
@@ -5691,9 +5986,6 @@
           return true;
         }
       }
-      return false;
-    }
-    if (key === 'DEPT_NEXT') {
       return false;
     }
 
@@ -6516,58 +6808,115 @@
     return '<span style="color:' + color + '; font-weight:800;">' + label + '</span>';
   }
 
+  const RECEIPT_LEDGER_DEPT_GROUPS = [
+    { key: '01', label: 'Dept 01', match: (d) => d === '01' },
+    { key: '1X', label: 'Depts 1X', match: (d) => d.startsWith('1') },
+    { key: '2X', label: 'Depts 2X', match: (d) => d.startsWith('2') },
+    { key: '3X', label: 'Depts 3X', match: (d) => d.startsWith('3') },
+    { key: '4X', label: 'Depts 4X', match: (d) => d.startsWith('4') },
+    { key: '50', label: 'Dept 50', match: (d) => d === '50' },
+    { key: '60', label: 'Dept 60', match: (d) => d === '60' }
+  ];
+
+  function getActiveReceiptsDeptGroup() {
+    const found = RECEIPT_LEDGER_DEPT_GROUPS.find((g) => g.key === state.receiptsDeptGroup);
+    if (found) return found;
+    state.receiptsDeptGroup = RECEIPT_LEDGER_DEPT_GROUPS[0].key;
+    return RECEIPT_LEDGER_DEPT_GROUPS[0];
+  }
+
   function renderTerminalReceipts(body) {
     const receipts = getReceipts(true);
     const eligibleDaily = receipts.filter(isDailyFilingReceiptEligible);
-    const printedStoreCount = eligibleDaily.filter((r) => Boolean(r.storeCopyPrinted)).length;
-    const pendingStoreCount = eligibleDaily.length - printedStoreCount;
-    const pg = paginateItems(receipts, 'receipts', 10);
+    const pendingStoreCount = eligibleDaily.filter((r) => !r.storeCopyPrinted).length;
+    const activeGroup = getActiveReceiptsDeptGroup();
+
+    const tabsHtml = RECEIPT_LEDGER_DEPT_GROUPS.map((grp) => {
+      const grpCount = receipts.filter((r) => grp.match(padDigits(r && r.deptNo, 2))).length;
+      const isActive = grp.key === activeGroup.key;
+      return `<button type="button" class="crt-pill${isActive ? ' active' : ''}" data-rcpt-grp="${escapeHtml(grp.key)}" role="tab" aria-selected="${isActive ? 'true' : 'false'}">${escapeHtml(grp.label)} (${grpCount})</button>`;
+    }).join('');
+
+    const groupReceipts = receipts
+      .filter((r) => activeGroup.match(padDigits(r && r.deptNo, 2)))
+      .sort((a, b) => {
+        const dA = formatIsoDateString((a && (a.dateIso || a.date)) || '');
+        const dB = formatIsoDateString((b && (b.dateIso || b.date)) || '');
+        if (dA !== dB) return dA.localeCompare(dB);
+        return String((a && a.receiptNumber) || '').localeCompare(String((b && b.receiptNumber) || ''));
+      });
+    const pg = paginateItems(groupReceipts, 'receipts', 10);
     const listRows = pg.items.map((r) => {
       const totalCases = (r.items || []).reduce((sum, it) => sum + Math.abs(Number(it.qty) || 0), 0);
       const st = getReceiptStatus(r);
+      const dateStr = formatIsoDateString(r.dateIso || r.date);
       const hoTag = isHomeOfficeTaskArchiveReceipt(r) ? ' <span style="color:#38bdf8;font-size:10px;font-weight:800;">[HO]</span>' : '';
       return `
         <tr class="crt-row-click" data-rec-no="${escapeHtml(r.receiptNumber)}">
           <td><strong>${escapeHtml(r.receiptNumber)}</strong></td>
-          <td>${r.type === 'credit' ? '<span style="color:#f59e0b;">CRD</span>' : 'INV'}${hoTag}</td>
+          <td style="white-space:nowrap;">${escapeHtml(dateStr)}</td>
+          <td>${r.type === 'credit' ? '<span style="color:#f59e0b;">CRD</span>' : (r.type === 'po' ? '<span style="color:#38bdf8;">PO</span>' : 'INV')}${hoTag}</td>
           <td>D#${escapeHtml(r.deptNo)} / V#${escapeHtml(r.vendorNo)}</td>
           <td>#${escapeHtml(r.invoiceNo)}</td>
           <td>${totalCases}</td>
           <td>${formatMoney(r.totalAmount)}</td>
           <td>${formatReceiptStatusTag(st, false)}</td>
-          <td><button class="crt-btn-sm" type="button" data-open-rec="${escapeHtml(r.receiptNumber)}">[ VIEW ]</button></td>
+          <td style="text-align:right; white-space:nowrap;"><button class="crt-btn-sm" type="button" data-open-rec="${escapeHtml(r.receiptNumber)}">[ VIEW ]</button></td>
         </tr>
       `;
     }).join('');
 
+    const printStoreBtnHtml = `<button id="crt-btn-print-all-store-copies" class="crt-btn-sm crt-btn-primary" type="button" ${pendingStoreCount === 0 ? 'disabled' : ''}>[ PRINT STORE COPIES ]</button>`;
+
     body.innerHTML = `
       <div class="crt-meta-bar">
-        <span>DAILY PROCESSED RECEIPTS LEDGER (${receipts.length})</span>
-        <span>CLICK ANY RECEIPT OR [VIEW] TO INSPECT DETAILS</span>
+        <span>PROCESSED RECEIPTS LEDGER (${escapeHtml(activeGroup.label)}: ${groupReceipts.length} / ALL: ${receipts.length})</span>
+        <span>SELECT RECEIPT OR [VIEW] TO INSPECT</span>
       </div>
-      <div class="crt-ledger-printbar">
-        <div>
-          <strong>STORE COPIES:</strong>
-          <span style="color:${pendingStoreCount === 0 && eligibleDaily.length > 0 ? '#4ade80' : '#facc15'}; font-weight:900;">
-            ${printedStoreCount}/${eligibleDaily.length}
-          </span>
-        </div>
-        <button id="crt-btn-print-all-store-copies" class="crt-btn crt-btn-primary" type="button" ${pendingStoreCount === 0 ? 'disabled' : ''}>
-          [ PRINT STORE COPIES ]
-        </button>
+      <div class="crt-pill-bar crt-ledger-tabs" role="tablist" aria-label="Receipt Ledger Department Groups">
+        ${tabsHtml}
       </div>
       <div class="crt-scroll-panel">
-        <table class="crt-table">
-          <thead><tr><th>RCPT #</th><th>TYPE</th><th>D/V</th><th>INV #</th><th>CASES</th><th>TOTAL</th><th>STATUS</th><th>ACTION</th></tr></thead>
+        <table class="crt-table crt-ledger-table">
+          <colgroup>
+            <col style="width:68px;">
+            <col style="width:82px;">
+            <col style="width:44px;">
+            <col style="width:88px;">
+            <col style="width:62px;">
+            <col style="width:46px;">
+            <col style="width:68px;">
+            <col style="width:54px;">
+            <col style="width:60px;">
+          </colgroup>
+          <thead><tr><th>RCPT #</th><th>DATE</th><th>TYPE</th><th>D/V</th><th>INV #</th><th>CASES</th><th>TOTAL</th><th>STATUS</th><th style="text-align:right;">ACTION</th></tr></thead>
           <tbody>
-            ${listRows || '<tr><td colspan="8" style="text-align:center; opacity:0.65;">No receipts created yet this shift.</td></tr>'}
+            ${listRows || `<tr><td colspan="9" style="text-align:center; opacity:0.65;">No receipts in ${escapeHtml(activeGroup.label)} yet this shift.</td></tr>`}
           </tbody>
         </table>
       </div>
-      ${renderTerminalPager(pg)}
+      ${renderTerminalPager(pg, printStoreBtnHtml)}
     `;
 
+    if (state.receiptsScrollToBottom) {
+      state.receiptsScrollToBottom = false;
+      const scrollEl = body.querySelector('.crt-scroll-panel');
+      if (scrollEl) scrollEl.scrollTop = scrollEl.scrollHeight;
+    }
+
     bindTerminalPager(body, 'receipts');
+
+    body.querySelectorAll('[data-rcpt-grp]').forEach((tabBtn) => {
+      tabBtn.addEventListener('click', () => {
+        const nextGrp = tabBtn.getAttribute('data-rcpt-grp');
+        if (!nextGrp) return;
+        state.receiptsDeptGroup = nextGrp;
+        state.terminalPage.receipts = Number.MAX_SAFE_INTEGER;
+        state.receiptsScrollToBottom = true;
+        playBeep();
+        renderTerminalUI();
+      });
+    });
 
     const printAllBtn = document.getElementById('crt-btn-print-all-store-copies');
     if (printAllBtn) {
@@ -6662,7 +7011,7 @@
         <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px; margin-bottom:8px; border-bottom:1px solid #166534; padding-bottom:6px;">
           <div>
             <strong style="color:#4ade80; font-size:14px;">RECEIPT #${escapeHtml(selected.receiptNumber)}</strong>
-            <span style="font-size:11px; color:#86efac; margin-left:8px;">[${selected.type === 'credit' ? 'CREDIT' : 'INVOICE'} :: ${escapeHtml(selected.source.toUpperCase())} :: ${escapeHtml(selected.time)}]</span>
+            <span style="font-size:11px; color:#86efac; margin-left:8px;">[${selected.type === 'credit' ? 'CREDIT' : (selected.type === 'po' ? 'PO' : 'INVOICE')} :: ${escapeHtml(selected.source.toUpperCase())} :: ${escapeHtml(selected.time)}]</span>
           </div>
           <div style="display:flex; align-items:center; gap:8px;">
             <span>${formatReceiptStatusTag(status, true)}</span>
@@ -8331,7 +8680,7 @@
 
       docs.push({
         key: 'del_inv_' + d.id,
-        docType: 'invoice',
+        docType: (padDigits(d.vendorNo, 3) === '011' || d.type === 'warehouse') ? 'po' : 'invoice',
         isNightDrop: false,
         isWarehouse: d.type === 'warehouse',
         deliveryId: d.id,
@@ -8464,6 +8813,85 @@
     if (state.filingOpen) populateFilingCards();
 
     return { ok: true, printedCount: pending.length, newlyPrintedCount: pending.length };
+  }
+
+  function seedDummyReceiptsAllDepts() {
+    const catalog = getCatalog();
+    const deptsMap = (catalog && catalog.DEPARTMENTS) ? catalog.DEPARTMENTS : {};
+    const catalogDeptKeys = Object.keys(deptsMap).sort((a, b) => parseInt(a, 10) - parseInt(b, 10));
+    const deptList = catalogDeptKeys.length > 0
+      ? catalogDeptKeys
+      : ['01', '10', '11', '12', '13', '14', '15', '20', '21', '22', '23', '30', '31', '32', '40', '41', '42', '50', '60'];
+
+    const usedInvs = new Set(state.processedReceipts.map((r) => String(r && r.invoiceNo || '')));
+    let nextInvNum = 710100;
+    const created = [];
+
+    deptList.forEach((rawDept) => {
+      const deptNo = padDigits(rawDept, 2);
+      const deptObj = deptsMap[rawDept] || deptsMap[deptNo] || null;
+      const vendorsMap = (deptObj && deptObj.vendors) ? deptObj.vendors : {};
+      const vendorKeys = Object.keys(vendorsMap);
+      const pickedVendor = vendorKeys.length > 0 ? vendorsMap[vendorKeys[0]] : null;
+      const vendorNo = padDigits((pickedVendor && pickedVendor.vendorNo) || vendorKeys[0] || '101', 3);
+
+      const prodMap = (pickedVendor && pickedVendor.products) ? pickedVendor.products : {};
+      const prodList = Array.isArray(prodMap) ? prodMap : Object.values(prodMap);
+      const pickedProds = prodList.slice(0, 2);
+      const items = pickedProds.length > 0
+        ? pickedProds.map((p, idx) => ({
+          code: String(p.code || (deptNo + '0' + (idx + 1))),
+          name: String(p.name || ('Dept ' + deptNo + ' Test Item ' + (idx + 1))),
+          qty: idx === 0 ? 4 : 2,
+          price: Number(p.price) || 2.50,
+          notScannable: Boolean(p.notScannable),
+          type: p.type || 'ambient'
+        }))
+        : [{
+          code: deptNo + '01',
+          name: 'Dept ' + deptNo + ' Test Item',
+          qty: 4,
+          price: 2.50,
+          notScannable: deptNo === '01',
+          type: 'ambient'
+        }];
+
+      while (usedInvs.has(String(nextInvNum))) {
+        nextInvNum += 1;
+      }
+      const invoiceNo = String(nextInvNum).padStart(6, '0');
+      usedInvs.add(invoiceNo);
+      nextInvNum += 1;
+
+      const expUnits = items.reduce((s, it) => s + Math.abs(Number(it.qty) || 0), 0);
+      const expCost = Number(items.reduce((s, it) => s + (Number(it.qty) || 0) * (Number(it.price) || 0), 0).toFixed(2));
+      const rec = createReceipt({
+        deptNo: deptNo,
+        vendorNo: vendorNo,
+        invoiceNo: invoiceNo,
+        expectedUnits: expUnits,
+        expectedCost: expCost,
+        source: 'terminal',
+        items: items,
+        finalized: true,
+        storeCopyPrinted: false,
+        cleared: false,
+        isPreviousDay: false
+      });
+      created.push(rec);
+    });
+
+    if (state.terminalOpen) {
+      if (state.currentScreen === 'receipts') {
+        state.terminalPage.receipts = Number.MAX_SAFE_INTEGER;
+        state.receiptsScrollToBottom = true;
+      }
+      renderTerminalUI();
+    }
+    if (state.filingOpen) {
+      populateFilingCards();
+    }
+    return { ok: true, count: created.length, receipts: created };
   }
 
   function populateFilingCards() {
@@ -8964,7 +9392,7 @@
         creditDoc: null,
         receipts: linkedRecs.slice()
       };
-      if (inv.deliveryId && inv.docType === 'invoice') {
+      if (inv.deliveryId && inv.docType !== 'credit') {
         folderByDeliveryId[inv.deliveryId] = folder;
       }
       vendorFolders.push(folder);
@@ -9013,6 +9441,118 @@
     return JSON.parse(JSON.stringify(obj));
   }
 
+  function normalizeArchiveDayPayload(day) {
+    const cloned = cloneArchiveDataPayload(day);
+    if (cloned && Array.isArray(cloned.vendors)) {
+      cloned.vendors.forEach((v) => {
+        if (!v) return;
+        const vNo = padDigits(v.vendorNo, 3);
+        if (vNo === '011' && v.docType !== 'credit') {
+          v.docType = 'po';
+        }
+        if (Array.isArray(v.receipts)) {
+          v.receipts.forEach((rec) => {
+            if (!rec) return;
+            rec.type = resolveReceiptDocType(vNo, rec.items, rec.type);
+          });
+        }
+      });
+    }
+    return cloned;
+  }
+
+  function syncArchiveReceiptsToLedger() {
+    if (!Array.isArray(state.archiveData) || state.archiveData.length === 0) return 0;
+
+    // Rebuild synced historical archive entries cleanly from current archiveData so Home Office mutations stay 1:1 without duplicates
+    state.processedReceipts = state.processedReceipts.filter((r) => !(r && r.isArchiveReceipt));
+
+    const existingRecNos = new Set();
+    state.processedReceipts.forEach((r) => {
+      if (r && r.receiptNumber) existingRecNos.add(String(r.receiptNumber));
+    });
+
+    const isFallbackSource = !(state.staticArchiveHistory && Array.isArray(state.staticArchiveHistory.days) && state.staticArchiveHistory.days.length > 0);
+    let added = 0;
+
+    state.archiveData.forEach((day) => {
+      if (!day || day.isToday || day.placeholder || !Array.isArray(day.vendors)) return;
+      const dayDate = String(day.dateStr || day.shortDate || '').trim();
+      const dayDateIso = formatIsoDateString(dayDate || day.shortDate);
+
+      day.vendors.forEach((vendor) => {
+        if (!vendor || !Array.isArray(vendor.receipts)) return;
+        const defaultVendorNo = padDigits(vendor.vendorNo, 3);
+        const defaultDeptNo = padDigits(vendor.deptNo, 2);
+        const defaultInvNo = padDigits(vendor.invoiceNo, 6);
+
+        vendor.receipts.forEach((archRec) => {
+          if (!archRec) return;
+          const recNo = String(archRec.receiptNumber || '').trim();
+          if (!recNo || existingRecNos.has(recNo)) return;
+          existingRecNos.add(recNo);
+
+          const vNo = padDigits(archRec.vendorNo || defaultVendorNo, 3);
+          const dNo = padDigits(archRec.deptNo || defaultDeptNo, 2);
+          const invNo = padDigits(archRec.invoiceNo || defaultInvNo, 6);
+          const items = (archRec.items || []).map((it) => {
+            const q = Number(it.qty) || 0;
+            const upc = (q < 0 || dNo === '01') ? 1 : (it.unitsPerCase !== undefined ? Number(it.unitsPerCase) : getItemUnitsPerCase(it, 'sidedoor'));
+            return {
+              code: String(it.code),
+              name: String(it.name || 'Item'),
+              qty: q,
+              unitsPerCase: upc,
+              price: Number(it.price) || 0,
+              notScannable: Boolean(it.notScannable || dNo === '01' || dNo === '12'),
+              type: it.type || 'ambient'
+            };
+          });
+
+          const recType = resolveReceiptDocType(vNo, items, archRec.type);
+          const computedTotal = items.reduce((sum, it) => sum + (it.qty * it.price), 0);
+          const totalAmount = archRec.totalAmount !== undefined
+            ? Number(Number(archRec.totalAmount).toFixed(2))
+            : Number(computedTotal.toFixed(2));
+          const expectedUnits = items.reduce((sum, it) => sum + Math.abs(Number(it.qty) || 0), 0);
+          const expectedCost = Number(Math.abs(totalAmount).toFixed(2));
+
+          state.processedReceipts.push({
+            receiptNumber: recNo,
+            date: dayDate,
+            dateIso: dayDateIso,
+            time: String(archRec.time || vendor.time || '8:00 AM'),
+            vendorNo: vNo,
+            deptNo: dNo,
+            invoiceNo: invNo,
+            expectedUnits: expectedUnits,
+            expectedCost: expectedCost,
+            type: recType,
+            source: (vendor.vendorType === 'warehouse' || vNo === '011') ? 'warehouse' : 'scanner',
+            items: items,
+            totalAmount: totalAmount,
+            voided: false,
+            finalized: true,
+            cleared: true,
+            storeCopyPrinted: true,
+            isPreviousDay: true,
+            isArchiveReceipt: true,
+            isProceduralFallbackArchive: isFallbackSource && !day.isCampaignDay,
+            outOfTemp: false,
+            accurate: true,
+            deliveryId: null
+          });
+          added++;
+        });
+      });
+    });
+
+    if (added > 0 && state.terminalOpen && state.currentScreen === 'receipts') {
+      renderTerminalUI();
+    }
+    return added;
+  }
+
   function hydrateStaticArchiveHistory(payload) {
     if (!payload || !Array.isArray(payload.days) || payload.days.length === 0) return null;
     state.staticArchiveHistory = payload;
@@ -9020,6 +9560,8 @@
     if (state.archiveData.length <= 1) {
       generateArchiveData(true);
       if (state.archiveOpen) renderInvoiceArchive();
+    } else {
+      restoreHistoricalArchiveDays();
     }
     return state.staticArchiveHistory;
   }
@@ -9093,15 +9635,16 @@
   function restoreHistoricalArchiveDays() {
     const todayAndFiledCampaign = state.archiveData.filter(isCampaignArchiveDay);
     if (state.staticArchiveHistory && Array.isArray(state.staticArchiveHistory.days) && state.staticArchiveHistory.days.length > 0) {
-      const freshJan = state.staticArchiveHistory.days.map((rawDay) => cloneArchiveDataPayload(rawDay));
+      const freshJan = state.staticArchiveHistory.days.map((rawDay) => normalizeArchiveDayPayload(rawDay));
       state.archiveData = todayAndFiledCampaign.concat(freshJan);
     } else if (Array.isArray(state.proceduralArchiveSnapshot) && state.proceduralArchiveSnapshot.length > 0) {
-      const freshJan = state.proceduralArchiveSnapshot.map((rawDay) => cloneArchiveDataPayload(rawDay));
+      const freshJan = state.proceduralArchiveSnapshot.map((rawDay) => normalizeArchiveDayPayload(rawDay));
       state.archiveData = todayAndFiledCampaign.concat(freshJan);
     }
     if (state.archiveData.length > MAX_ARCHIVE_DAYS) {
       state.archiveData.length = MAX_ARCHIVE_DAYS;
     }
+    syncArchiveReceiptsToLedger();
   }
 
   function generateArchiveData(forceHistorical) {
@@ -9121,6 +9664,7 @@
     const needsHistorical = Boolean(forceHistorical) || state.archiveData.length <= (1 + existingFiledCampaign.length);
     if (!needsHistorical) {
       state.archiveData[0] = existingToday;
+      syncArchiveReceiptsToLedger();
       return;
     }
 
@@ -9129,8 +9673,9 @@
     // Prefer the loaded static January 1996 archive dataset (from dsd-archive-history.json / fallback)
     if (state.staticArchiveHistory && Array.isArray(state.staticArchiveHistory.days) && state.staticArchiveHistory.days.length > 0) {
       state.staticArchiveHistory.days.forEach((rawDay) => {
-        state.archiveData.push(cloneArchiveDataPayload(rawDay));
+        state.archiveData.push(normalizeArchiveDayPayload(rawDay));
       });
+      syncArchiveReceiptsToLedger();
       return;
     }
 
@@ -9178,9 +9723,10 @@
         serialCounter++;
 
         const timeLabel = (7 + v) + ':' + String((d * 13) % 50).padStart(2, '0') + ' AM';
+        const vDocType = padDigits(pick.vendorNo, 3) === '011' ? 'po' : 'invoice';
         const receipts = [{
           receiptNumber: pick.deptNo + '-' + String(serialCounter).padStart(4, '0'),
-          type: 'invoice',
+          type: vDocType,
           invoiceNo: invNo,
           time: timeLabel,
           totalAmount: Number(rTotal.toFixed(2)),
@@ -9214,7 +9760,7 @@
           deptNo: pick.deptNo,
           time: timeLabel,
           invoiceNo: invNo,
-          docType: 'invoice',
+          docType: vDocType,
           hasShort: hasShortStamp,
           items: items,
           totalAmount: Number(totalAmount.toFixed(2)),
@@ -9232,6 +9778,7 @@
       });
     }
     state.proceduralArchiveSnapshot = state.archiveData.slice(1).map((rawDay) => cloneArchiveDataPayload(rawDay));
+    syncArchiveReceiptsToLedger();
   }
 
   function toggleArchivePin(item) {
@@ -9556,18 +10103,19 @@
       }).join('');
       const rcptTotal = rec.totalAmount !== undefined ? Number(rec.totalAmount) : rcptSum;
       const rcptTotalStr = rcptTotal < 0 ? '-$' + Math.abs(rcptTotal).toFixed(2) : formatMoney(rcptTotal);
+      const isPo = !isCred && (rec.type === 'po' || padDigits(rec.vendorNo || currentVendor.vendorNo, 3) === '011');
       const corrBadge = isCorrectionToday
         ? (' <span style="background:' + (!hasHistoricalInCat ? '#0369a1' : '#15803d') + '; color:#fff; padding:1px 6px; border-radius:2px; font-size:9px; font-weight:800; margin-left:6px;">' + (!hasHistoricalInCat ? 'ADDED RECEIPT (TODAY)' : 'CORRECTION (TODAY)') + '</span>')
         : '';
       return '<div class="arch-doc-group ' + (isCred ? 'cat-credit-rcpt' : 'cat-receipt') + '">' +
         '<div class="arch-cat-bar">' +
         '<div class="arch-cat-tab">' +
-        '<span>' + (isCred ? 'CREDIT MEMO RECEIPT' : 'INVOICE RECEIPT') + '</span>' +
+        '<span>' + (isCred ? 'CREDIT MEMO RECEIPT' : (isPo ? 'PO RECEIPT' : 'INVOICE RECEIPT')) + '</span>' +
         '<span class="arch-cat-tab-num">#' + escapeHtml(rec.receiptNumber) + '</span>' +
         corrBadge +
         '</div>' +
         '<div class="arch-cat-meta">' +
-        '<span>' + (isCred ? 'CRED #' : 'INV #') + escapeHtml(refDocNo) + (rcptTime ? ' · ' + escapeHtml(rcptTime) : '') + '</span>' +
+        '<span>' + (isCred ? 'CRED #' : (isPo ? 'PO #' : 'INV #')) + escapeHtml(refDocNo) + (rcptTime ? ' · ' + escapeHtml(rcptTime) : '') + '</span>' +
         '</div>' +
         '</div>' +
         '<div class="arch-doc-tray">' +
@@ -9580,7 +10128,7 @@
         '</div>' +
         '<div class="arch-dm-metagrid">' +
         '<span>RCPT #: <b>' + escapeHtml(rec.receiptNumber) + '</b></span>' +
-        '<span>DOC TYPE: <b>' + (isCred ? 'CREDIT' : 'INVOICE') + '</b></span>' +
+        '<span>DOC TYPE: <b>' + (isCred ? 'CREDIT' : (isPo ? 'PO' : 'INVOICE')) + '</b></span>' +
         '<span>REF #: <b>' + escapeHtml(refDocNo) + '</b></span>' +
         '<span>DEPT #: <b>' + escapeHtml(currentVendor.deptNo) + '</b></span>' +
         '<span>VEND #: <b>' + escapeHtml(currentVendor.vendorNo) + '</b></span>' +
@@ -9768,7 +10316,13 @@
     if (!data || typeof data !== 'object') return false;
     state.restoredFromSave = true;
 
-    state.processedReceipts = Array.isArray(data.processedReceipts) ? deepCloneData(data.processedReceipts) : [];
+    state.processedReceipts = Array.isArray(data.processedReceipts)
+      ? deepCloneData(data.processedReceipts).map((r) => {
+        if (!r || typeof r !== 'object') return r;
+        r.type = resolveReceiptDocType(r.vendorNo, r.items, r.type);
+        return r;
+      })
+      : [];
     state.currentScreen = data.currentScreen || 'menu';
     state.selectedReceiptNo = data.selectedReceiptNo || null;
     state.selectedDeptNo = data.selectedDeptNo || null;
@@ -9891,6 +10445,14 @@
     loadArchiveHistory,
     init(hooks) {
       state.restoredFromSave = false;
+      const isFreshReset = Boolean(hooks && hooks.preserveNone === false);
+      if (isFreshReset) {
+        state.processedReceipts = [];
+        state.homeOfficeTasks = [];
+        state.archiveData = [];
+        state.selectedReceiptNo = null;
+        state.receiptsDeptGroup = '01';
+      }
       Object.assign(state.hooks, hooks || {});
       enrichAllDeliveries();
       generateNightDropInvoices();
@@ -9901,11 +10463,13 @@
           } else {
             generateArchiveData(true);
             generateHomeOfficeTasksForShift();
+            syncArchiveReceiptsToLedger();
           }
         });
       }
-      generateArchiveData(false);
+      generateArchiveData(isFreshReset);
       generateHomeOfficeTasksForShift();
+      syncArchiveReceiptsToLedger();
       notifyDeskStateChanged();
 
       const backBtn = document.getElementById('terminal-back-btn');
@@ -10128,6 +10692,7 @@
     printReceiptSlip,
     printSingleStoreCopy,
     printAllDailyStoreCopies,
+    seedDummyReceiptsAllDepts,
     collectPrinterTraySlips,
     renderPrintedReceiptHud,
     togglePrintedReceiptHud,

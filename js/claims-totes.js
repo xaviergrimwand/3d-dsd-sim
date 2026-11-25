@@ -589,6 +589,46 @@
     tote.items = [];
   }
 
+  function resolveClaimItemNotScannable(prodOrItem) {
+    if (!prodOrItem) return false;
+    if (prodOrItem.notScannable !== undefined) return Boolean(prodOrItem.notScannable);
+    const cat = global.DSDCatalog;
+    const prod = (cat && typeof cat.getProduct === 'function' && prodOrItem.code)
+      ? cat.getProduct(String(prodOrItem.code))
+      : null;
+    if (prod && prod.notScannable !== undefined) return Boolean(prod.notScannable);
+    const deptNo = String(prodOrItem.deptNo || '').padStart(2, '0');
+    return deptNo === '01';
+  }
+
+  function resolveClaimItemVendorInfo(prodOrItem) {
+    if (!prodOrItem) return { vendorNo: '', vendorName: '' };
+    if (prodOrItem.vendorNo) {
+      return {
+        vendorNo: String(prodOrItem.vendorNo),
+        vendorName: String(prodOrItem.vendorName || '')
+      };
+    }
+    const cat = global.DSDCatalog;
+    const codeStr = String(prodOrItem.code || '');
+    if (cat && Array.isArray(cat.allVendorEntries) && codeStr) {
+      const ve = cat.allVendorEntries.find((v) => v && Array.isArray(v.products) && v.products.some((p) => String(p.code) === codeStr));
+      if (ve) {
+        return {
+          vendorNo: String(ve.vendorNo || ''),
+          vendorName: String(ve.name || '')
+        };
+      }
+    }
+    const deptNo = String(prodOrItem.deptNo || '').padStart(2, '0');
+    if (deptNo === '60') {
+      const v601 = (cat && typeof cat.getVendor === 'function') ? cat.getVendor('601') : null;
+      return { vendorNo: '601', vendorName: String((v601 && v601.name) || 'Retail Solutions Inc.') };
+    }
+    const whVend = (cat && typeof cat.getVendor === 'function') ? cat.getVendor('011') : null;
+    return { vendorNo: '011', vendorName: String((whVend && whVend.name) || 'Apex Logistics') };
+  }
+
   function addGeneratedClaimItemToTote(tote, prod) {
     if (!tote || !prod || tote.items.length >= ITEM_SLOT_POSITIONS.length) return null;
     const prodType = String(prod.type || 'ambient').toLowerCase();
@@ -597,6 +637,9 @@
     const deptNo = (cat && typeof cat.getProductDeptNo === 'function')
       ? (cat.getProductDeptNo(prod.code) || prod.deptNo || '10')
       : (prod.deptNo || '10');
+    const vendInfo = resolveClaimItemVendorInfo({ code: prod.code, deptNo: deptNo, vendorNo: prod.vendorNo, vendorName: prod.vendorName });
+    const catProd = (cat && typeof cat.getProduct === 'function') ? cat.getProduct(String(prod.code)) : null;
+    const unitsPerCase = Math.max(1, Number(prod.unitsPerCase || (catProd && catProd.unitsPerCase) || 1));
 
     const itemRec = {
       id: 'claim_item_' + state.nextItemSeq++,
@@ -605,9 +648,13 @@
       code: String(prod.code),
       name: String(prod.name || 'Damaged Item'),
       deptNo: String(deptNo).padStart(2, '0'),
+      vendorNo: vendInfo.vendorNo,
+      vendorName: vendInfo.vendorName,
+      unitsPerCase: unitsPerCase,
       price: Number(prod.price) || 0,
       size: prod.size || 'medium',
       type: prodType,
+      notScannable: resolveClaimItemNotScannable({ code: prod.code, deptNo: deptNo, notScannable: prod.notScannable }),
       damageType: condObj.key,
       conditionLabel: condObj.label,
       claimKeywords: Array.isArray(prod.claimKeywords) ? prod.claimKeywords.slice() : [],
@@ -949,6 +996,33 @@
       if (hit) return hit;
     }
     return null;
+  }
+
+  function claimCodesMatch(a, b) {
+    const cleanA = String(a || '').replace(/\D+/g, '');
+    const cleanB = String(b || '').replace(/\D+/g, '');
+    if (!cleanA || !cleanB) return false;
+    return cleanA === cleanB || cleanA.replace(/^0+/, '') === cleanB.replace(/^0+/, '');
+  }
+
+  function findClaimItemForCodeInput(rawCode, preferredItemId) {
+    const codeStr = String(rawCode || '').trim();
+    if (!codeStr) return null;
+    const openCandidates = [];
+    for (let i = 0; i < state.totes.length; i++) {
+      const t = state.totes[i];
+      if (!t || t.isRed || !t.isOpen || !Array.isArray(t.items)) continue;
+      t.items.forEach((it) => {
+        if (it && !it.claimed && !it.scannerConfirmed && claimCodesMatch(it.code, codeStr)) {
+          openCandidates.push(it);
+        }
+      });
+    }
+    if (preferredItemId) {
+      const pref = openCandidates.find((it) => it.id === preferredItemId);
+      if (pref) return pref;
+    }
+    return openCandidates[0] || null;
   }
 
   function syncProcessedClaimVisual(item) {
@@ -1950,9 +2024,13 @@
           code: it.code,
           name: it.name,
           deptNo: it.deptNo,
+          vendorNo: it.vendorNo || '',
+          vendorName: it.vendorName || '',
+          unitsPerCase: Number(it.unitsPerCase) || 1,
           price: Number(it.price) || 0,
           size: it.size || 'medium',
           type: it.type || 'ambient',
+          notScannable: Boolean(it.notScannable),
           damageType: it.damageType,
           conditionLabel: it.conditionLabel,
           confirmedCondition: it.confirmedCondition || null,
@@ -2036,16 +2114,22 @@
       const savedItems = Array.isArray(st.items) ? st.items : [];
       savedItems.forEach((si, idx) => {
         if (!si) return;
+        const impDept = String(si.deptNo || '10').padStart(2, '0');
+        const impVend = resolveClaimItemVendorInfo({ code: si.code, deptNo: impDept, vendorNo: si.vendorNo, vendorName: si.vendorName });
         const itemRec = {
           id: si.id || ('claim_item_' + state.nextItemSeq++),
           toteIndex: tote.index,
           toteLabel: si.toteLabel || tote.label,
           code: String(si.code || ''),
           name: String(si.name || 'Damaged Item'),
-          deptNo: String(si.deptNo || '10').padStart(2, '0'),
+          deptNo: impDept,
+          vendorNo: impVend.vendorNo,
+          vendorName: impVend.vendorName,
+          unitsPerCase: Math.max(1, Number(si.unitsPerCase) || 1),
           price: Number(si.price) || 0,
           size: si.size || 'medium',
           type: String(si.type || 'ambient').toLowerCase(),
+          notScannable: resolveClaimItemNotScannable(si),
           damageType: si.damageType || DAMAGE_CONDITIONS[0].key,
           conditionLabel: si.conditionLabel || getConditionInfo(si.damageType).label,
           confirmedCondition: si.confirmedCondition || null,
@@ -2254,6 +2338,7 @@
     closeAllTotes: closeAllTotes,
     setHoveredTote: setHoveredTote,
     findItemById: findItemById,
+    findClaimItemForCodeInput: findClaimItemForCodeInput,
     getConditionInfo: getConditionInfo,
     getReceptacleLabel: getReceptacleLabel,
     isItemVendorCreditEligible: isItemVendorCreditEligible,

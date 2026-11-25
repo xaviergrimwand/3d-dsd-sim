@@ -161,6 +161,34 @@
       4: { x: 12.0, z: 2.8 }  // East side of Dock 4, away from the charger
     };
 
+    // Vendor truck stand points positioned right beside each bay's dry offload row (row 12 / z = 6.0)
+    const VENDOR_DRIVER_STANDS = {
+      1: { x: -10.32, z: 4.55 },
+      2: { x: -3.84, z: 4.55 },
+      3: { x: 3.36, z: 4.55 },
+      4: { x: 8.16, z: 4.55 }
+    };
+
+    function getVendorPostStand(bayId, session) {
+      const d = session && session.delivery ? session.delivery : null;
+      const dId = d ? d.id : null;
+      const offloaded = dId
+        ? pallets.filter((p) => p && p.data && p.data.deliveryId === dId && p.position && p.position.z >= 0)
+        : [];
+      if (offloaded.length > 0) {
+        let sumX = 0;
+        let minZ = Infinity;
+        offloaded.forEach((p) => {
+          sumX += p.position.x;
+          if (p.position.z < minZ) minZ = p.position.z;
+        });
+        const avgX = Math.max(-9.8, Math.min(9.8, sumX / offloaded.length));
+        const safeZ = Math.max(3.8, Math.min(12.5, minZ - 1.35));
+        return { x: avgX, z: safeZ };
+      }
+      return VENDOR_DRIVER_STANDS[bayId] || VENDOR_DRIVER_STANDS[3];
+    }
+
     // Computer desk keepout bounds (desk is x: 11.565..12.915, z: 3.938..6.238) + shoulder clearance
     const DESK_KEEPOUT = { minX: 10.95, maxX: 13.40, minZ: 3.35, maxZ: 6.85, laneX: 10.20, northZ: 3.15, southZ: 7.05 };
 
@@ -1367,7 +1395,7 @@
           const keepOpenScannerWork = Boolean(
             scState && (
               scState.activeReceiptNo ||
-              ['scanning', 'list', 'totals', 'totals-edit', 'confirm-finalize', 'supply', 'supply-cart', 'supply-confirm', 'inventory', 'label-cases', 'damage', 'damage-cond', 'damage-disp', 'damage-ready'].includes(scState.screen)
+              ['scanning', 'list', 'totals', 'totals-edit', 'confirm-finalize', 'supply', 'supply-cart', 'supply-totals', 'supply-confirm', 'inventory', 'label-cases', 'damage', 'damage-cond', 'damage-disp', 'damage-ready'].includes(scState.screen)
             )
           );
           if (!s.delivery.receiptCreated && !s.delivery.isFinalized && !keepOpenScannerWork) {
@@ -1624,6 +1652,8 @@
             const dock = dockDoors.find((dd) => dd.id === d.dockBay);
             const bayX = dock ? dock.worldX : 7.20;
             const ownJack = createElectricJackWorld();
+            if (typeof ownJack.setOperatingMode === 'function') ownJack.setOperatingMode(false);
+            if (typeof ownJack.setLifted === 'function') ownJack.setLifted(false);
             // Stowed inside trailer rear (battery facing door, forks pointing deeper inside, clear of door at z = -0.45)
             ownJack.position.set(bayX, 0, -1.60);
             ownJack.rotation.y = 0;
@@ -1684,8 +1714,8 @@
       startWalkingIn: function (session) {
         if (!session || session.state !== 'OUTSIDE_WAITING') return;
         const d = session.delivery;
-        const targetSpot = (d && d.type === 'vendor_truck' && d.dockBay && WAREHOUSE_DRIVER_STANDS[d.dockBay])
-          ? WAREHOUSE_DRIVER_STANDS[d.dockBay]
+        const targetSpot = (d && d.type === 'vendor_truck' && d.dockBay && VENDOR_DRIVER_STANDS[d.dockBay])
+          ? VENDOR_DRIVER_STANDS[d.dockBay]
           : (INSIDE_CHECKIN_POSITIONS[session.slotIdx] || INSIDE_CHECKIN_POSITIONS[0]);
         session.state = 'ENTERING';
         session.waypoints = buildDeskSafeWaypoints(
@@ -1798,9 +1828,9 @@
         let totePos;
         if (d.type === 'sidedoor' && session.cart && session.cart.mesh) {
           totePos = new THREE.Vector3(session.cart.mesh.position.x, 0, session.cart.mesh.position.z + 0.88);
-        } else if (d.type === 'vendor_truck' && d.dockBay && WAREHOUSE_DRIVER_STANDS[d.dockBay]) {
-          const dockStand = WAREHOUSE_DRIVER_STANDS[d.dockBay];
-          totePos = new THREE.Vector3(dockStand.x, 0, dockStand.z + 0.72);
+        } else if (d.type === 'vendor_truck' && d.dockBay && VENDOR_DRIVER_STANDS[d.dockBay]) {
+          const vendorStand = VENDOR_DRIVER_STANDS[d.dockBay];
+          totePos = new THREE.Vector3(vendorStand.x + 0.72, 0, vendorStand.z + 0.68);
         } else {
           const stand = INSIDE_CHECKIN_POSITIONS[session.slotIdx] || INSIDE_CHECKIN_POSITIONS[0];
           const zOff = (session.slotIdx === 2 || session.slotIdx === 4) ? -0.62 : 0.62;
@@ -2140,17 +2170,23 @@
             if (session.vendorHasJack && session.vendorJack) {
               const jyaw = session.driver.mesh.rotation.y;
               session.vendorJack.position.set(
-                curPos.x + Math.sin(jyaw) * 0.65,
+                curPos.x + Math.sin(jyaw) * 0.92,
                 0,
-                curPos.z + Math.cos(jyaw) * 0.65
+                curPos.z + Math.cos(jyaw) * 0.92
               );
               session.vendorJack.rotation.y = jyaw + Math.PI;
+              if (typeof session.vendorJack.setOperatingMode === 'function') {
+                session.vendorJack.setOperatingMode(true);
+              }
+              if (typeof session.vendorJack.setLifted === 'function') {
+                session.vendorJack.setLifted(Boolean(session.vendorHitchedPallet));
+              }
 
               if (session.vendorHitchedPallet) {
                 session.vendorHitchedPallet.position.set(
-                  session.vendorJack.position.x + Math.sin(jyaw) * 1.25,
+                  session.vendorJack.position.x + Math.sin(jyaw) * 0.96,
                   0.08,
-                  session.vendorJack.position.z + Math.cos(jyaw) * 1.25
+                  session.vendorJack.position.z + Math.cos(jyaw) * 0.96
                 );
                 session.vendorHitchedPallet.mesh.position.copy(session.vendorHitchedPallet.position);
                 session.vendorHitchedPallet.mesh.rotation.y = jyaw;
@@ -2248,6 +2284,9 @@
 
           session.vendorHasJack = true;
           session.vendorDroppedCount = 0;
+          if (session.vendorJack && typeof session.vendorJack.setOperatingMode === 'function') {
+            session.vendorJack.setOperatingMode(true);
+          }
           if (session.driver && typeof session.driver.setOperatingJack === 'function') {
             session.driver.setOperatingJack(true);
           }
@@ -2269,7 +2308,7 @@
 
           session.state = 'VENDOR_UNLOADING_DRIVE_IN';
           session.waypoints = [
-            new THREE.Vector3(nextPallet.position.x, 0, Math.min(-0.8, nextPallet.position.z + 2.35))
+            new THREE.Vector3(nextPallet.position.x, 0, Math.min(-0.8, nextPallet.position.z + 1.88))
           ];
           session.currentWaypointIdx = 0;
         } else if (session.state === 'VENDOR_UNLOADING_DRIVE_IN') {
@@ -2286,6 +2325,9 @@
             session.vendorHitchedPallet = bayPallet;
             bayPallet.isHitched = true;
             bayPallet.data.status = 'IN_TRANSIT';
+            if (session.vendorJack && typeof session.vendorJack.setLifted === 'function') {
+              session.vendorJack.setLifted(true);
+            }
             SoundSystem.playHydraulicLift();
           }
 
@@ -2295,7 +2337,7 @@
           session.waypoints = [
             new THREE.Vector3(bayX, 0, 1.5),
             new THREE.Vector3(dropPos.x, 0, 3.0),
-            new THREE.Vector3(dropPos.x, 0, dropPos.z - 2.35)
+            new THREE.Vector3(dropPos.x, 0, dropPos.z - 1.88)
           ];
           session.currentWaypointIdx = 0;
         } else if (session.state === 'VENDOR_UNLOADING_DRIVE_OUT') {
@@ -2312,6 +2354,9 @@
             p.mesh.rotation.y = 0;
             p.data.status = 'STAGED_CORRECT';
             session.vendorHitchedPallet = null;
+            if (session.vendorJack && typeof session.vendorJack.setLifted === 'function') {
+              session.vendorJack.setLifted(false);
+            }
             session.vendorDroppedCount += 1;
             SoundSystem.playHydraulicLower();
             SoundSystem.playSuccessChime();
@@ -2328,7 +2373,7 @@
             session.waypoints = [
               new THREE.Vector3(bayX, 0, 2.5),
               new THREE.Vector3(nextPallet.position.x, 0, 0.5),
-              new THREE.Vector3(nextPallet.position.x, 0, nextPallet.position.z + 2.35)
+              new THREE.Vector3(nextPallet.position.x, 0, nextPallet.position.z + 1.88)
             ];
             session.currentWaypointIdx = 0;
           } else {
@@ -2349,12 +2394,14 @@
             session.driver.setOperatingJack(false);
           }
           if (session.vendorJack) {
+            if (typeof session.vendorJack.setOperatingMode === 'function') session.vendorJack.setOperatingMode(false);
+            if (typeof session.vendorJack.setLifted === 'function') session.vendorJack.setLifted(false);
             session.vendorJack.position.set(bayX, 0, -1.60);
             session.vendorJack.rotation.y = 0;
           }
           SoundSystem.playDropSound();
 
-          const dockStand = WAREHOUSE_DRIVER_STANDS[bay] || INSIDE_CHECKIN_POSITIONS[session.slotIdx] || INSIDE_CHECKIN_POSITIONS[1];
+          const dockStand = getVendorPostStand(bay, session);
           session.state = 'VENDOR_RETURNING_TO_SIDE_DOOR';
           session.waypoints = [
             new THREE.Vector3(bayX, 0, 2.2),
@@ -2568,6 +2615,8 @@
                 hp.isHitched = true;
               }
             }
+            if (typeof ownJack.setOperatingMode === 'function') ownJack.setOperatingMode(Boolean(ss.vendorHasJack));
+            if (typeof ownJack.setLifted === 'function') ownJack.setLifted(Boolean(session.vendorHitchedPallet));
           }
 
           this.sessions.push(session);

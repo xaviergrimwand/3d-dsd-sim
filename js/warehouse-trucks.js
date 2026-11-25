@@ -1015,11 +1015,12 @@
 
     let receipt = null;
     if (!truck.receiptCreated && global.DSDReceipts && typeof global.DSDReceipts.createReceipt === 'function') {
+      const vNo = String(truck.vendorNo || '').replace(/\D/g, '').padStart(3, '0').slice(-3);
       receipt = global.DSDReceipts.createReceipt({
         vendorNo: truck.vendorNo,
         deptNo: truck.deptNo,
         invoiceNo: truck.invoiceNo,
-        type: 'invoice',
+        type: vNo === '011' ? 'po' : 'invoice',
         source: 'warehouse',
         driverName: truck.driverName,
         carrier: truck.carrier,
@@ -1217,6 +1218,8 @@
     const colStart = dd ? dd.colStart : 6;
     const colEnd = dd ? dd.colEnd : 7;
 
+    const invBase = String(delivery.invoiceNo || delivery.docNum || '550000').replace(/^#/, '');
+
     // Load pallets behind the doorway onboard electric jack zone inside the 6-row (rows 4..9) vendor trailer.
     palletChunks.forEach((chunk, i) => {
       const col = palletChunks.length === 1
@@ -1230,7 +1233,7 @@
         isWarehousePallet: false,
         palletIndex: i,
         palletTotal: palletChunks.length,
-        po: `#${(delivery.invoiceNo || '5500').slice(-4)}-${i + 1}`,
+        po: palletChunks.length > 1 ? `#${invBase}-${i + 1}` : `#${invBase}`,
         name: `${delivery.carrier} (${chunk.length} Cs)`,
         targetZone: 'D',
         expectedTemp: zInfo.expectedTemp,
@@ -1321,12 +1324,15 @@
     const whEntries = state.schedule.filter((e) => e.type === 'warehouse');
     const totalWhPallets = whEntries.reduce((s, e) => s + e.totalPallets, 0);
     const stagedWhPallets = whEntries.reduce((s, e) => s + e.stagedCount, 0);
-    if (pallets.length > 0) {
-      const stagedFloor = pallets.filter((p) => p.data && (p.data.status === 'STAGED_CORRECT' || p.data.status === 'AUDITED')).length;
+    const warehousePallets = pallets.filter((p) =>
+      p && p.data && p.data.isWarehousePallet !== false && !p.data.isOverstockPallet && !Array.isArray(p.data.physicalBoxes)
+    );
+    if (warehousePallets.length > 0) {
+      const stagedFloor = warehousePallets.filter((p) => p.data && (p.data.status === 'STAGED_CORRECT' || p.data.status === 'AUDITED')).length;
       return {
         label: 'DOCK PALLETS: ',
         staged: stagedFloor,
-        total: pallets.length,
+        total: warehousePallets.length,
         isWarehouse: false
       };
     }

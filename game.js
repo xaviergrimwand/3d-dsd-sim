@@ -34,6 +34,9 @@
       clockTime: document.getElementById('hud-shift-time'),
       clockDate: document.getElementById('hud-shift-date'),
       retroClock: document.getElementById('retro-digital-clock'),
+      clockCalendar: document.getElementById('hud-clock-calendar'),
+      clockCalGrid: document.getElementById('hud-clock-cal-grid'),
+      clockCalWorkday: document.getElementById('hud-cal-workday'),
       rdcLeadZero: document.getElementById('rdc-lead-zero'),
       rdcHourMain: document.getElementById('rdc-hour-main'),
       rdcMinute: document.getElementById('rdc-minute'),
@@ -105,6 +108,96 @@
 
   let lastHudTimeKey = '';
   let lastHudStatsKey = '';
+  let lastCalRenderKey = '';
+
+  function buildFebruaryCalendarCells(snap) {
+    const s = snap || {};
+    const mon = String(s.monthName || 'FEB').toUpperCase();
+    const curDay = mon === 'FEB' ? (parseInt(s.dayOfMonth, 10) || 1) : (mon === 'MAR' ? 30 : 0);
+    const shiftDone = Boolean(s.shiftEnded || s.campaignComplete);
+    const cells = [];
+
+    // 5-week grid for February 1996 starting Sunday Jan 28 through Saturday Mar 2 (35 cells)
+    for (let offset = -3; offset <= 31; offset++) {
+      const dt = new Date(1996, 1, offset); // month 1 = Feb (offset <= 0 gives Jan 28..31; offset >= 30 gives Mar 1..2)
+      const cellMonth = dt.getMonth();
+      const dayNum = dt.getDate();
+      const dow = dt.getDay();
+      const isWeekend = (dow === 0 || dow === 6);
+      const isPrevJan = cellMonth === 0;
+      const isFeb = cellMonth === 1;
+      const isTrailing = cellMonth === 2;
+      const isWorkday = !isWeekend && (isFeb || isPrevJan);
+      const isToday = Boolean(isFeb && mon === 'FEB' && dayNum === curDay);
+      const isCompleted = isPrevJan
+        ? !isWeekend
+        : (isFeb && !isWeekend && (dayNum < curDay || (dayNum === curDay && shiftDone)));
+
+      cells.push({
+        month: cellMonth,
+        day: dayNum,
+        dow: dow,
+        isWeekend: isWeekend,
+        isPrevJan: isPrevJan,
+        isFeb: isFeb,
+        isTrailing: isTrailing,
+        isWorkday: isWorkday,
+        isToday: isToday,
+        completed: isCompleted
+      });
+    }
+    return cells;
+  }
+
+  function renderClockCalendar(snap) {
+    const d = state.dom;
+    if (!d.clockCalGrid) return;
+    const s = snap || (global.ShiftClock ? global.ShiftClock.getTimeSnapshot() : {});
+    const curDay = parseInt(s.dayOfMonth, 10) || 1;
+    const calKey = `${s.monthName || 'FEB'}|${curDay}|${s.workdayIndex || 1}|${s.shiftEnded ? 1 : 0}|${s.campaignComplete ? 1 : 0}`;
+    if (calKey === lastCalRenderKey && d.clockCalGrid.children.length > 0) return;
+    lastCalRenderKey = calKey;
+
+    if (d.clockCalWorkday) {
+      d.clockCalWorkday.textContent = 'DAY ' + (s.workdayIndex || 1) + '/21';
+    }
+
+    const cells = buildFebruaryCalendarCells(s);
+    const svgNs = 'http://www.w3.org/2000/svg';
+    d.clockCalGrid.innerHTML = '';
+
+    cells.forEach((cell) => {
+      const el = document.createElement('div');
+      const cls = ['cal-cell'];
+      if (cell.isWeekend) cls.push('is-weekend');
+      if (cell.isWorkday) cls.push('is-workday');
+      if (cell.isPrevJan) cls.push('is-other-month');
+      if (cell.isTrailing) cls.push('is-trailing');
+      if (cell.isToday) cls.push('is-today');
+      if (cell.completed) cls.push('is-completed');
+      el.className = cls.join(' ');
+      el.setAttribute('data-cal-month', String(cell.month));
+      el.setAttribute('data-cal-day', String(cell.day));
+
+      const numSpan = document.createElement('span');
+      numSpan.className = 'cal-day-num';
+      numSpan.textContent = String(cell.day);
+      el.appendChild(numSpan);
+
+      if (cell.completed) {
+        const svg = document.createElementNS(svgNs, 'svg');
+        svg.setAttribute('class', 'cal-x-mark');
+        svg.setAttribute('viewBox', '0 0 24 24');
+        svg.setAttribute('aria-hidden', 'true');
+        const path = document.createElementNS(svgNs, 'path');
+        path.setAttribute('d', 'M5 5L19 19M19 5L5 19');
+        svg.appendChild(path);
+        el.appendChild(svg);
+      }
+
+      d.clockCalGrid.appendChild(el);
+    });
+  }
 
   function updateHud(force) {
     if (!global.ShiftClock || !global.ShiftStats) return;
@@ -149,6 +242,7 @@
       if (d.rdcDow) d.rdcDow.textContent = snap.dayName || 'MON';
       if (d.rdcMonDay) d.rdcMonDay.textContent = (snap.monthName || 'JAN') + ' ' + (snap.dayOfMonth || '01');
       if (d.rdcYear) d.rdcYear.textContent = String(snap.year || 1996);
+      renderClockCalendar(snap);
       if (snap.afterNoon && !snap.shiftEnded && !state.noonPunchOutNotified) {
         state.noonPunchOutNotified = true;
         if (typeof state.hooks.showNotification === 'function') {
@@ -347,22 +441,122 @@
     return String(doorKey || 'Dock Door');
   }
 
+  const popoverClosers = [];
+
+  function registerCommandBarPopoverCloser(fn) {
+    if (typeof fn === 'function' && !popoverClosers.includes(fn)) {
+      popoverClosers.push(fn);
+    }
+  }
+
+  function closeAllCommandBarPopovers(exceptFn) {
+    popoverClosers.forEach((fn) => {
+      if (fn !== exceptFn) fn(false);
+    });
+  }
+
   function setRemainingLegendOpen(open) {
     const tracker = state.dom.remTracker;
     const legend = state.dom.remLegend;
     if (!tracker || !legend) return;
     const isOpen = Boolean(open);
+    if (isOpen) closeAllCommandBarPopovers(setRemainingLegendOpen);
     tracker.classList.toggle('legend-open', isOpen);
     tracker.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
     legend.setAttribute('aria-hidden', isOpen ? 'false' : 'true');
+  }
+
+  function setClockCalendarOpen(open) {
+    const clockEl = state.dom.retroClock;
+    const calEl = state.dom.clockCalendar;
+    if (!clockEl || !calEl) return;
+    const isOpen = Boolean(open);
+    if (isOpen) {
+      closeAllCommandBarPopovers(setClockCalendarOpen);
+      renderClockCalendar();
+    }
+    clockEl.classList.toggle('calendar-open', isOpen);
+    clockEl.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
+    calEl.setAttribute('aria-hidden', isOpen ? 'false' : 'true');
+  }
+
+  function toggleRemainingLegend() {
+    const tracker = state.dom.remTracker;
+    if (!tracker) return false;
+    const next = !tracker.classList.contains('legend-open');
+    setRemainingLegendOpen(next);
+    return next;
+  }
+
+  function toggleClockCalendar() {
+    const clockEl = state.dom.retroClock;
+    if (!clockEl) return false;
+    const next = !clockEl.classList.contains('calendar-open');
+    setClockCalendarOpen(next);
+    return next;
+  }
+
+  function bindCommandBarPopover(host, popover, openClass, popoverSelector, setOpenFn) {
+    if (!host || !popover || host.dataset.popoverBound === '1') return;
+    host.dataset.popoverBound = '1';
+    registerCommandBarPopoverCloser(setOpenFn);
+
+    let lastTouchMs = 0;
+    function isTouchOnlyMode() {
+      if (Date.now() - lastTouchMs < 900) return true;
+      if (global.matchMedia && global.matchMedia('(pointer: coarse)').matches && !global.matchMedia('(any-pointer: fine)').matches) {
+        return true;
+      }
+      return false;
+    }
+
+    host.addEventListener('touchstart', () => {
+      lastTouchMs = Date.now();
+    }, { passive: true });
+
+    host.addEventListener('mouseenter', () => {
+      if (isTouchOnlyMode()) return;
+      setOpenFn(true);
+    });
+    host.addEventListener('mouseleave', () => {
+      if (isTouchOnlyMode()) return;
+      setOpenFn(false);
+    });
+
+    host.addEventListener('click', (e) => {
+      if (e && e.target && e.target.closest && e.target.closest(popoverSelector)) return;
+      if (!isTouchOnlyMode()) return;
+      e.stopPropagation();
+      const next = !host.classList.contains(openClass);
+      setOpenFn(next);
+      if (next && typeof host.focus === 'function') {
+        try { host.focus({ preventScroll: true }); } catch (_) { host.focus(); }
+      }
+    });
+
+    host.addEventListener('focusout', (e) => {
+      if (e && e.relatedTarget && host.contains(e.relatedTarget)) return;
+      setOpenFn(false);
+    });
+    document.addEventListener('pointerdown', (e) => {
+      if (!host.classList.contains(openClass)) return;
+      if (!e || !e.target || !host.contains(e.target)) {
+        setOpenFn(false);
+      }
+    }, true);
+    global.addEventListener('blur', () => setOpenFn(false));
+    global.addEventListener('keydown', (e) => {
+      if (e.code === 'Escape' && host.classList.contains(openClass)) {
+        setOpenFn(false);
+      }
+    });
   }
 
   function bindRemainingLegend() {
     const tracker = state.dom.remTracker;
     const legend = state.dom.remLegend;
     const grid = state.dom.remLegendGrid;
-    if (!tracker || !legend || tracker.dataset.legendBound === '1') return;
-    tracker.dataset.legendBound = '1';
+    if (!tracker || !legend || tracker.dataset.popoverBound === '1') return;
 
     if (grid && grid.children.length === 0) {
       tracker.querySelectorAll('.rem-table .rem-cell').forEach((cell) => {
@@ -383,61 +577,16 @@
       });
     }
 
-    let lastTouchMs = 0;
-    function isTouchOnlyMode() {
-      if (Date.now() - lastTouchMs < 900) return true;
-      if (global.matchMedia && global.matchMedia('(pointer: coarse)').matches && !global.matchMedia('(any-pointer: fine)').matches) {
-        return true;
-      }
-      return false;
-    }
+    bindCommandBarPopover(tracker, legend, 'legend-open', '#hud-remaining-legend', setRemainingLegendOpen);
+  }
 
-    tracker.addEventListener('touchstart', () => {
-      lastTouchMs = Date.now();
-    }, { passive: true });
-
-    // PC: open on mouseover, close when pointer leaves tracker + legend
-    tracker.addEventListener('mouseenter', () => {
-      if (isTouchOnlyMode()) return;
-      setRemainingLegendOpen(true);
-    });
-    tracker.addEventListener('mouseleave', () => {
-      if (isTouchOnlyMode()) return;
-      setRemainingLegendOpen(false);
-    });
-
-    // Android / Touch: tap toggles open and claims focus; tapping outside or losing focus closes
-    tracker.addEventListener('click', (e) => {
-      if (e && e.target && e.target.closest && e.target.closest('#hud-remaining-legend')) return;
-      if (!isTouchOnlyMode()) return;
-      e.stopPropagation();
-      const next = !tracker.classList.contains('legend-open');
-      setRemainingLegendOpen(next);
-      if (next && typeof tracker.focus === 'function') {
-        try { tracker.focus({ preventScroll: true }); } catch (_) { tracker.focus(); }
-      }
-    });
-
-    tracker.addEventListener('focusout', (e) => {
-      if (e && e.relatedTarget && tracker.contains(e.relatedTarget)) return;
-      setRemainingLegendOpen(false);
-    });
-    document.addEventListener('pointerdown', (e) => {
-      if (!tracker.classList.contains('legend-open')) return;
-      if (!e || !e.target || !tracker.contains(e.target)) {
-        setRemainingLegendOpen(false);
-      }
-    }, true);
-    global.addEventListener('blur', () => setRemainingLegendOpen(false));
-    global.addEventListener('keydown', (e) => {
-      if (e.code === 'Escape' && tracker.classList.contains('legend-open')) {
-        setRemainingLegendOpen(false);
-      }
-    });
+  function bindClockCalendar() {
+    bindCommandBarPopover(state.dom.retroClock, state.dom.clockCalendar, 'calendar-open', '#hud-clock-calendar', setClockCalendarOpen);
   }
 
   function bindEvents() {
     bindRemainingLegend();
+    bindClockCalendar();
     if (state.dom.nextShiftBtn) {
       state.dom.nextShiftBtn.addEventListener('click', startNextShift);
     }
@@ -501,7 +650,9 @@
   }
 
   function syncClockPauseFlag() {
-    if (isModalOpen()) setRemainingLegendOpen(false);
+    if (isModalOpen()) {
+      closeAllCommandBarPopovers(null);
+    }
     if (global.ShiftClock && typeof global.ShiftClock.setSystemPaused === 'function') {
       global.ShiftClock.setSystemPaused(isSystemPaused());
     }
@@ -690,6 +841,12 @@
     setInfoModalOpen: setInfoModalOpen,
     startNewGame: startNewGame,
     returnToMainMenu: returnToMainMenu,
-    syncAfterLoad: syncAfterLoad
+    syncAfterLoad: syncAfterLoad,
+    buildFebruaryCalendarCells: buildFebruaryCalendarCells,
+    renderClockCalendar: renderClockCalendar,
+    toggleRemainingLegend: toggleRemainingLegend,
+    toggleClockCalendar: toggleClockCalendar,
+    bindCommandBarPopover: bindCommandBarPopover,
+    closeAllCommandBarPopovers: closeAllCommandBarPopovers
   };
 })(window);

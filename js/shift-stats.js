@@ -87,6 +87,12 @@
 
   function generateReceiptNumber(deptNo, existingReceipts) {
     const paddedDept = padDept(deptNo);
+    const usedNumbers = new Set();
+    if (Array.isArray(existingReceipts)) {
+      existingReceipts.forEach((r) => {
+        if (r && r.receiptNumber) usedNumbers.add(String(r.receiptNumber));
+      });
+    }
     if (receiptCounters[paddedDept] === undefined) {
       let count = 0;
       if (Array.isArray(existingReceipts)) {
@@ -96,9 +102,13 @@
       }
       receiptCounters[paddedDept] = count;
     }
-    receiptCounters[paddedDept] += 1;
-    const seqStr = String(receiptCounters[paddedDept]).padStart(4, '0');
-    return paddedDept + '-' + seqStr;
+    let candidate = '';
+    do {
+      receiptCounters[paddedDept] += 1;
+      const seqStr = String(receiptCounters[paddedDept]).padStart(4, '0');
+      candidate = paddedDept + '-' + seqStr;
+    } while (usedNumbers.has(candidate));
+    return candidate;
   }
 
   function resetDailyStats() {

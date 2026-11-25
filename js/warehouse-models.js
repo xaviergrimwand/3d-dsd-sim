@@ -496,172 +496,325 @@
       return { group, update };
     }
 
-    function createElectricJackWorld() {
-      const root = new THREE.Group();
-      root.position.set(-7.20, 0, 1.95); // Staged between Docks 1 & 2 clear of column & bollards
-      root.rotation.y = 0; // Facing South into dock floor
+    function createJackMaterials() {
+      return {
+        matDark: new THREE.MeshStandardMaterial({ color: 0x1e293b, roughness: 0.65, metalness: 0.55 }),
+        matCharcoal: new THREE.MeshStandardMaterial({ color: 0x0f172a, roughness: 0.8, metalness: 0.35 }),
+        matSteel: new THREE.MeshStandardMaterial({ color: 0x475569, roughness: 0.48, metalness: 0.72 }),
+        matChrome: new THREE.MeshStandardMaterial({ color: 0xcbd5e1, roughness: 0.25, metalness: 0.90 }),
+        matYellow: new THREE.MeshStandardMaterial({ color: 0xf59e0b, roughness: 0.45, metalness: 0.32 }),
+        matYellowDark: new THREE.MeshStandardMaterial({ color: 0xd97706, roughness: 0.55, metalness: 0.35 }),
+        matHazard: new THREE.MeshStandardMaterial({ map: createElectricJackDecalTexture(), roughness: 0.5 }),
+        matBellyRed: new THREE.MeshBasicMaterial({ color: 0xef4444 }),
+        matAmberBtn: new THREE.MeshBasicMaterial({ color: 0xfacc15 }),
+        matGrip: new THREE.MeshStandardMaterial({ color: 0x0f172a, roughness: 0.92, metalness: 0.1 })
+      };
+    }
 
-      const matDark = new THREE.MeshStandardMaterial({ color: 0x1e293b, roughness: 0.7, metalness: 0.5 });
-      const matSteel = new THREE.MeshStandardMaterial({ color: 0x475569, roughness: 0.5, metalness: 0.7 });
-      const matYellow = new THREE.MeshStandardMaterial({ color: 0xf59e0b, roughness: 0.45, metalness: 0.3 });
-      const matHazard = new THREE.MeshStandardMaterial({ map: createElectricJackDecalTexture(), roughness: 0.5 });
-      const matBellyRed = new THREE.MeshBasicMaterial({ color: 0xef4444 });
+    function buildJackTillerHead(mats, options) {
+      const opts = options || {};
+      const headGroup = new THREE.Group();
 
-      // 1. Lower Bumper Skirt (with 45 deg hazard stripes)
-      const skirt = new THREE.Mesh(new THREE.BoxGeometry(0.72, 0.18, 0.54), matHazard);
-      skirt.position.set(0, 0.09, 0);
-      root.add(skirt);
+      // Central die-cast control pod & contoured amber top shroud
+      const podCore = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.085, 0.14), mats.matDark);
+      headGroup.add(podCore);
 
-      // 2. Main Powerhead Battery Body
-      const body = new THREE.Mesh(new THREE.BoxGeometry(0.68, 0.65, 0.50), matYellow);
-      body.position.set(0, 0.48, 0);
-      root.add(body);
+      const podCap = new THREE.Mesh(new THREE.BoxGeometry(0.20, 0.025, 0.125), mats.matYellow);
+      podCap.position.set(0, 0.052, -0.005);
+      headGroup.add(podCap);
 
-      // 3. Battery Lid & Emergency Disconnect
-      const lid = new THREE.Mesh(new THREE.BoxGeometry(0.64, 0.06, 0.46), matDark);
-      lid.position.set(0, 0.82, 0);
-      root.add(lid);
+      // Stepped neck collar connecting tiller shaft to pod
+      const podNeck = new THREE.Mesh(new THREE.BoxGeometry(0.11, 0.06, 0.10), mats.matSteel);
+      podNeck.position.set(0, -0.055, -0.01);
+      headGroup.add(podNeck);
 
-      const emergKnob = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 0.05, 12), matBellyRed);
-      emergKnob.position.set(-0.22, 0.86, 0.12);
-      root.add(emergKnob);
+      // Left & right closed-loop ergonomic handlebars + flared end guards
+      [-1, 1].forEach((side) => {
+        const barBar = new THREE.Mesh(new THREE.CylinderGeometry(0.022, 0.022, 0.15, 14), mats.matGrip);
+        barBar.rotation.z = Math.PI / 2;
+        barBar.position.set(side * 0.165, 0.005, 0.015);
+        headGroup.add(barBar);
 
-      // 4. Center Drive Wheel underneath
-      const driveWheel = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.12, 0.10, 16), matDark);
-      driveWheel.rotation.z = Math.PI / 2;
-      driveWheel.position.set(0, 0.06, 0);
-      root.add(driveWheel);
+        const outerGrip = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.025, 0.14, 14), mats.matGrip);
+        outerGrip.rotation.x = Math.PI / 2;
+        outerGrip.rotation.z = side * -0.14;
+        outerGrip.position.set(side * 0.225, 0.005, 0.035);
+        headGroup.add(outerGrip);
 
-      // 5. Upright Parked Control Tiller Arm
-      const tillerArm = new THREE.Mesh(new THREE.CylinderGeometry(0.032, 0.032, 0.85, 12), matSteel);
-      tillerArm.rotation.x = 0.18; // Spring-loaded upright parked position
-      tillerArm.position.set(0, 0.78, 0.16);
-      root.add(tillerArm);
+        // Protective wraparound loop bar from outer grip back to pod front
+        const frontBrace = new THREE.Mesh(new THREE.CylinderGeometry(0.014, 0.014, 0.14, 10), mats.matDark);
+        frontBrace.rotation.z = Math.PI / 2;
+        frontBrace.rotation.y = side * 0.28;
+        frontBrace.position.set(side * 0.16, 0.005, -0.052);
+        headGroup.add(frontBrace);
 
-      const headCross = new THREE.Mesh(new THREE.BoxGeometry(0.48, 0.07, 0.09), matDark);
-      headCross.position.set(0, 1.18, 0.22);
-      root.add(headCross);
-
-      const bellyBtn = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.05, 0.04), matBellyRed);
-      bellyBtn.position.set(0, 1.18, 0.28);
-      root.add(bellyBtn);
-
-      const worldGauge = createJackBatteryGauge();
-      worldGauge.group.position.set(0, 1.22, 0.215);
-      worldGauge.group.rotation.x = 0.22;
-      root.add(worldGauge.group);
-      root.updateBatteryGauge = worldGauge.update;
-
-      // 6. Dual High-Tensile Tapered Forks (1.15m long, extending forward to -Z)
-      [-0.20, 0.20].forEach(fx => {
-        const fork = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.05, 1.15), matYellow);
-        fork.position.set(fx, 0.04, -0.80);
-        root.add(fork);
-
-        const tip = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.03, 0.10), matYellow);
-        tip.position.set(fx, 0.03, -1.40);
-        root.add(tip);
-
-        const loadRoller = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 0.12, 12), matDark);
-        loadRoller.rotation.z = Math.PI / 2;
-        loadRoller.position.set(fx, 0.02, -1.30);
-        root.add(loadRoller);
+        const gripEndCap = new THREE.Mesh(new THREE.CylinderGeometry(0.031, 0.031, 0.016, 14), mats.matDark);
+        gripEndCap.rotation.x = Math.PI / 2;
+        gripEndCap.position.set(side * 0.232, 0.005, 0.105);
+        headGroup.add(gripEndCap);
       });
 
-      // Tight oriented hitbox matching powerhead + forks (-1.45..+0.30 Z, centered at -0.58)
-      const hitbox = new THREE.Mesh(new THREE.BoxGeometry(0.84, 1.28, 1.82), new THREE.MeshBasicMaterial({ visible: false }));
-      hitbox.position.set(0, 0.64, -0.58);
+      // Dual butterfly thumb speed throttle wings
+      [-0.085, 0.085].forEach((tx) => {
+        const paddle = new THREE.Mesh(new THREE.BoxGeometry(0.068, 0.028, 0.044), mats.matYellow);
+        paddle.position.set(tx, 0.042, 0.028);
+        paddle.rotation.x = -0.18;
+        headGroup.add(paddle);
+      });
+
+      // Center safety red Emergency Belly-Reverse Switch with collar
+      const bellyCollar = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.056, 0.025), mats.matCharcoal);
+      bellyCollar.position.set(0, 0.01, 0.072);
+      headGroup.add(bellyCollar);
+
+      const bellyBtn = new THREE.Mesh(new THREE.BoxGeometry(0.118, 0.044, 0.042), mats.matBellyRed);
+      bellyBtn.position.set(0, 0.01, 0.088);
+      headGroup.add(bellyBtn);
+
+      // Embedded 5-LED Battery Discharge Indicator
+      const gauge = createJackBatteryGauge();
+      gauge.group.position.set(0, 0.068, 0.022);
+      gauge.group.rotation.x = opts.gaugeTilt !== undefined ? opts.gaugeTilt : 0.25;
+      headGroup.add(gauge.group);
+
+      return { group: headGroup, updateBatteryGauge: gauge.update };
+    }
+
+    function buildJackChassisGroup(mats, options) {
+      const opts = options || {};
+      const root = new THREE.Group();
+
+      // 1. Undercarriage: Center Drive Tire + Rear Outrigger Stabilizer Casters
+      const driveTire = new THREE.Mesh(new THREE.CylinderGeometry(0.115, 0.115, 0.11, 18), mats.matCharcoal);
+      driveTire.rotation.z = Math.PI / 2;
+      driveTire.position.set(0, 0.115, 0.04);
+      root.add(driveTire);
+
+      const driveHub = new THREE.Mesh(new THREE.CylinderGeometry(0.055, 0.055, 0.116, 12), mats.matSteel);
+      driveHub.rotation.z = Math.PI / 2;
+      driveHub.position.set(0, 0.115, 0.04);
+      root.add(driveHub);
+
+      [-0.25, 0.25].forEach((cx) => {
+        const yoke = new THREE.Mesh(new THREE.BoxGeometry(0.075, 0.065, 0.095), mats.matSteel);
+        yoke.position.set(cx, 0.072, 0.12);
+        root.add(yoke);
+
+        const caster = new THREE.Mesh(new THREE.CylinderGeometry(0.048, 0.048, 0.052, 12), mats.matCharcoal);
+        caster.rotation.z = Math.PI / 2;
+        caster.position.set(cx, 0.048, 0.12);
+        root.add(caster);
+      });
+
+      // 2. Stepped Bumper Skirt & 45-deg Hazard Decal Apron
+      const apronFrame = new THREE.Mesh(new THREE.BoxGeometry(0.73, 0.17, 0.54), mats.matDark);
+      apronFrame.position.set(0, 0.11, -0.02);
+      root.add(apronFrame);
+
+      const hazardWrap = new THREE.Mesh(new THREE.BoxGeometry(0.742, 0.11, 0.552), mats.matHazard);
+      hazardWrap.position.set(0, 0.105, -0.02);
+      root.add(hazardWrap);
+
+      // 3. Contoured Two-Tier Powerhead & Battery Bay
+      const lowerCowling = new THREE.Mesh(new THREE.BoxGeometry(0.68, 0.34, 0.50), mats.matYellow);
+      lowerCowling.position.set(0, 0.365, -0.02);
+      root.add(lowerCowling);
+
+      const upperShroud = new THREE.Mesh(new THREE.BoxGeometry(0.62, 0.22, 0.44), mats.matYellow);
+      upperShroud.position.set(0, 0.63, -0.03);
+      root.add(upperShroud);
+
+      // Recessed dark steel side ventilation & inspection panels
+      [-0.343, 0.343].forEach((sx) => {
+        const panel = new THREE.Mesh(new THREE.BoxGeometry(0.012, 0.24, 0.34), mats.matDark);
+        panel.position.set(sx, 0.37, -0.02);
+        root.add(panel);
+      });
+
+      // Front hydraulic motor housing recess
+      const frontTrim = new THREE.Mesh(new THREE.BoxGeometry(0.54, 0.18, 0.03), mats.matDark);
+      frontTrim.position.set(0, 0.28, -0.275);
+      root.add(frontTrim);
+
+      // Hinged battery compartment lid, latch, Anderson charge plug & E-stop
+      const lid = new THREE.Mesh(new THREE.BoxGeometry(0.60, 0.045, 0.42), mats.matDark);
+      lid.position.set(0, 0.76, -0.03);
+      root.add(lid);
+
+      const lidLatch = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.02, 0.04), mats.matSteel);
+      lidLatch.position.set(0, 0.785, 0.13);
+      root.add(lidLatch);
+
+      const emergCollar = new THREE.Mesh(new THREE.CylinderGeometry(0.042, 0.046, 0.02, 12), mats.matYellowDark);
+      emergCollar.position.set(-0.21, 0.785, 0.10);
+      root.add(emergCollar);
+
+      const emergKnob = new THREE.Mesh(new THREE.CylinderGeometry(0.036, 0.030, 0.045, 12), mats.matBellyRed);
+      emergKnob.position.set(-0.21, 0.812, 0.10);
+      root.add(emergKnob);
+
+      const keySwitch = new THREE.Mesh(new THREE.CylinderGeometry(0.016, 0.016, 0.028, 10), mats.matChrome);
+      keySwitch.position.set(0.20, 0.79, 0.10);
+      root.add(keySwitch);
+
+      const andersonPlug = new THREE.Mesh(new THREE.BoxGeometry(0.055, 0.038, 0.06), mats.matAmberBtn);
+      andersonPlug.position.set(0.21, 0.775, -0.14);
+      root.add(andersonPlug);
+
+      // 4. Central Hydraulic Lift Cylinder & Extending Chrome Piston Ram
+      const cylBarrel = new THREE.Mesh(new THREE.CylinderGeometry(0.046, 0.046, 0.36, 14), mats.matDark);
+      cylBarrel.position.set(0, 0.38, -0.30);
+      root.add(cylBarrel);
+
+      const pistonRam = new THREE.Mesh(new THREE.CylinderGeometry(0.028, 0.028, 0.24, 12), mats.matChrome);
+      pistonRam.position.set(0, 0.56, -0.30);
+      root.add(pistonRam);
+
+      // 5. Articulated Lift Forks + Steel Load Backrest (`forksLiftGroup` raises on hitch)
+      const forksLiftGroup = new THREE.Group();
+      root.add(forksLiftGroup);
+
+      // Fork heel carriage apron & gusset bar
+      const carriagePlate = new THREE.Mesh(new THREE.BoxGeometry(0.64, 0.14, 0.055), mats.matDark);
+      carriagePlate.position.set(0, 0.13, -0.34);
+      forksLiftGroup.add(carriagePlate);
+
+      // Tubular Steel Load Backrest (compact low-profile so it clears level HUD view cleanly)
+      [-0.27, 0.27].forEach((bx) => {
+        const upright = new THREE.Mesh(new THREE.BoxGeometry(0.042, 0.50, 0.042), mats.matDark);
+        upright.position.set(bx, 0.42, -0.34);
+        forksLiftGroup.add(upright);
+      });
+      [0.42, 0.65].forEach((by) => {
+        const crossBar = new THREE.Mesh(new THREE.BoxGeometry(0.58, 0.038, 0.038), mats.matDark);
+        crossBar.position.set(0, by, -0.34);
+        forksLiftGroup.add(crossBar);
+      });
+
+      // Dual High-Tensile Steel Forks at x = ±0.24 (centered inside GMA pallet bays)
+      [-0.24, 0.24].forEach((fx) => {
+        // Fork heel knee reinforcement
+        const heelKnee = new THREE.Mesh(new THREE.BoxGeometry(0.15, 0.095, 0.09), mats.matYellowDark);
+        heelKnee.position.set(fx, 0.082, -0.38);
+        forksLiftGroup.add(heelKnee);
+
+        // Main horizontal fork blade (y = 0.034..0.078 lowered, clears inside GMA pallet deck)
+        const forkBlade = new THREE.Mesh(new THREE.BoxGeometry(0.15, 0.044, 1.08), mats.matYellow);
+        forkBlade.position.set(fx, 0.056, -0.92);
+        forksLiftGroup.add(forkBlade);
+
+        // Center recessed rib detail on top of fork blade
+        const forkSpine = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.008, 1.02), mats.matYellowDark);
+        forkSpine.position.set(fx, 0.080, -0.92);
+        forksLiftGroup.add(forkSpine);
+
+        // Tapered chisel entry tip (z = -1.46..-1.54)
+        const forkTip = new THREE.Mesh(new THREE.BoxGeometry(0.145, 0.022, 0.09), mats.matYellow);
+        forkTip.rotation.x = 0.18;
+        forkTip.position.set(fx, 0.042, -1.50);
+        forksLiftGroup.add(forkTip);
+
+        // Tandem polyurethane load rollers & axle
+        const rollerBox = new THREE.Mesh(new THREE.BoxGeometry(0.13, 0.036, 0.14), mats.matDark);
+        rollerBox.position.set(fx, 0.035, -1.32);
+        forksLiftGroup.add(rollerBox);
+
+        const loadRoller = new THREE.Mesh(new THREE.CylinderGeometry(0.032, 0.032, 0.105, 14), mats.matCharcoal);
+        loadRoller.rotation.z = Math.PI / 2;
+        loadRoller.position.set(fx, 0.032, -1.32);
+        forksLiftGroup.add(loadRoller);
+      });
+
+      // 6. Rear Steer Drive Turret & Tilting Tiller Pivot Knuckle
+      const steerTurret = new THREE.Mesh(new THREE.CylinderGeometry(0.085, 0.095, 0.14, 14), mats.matDark);
+      steerTurret.position.set(0, 0.22, 0.19);
+      root.add(steerTurret);
+
+      const tillerPivot = new THREE.Group();
+      tillerPivot.position.set(0, 0.24, 0.17);
+      root.add(tillerPivot);
+
+      const pivotClevis = new THREE.Mesh(new THREE.BoxGeometry(0.085, 0.09, 0.085), mats.matSteel);
+      pivotClevis.position.set(0, 0.02, 0);
+      tillerPivot.add(pivotClevis);
+
+      const gasBoot = new THREE.Mesh(new THREE.CylinderGeometry(0.038, 0.044, 0.16, 12), mats.matCharcoal);
+      gasBoot.position.set(0, 0.09, 0);
+      tillerPivot.add(gasBoot);
+
+      let tillerHeadObj = null;
+      if (opts.includeFullTiller) {
+        const stem = new THREE.Mesh(new THREE.CylinderGeometry(0.024, 0.030, 0.92, 14), mats.matChrome);
+        stem.position.set(0, 0.48, 0);
+        tillerPivot.add(stem);
+
+        tillerHeadObj = buildJackTillerHead(mats, { gaugeTilt: 0.30 });
+        tillerHeadObj.group.position.set(0, 0.94, 0);
+        tillerPivot.add(tillerHeadObj.group);
+        tillerPivot.rotation.x = 0.18;
+      } else {
+        // Floor-locked active unit: lower stem stub reaching cleanly toward operator's HUD handle
+        const lowerStub = new THREE.Mesh(new THREE.CylinderGeometry(0.026, 0.030, 0.50, 14), mats.matChrome);
+        lowerStub.position.set(0, 0.28, 0);
+        tillerPivot.add(lowerStub);
+        tillerPivot.rotation.x = 0.42;
+      }
+
+      root.setLifted = function (isLifted) {
+        const lifted = Boolean(isLifted);
+        forksLiftGroup.position.y = lifted ? 0.075 : 0;
+        pistonRam.position.y = lifted ? 0.635 : 0.56;
+      };
+
+      root.setOperatingMode = function (isOperating) {
+        if (opts.includeFullTiller) {
+          tillerPivot.rotation.x = isOperating ? 0.36 : 0.18;
+        }
+      };
+
+      root.updateBatteryGauge = tillerHeadObj ? tillerHeadObj.updateBatteryGauge : (() => { });
+      root.forksLiftGroup = forksLiftGroup;
+      root.tillerPivot = tillerPivot;
+      return root;
+    }
+
+    function createElectricJackWorld() {
+      const mats = createJackMaterials();
+      const root = buildJackChassisGroup(mats, { includeFullTiller: true });
+      root.position.set(-7.20, 0, 2.08); // Staged between Docks 1 & 2 clear of column & bollards
+      root.rotation.y = 0; // Facing South into dock floor
+
+      // Tight oriented hitbox matching powerhead + forks (-1.54..+0.30 Z, centered at -0.62)
+      const hitbox = new THREE.Mesh(new THREE.BoxGeometry(0.84, 1.28, 1.88), new THREE.MeshBasicMaterial({ visible: false }));
+      hitbox.position.set(0, 0.64, -0.62);
       root.add(hitbox);
 
       root.hitbox = hitbox;
       return root;
     }
 
+    function createElectricJackFloorUnit() {
+      const mats = createJackMaterials();
+      const root = buildJackChassisGroup(mats, { includeFullTiller: false });
+      root.visible = false;
+      return root;
+    }
+
     function createElectricJackViewmodel() {
+      const mats = createJackMaterials();
       const root = new THREE.Group();
-      root.position.set(0, -0.32, -0.62);
+      root.position.set(0, -0.34, -0.58);
 
-      const matDark = new THREE.MeshStandardMaterial({ color: 0x1e293b, roughness: 0.6, metalness: 0.5 });
-      const matSteel = new THREE.MeshStandardMaterial({ color: 0x64748b, roughness: 0.45, metalness: 0.7 });
-      const matYellow = new THREE.MeshStandardMaterial({ color: 0xf59e0b, roughness: 0.5, metalness: 0.3 });
-      const matBellyRed = new THREE.MeshBasicMaterial({ color: 0xef4444 });
-      const matGrip = new THREE.MeshStandardMaterial({ color: 0x0f172a, roughness: 0.9 });
+      // Detailed HUD Tiller Control Pod, Grips & 5-LED Battery Gauge
+      const head = buildJackTillerHead(mats, { gaugeTilt: 0.28 });
+      root.add(head.group);
+      root.updateBatteryGauge = head.updateBatteryGauge;
 
-      // 1. Tiller Control Head Base
-      const headBase = new THREE.Mesh(new THREE.BoxGeometry(0.38, 0.08, 0.14), matDark);
-      headBase.position.set(0, 0, 0);
-      root.add(headBase);
-
-      // 2. Dual Handlebar Grips (left and right)
-      [-0.21, 0.21].forEach(hx => {
-        const grip = new THREE.Mesh(new THREE.CylinderGeometry(0.026, 0.026, 0.16, 16), matGrip);
-        grip.rotation.x = Math.PI / 2;
-        grip.rotation.z = (hx > 0 ? -0.15 : 0.15);
-        grip.position.set(hx, 0.01, 0.04);
-        root.add(grip);
-
-        // Grip end flange
-        const flange = new THREE.Mesh(new THREE.CylinderGeometry(0.034, 0.034, 0.015, 16), matDark);
-        flange.rotation.x = Math.PI / 2;
-        flange.position.set(hx, 0.01, 0.12);
-        root.add(flange);
-      });
-
-      // 3. Butterfly Thumb Speed Throttle Wings
-      [-0.09, 0.09].forEach(tx => {
-        const wing = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.035, 0.04), matYellow);
-        wing.position.set(tx, 0.04, -0.02);
-        root.add(wing);
-      });
-
-      // 4. Center Red Emergency Reverse Belly Button Switch
-      const bellyBtn = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.055, 0.045), matBellyRed);
-      bellyBtn.position.set(0, 0.015, 0.08);
-      root.add(bellyBtn);
-
-      // 5. Internal 5-LED Battery Discharge Indicator (10% R, 20% Y, 40/80/100% G)
-      const viewGauge = createJackBatteryGauge();
-      viewGauge.group.position.set(0, 0.047, 0.025);
-      viewGauge.group.rotation.x = 0.25;
-      root.add(viewGauge.group);
-      root.updateBatteryGauge = viewGauge.update;
-
-      // 6. Angled Tiller Stem down into chassis
-      const stem = new THREE.Mesh(new THREE.CylinderGeometry(0.032, 0.032, 0.55, 16), matSteel);
-      stem.rotation.x = Math.PI / 4;
-      stem.position.set(0, -0.22, -0.18);
-      root.add(stem);
-
-      // 7. Top of Powerhead Body visible below controls
-      const hood = new THREE.Mesh(new THREE.BoxGeometry(0.55, 0.28, 0.38), matYellow);
-      hood.position.set(0, -0.42, -0.32);
-      root.add(hood);
-
-      // Hazard warning decal band on hood
-      const decalBand = new THREE.Mesh(new THREE.BoxGeometry(0.57, 0.06, 0.40), new THREE.MeshBasicMaterial({ color: 0x0f172a }));
-      decalBand.position.set(0, -0.32, -0.32);
-      root.add(decalBand);
-
-      // Emergency power disconnect knob
-      const emergKnob = new THREE.Mesh(new THREE.CylinderGeometry(0.032, 0.032, 0.04, 12), matBellyRed);
-      emergKnob.position.set(-0.18, -0.26, -0.26);
-      root.add(emergKnob);
-
-      // 8. Dual High-Tensile Forks extending forward under hitched pallet
-      [-0.18, 0.18].forEach(fx => {
-        const fork = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.045, 0.95), matYellow);
-        fork.position.set(fx, -0.54, -0.80);
-        root.add(fork);
-
-        const tip = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.025, 0.08), matYellow);
-        tip.position.set(fx, -0.55, -1.30);
-        root.add(tip);
-
-        const roller = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 0.11, 12), matDark);
-        roller.rotation.z = Math.PI / 2;
-        roller.position.set(fx, -0.56, -1.22);
-        root.add(roller);
-      });
+      // Upper Chrome Tiller Stem extending downward cleanly toward the floor-locked lower shaft
+      const upperStem = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.028, 0.46, 14), mats.matChrome);
+      upperStem.rotation.x = 0.62;
+      upperStem.position.set(0, -0.20, -0.13);
+      root.add(upperStem);
 
       root.visible = false;
       return root;
@@ -669,6 +822,9 @@
 
     const electricJackWorld = createElectricJackWorld();
     scene.add(electricJackWorld);
+
+    const electricJackActiveFloor = createElectricJackFloorUnit();
+    scene.add(electricJackActiveFloor);
 
     const electricJackViewmodel = createElectricJackViewmodel();
     scene.add(camera);
@@ -683,15 +839,15 @@
       get boxCenter() {
         const rot = electricJackWorld.rotation.y || 0;
         return new THREE.Vector3(
-          electricJackWorld.position.x - Math.sin(rot) * 0.58,
+          electricJackWorld.position.x - Math.sin(rot) * 0.62,
           0.64,
-          electricJackWorld.position.z - Math.cos(rot) * 0.58
+          electricJackWorld.position.z - Math.cos(rot) * 0.62
         );
       },
       get boxQuaternion() {
         return electricJackWorld.quaternion.clone();
       },
-      boxSize: new THREE.Vector3(0.84, 1.28, 1.82),
+      boxSize: new THREE.Vector3(0.84, 1.28, 1.88),
       getPrompt: () => '[Space] Take Electric Pallet Jack',
       interact: () => takeElectricJack()
     };
@@ -1439,18 +1595,22 @@
           clip.visible = showClipboard;
 
           if (isOperatingJack) {
-            // Reach both hands forward onto the electric jack tiller handle
-            armL.rotation.x = -0.45;
-            forearmL.rotation.x = -1.05;
+            // Reach both hands forward & slightly inward to grip the tilted electric jack handlebar grips
+            armL.rotation.x = -0.52;
+            armL.rotation.z = 0.08;
+            forearmL.rotation.x = -0.92;
             forearmL.rotation.y = 0;
-            armR.rotation.x = -0.45;
-            forearmR.rotation.x = -1.05;
+            armR.rotation.x = -0.52;
+            armR.rotation.z = -0.08;
+            forearmR.rotation.x = -0.92;
             forearmR.rotation.y = 0;
           } else if (variant !== 'sidedoor') {
             armL.rotation.x = (variant === 'warehouse' || variant === 'vendor_truck') ? -0.55 : 0.55;
+            armL.rotation.z = 0;
             forearmL.rotation.x = (variant === 'warehouse' || variant === 'vendor_truck') ? -0.65 : 0.65;
             forearmL.rotation.y = 0.25;
             armR.rotation.x = 0;
+            armR.rotation.z = 0;
             forearmR.rotation.x = 0;
             forearmR.rotation.y = 0;
           }
@@ -1523,8 +1683,10 @@
       createPallet3D,
       removePallet3D,
       createElectricJackWorld,
+      createElectricJackFloorUnit,
       createElectricJackViewmodel,
       electricJackWorld,
+      electricJackActiveFloor,
       electricJackViewmodel,
       syncDeliveryBoxesVisuals,
       bindDeliveryBoxesToBayPallets,

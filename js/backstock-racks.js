@@ -347,15 +347,22 @@
     if (!palletRec || !palletRec.pallet) return;
     const pallet = palletRec.pallet;
     const hasCases = Array.isArray(palletRec.cases) && palletRec.cases.length > 0;
+    if (pallet.data) {
+      pallet.data.caseCount = Array.isArray(palletRec.cases) ? palletRec.cases.length : 0;
+    }
     if (pallet.group) {
-      pallet.group.visible = hasCases;
+      pallet.group.visible = hasCases || Boolean(pallet.isHitched);
+    }
+    if (typeof pallet.syncPlacement === 'function') {
+      pallet.syncPlacement(hasCases && !pallet.isHitched);
+      return;
     }
     const solidWalls = state.world && Array.isArray(state.world.solidWalls) ? state.world.solidWalls : null;
     if (solidWalls && pallet.bounds) {
       const idx = solidWalls.indexOf(pallet.bounds);
-      if (hasCases && idx === -1) {
+      if (hasCases && !pallet.isHitched && idx === -1) {
         solidWalls.push(pallet.bounds);
-      } else if (!hasCases && idx !== -1) {
+      } else if ((!hasCases || pallet.isHitched) && idx !== -1) {
         solidWalls.splice(idx, 1);
       }
     }
@@ -1395,13 +1402,18 @@
     const overstockPallets = Array.isArray(state.world.overstockPallets) ? state.world.overstockPallets : [];
     overstockPallets.forEach((pallet) => {
       if (!pallet || !pallet.bounds) return;
-      const sx = Math.max(0.4, pallet.bounds.maxX - pallet.bounds.minX);
-      const sz = Math.max(0.4, pallet.bounds.maxZ - pallet.bounds.minZ);
+      const sx = Math.max(0.4, Number(pallet.width) || (pallet.bounds.maxX - pallet.bounds.minX));
+      const sz = Math.max(0.4, Number(pallet.depth) || (pallet.bounds.maxZ - pallet.bounds.minZ));
       const sy = 0.70;
       const hitMesh = new THREE.Mesh(new THREE.BoxGeometry(sx, sy, sz), hitMat);
-      hitMesh.position.set(pallet.x, pallet.topY + sy / 2 - 0.06, pallet.z);
       hitMesh.userData.backstockPalletRef = pallet;
-      state.scene.add(hitMesh);
+      if (pallet.group && typeof pallet.group.add === 'function') {
+        hitMesh.position.set(0, pallet.topY + sy / 2 - 0.06, 0);
+        pallet.group.add(hitMesh);
+      } else {
+        hitMesh.position.set(pallet.x, pallet.topY + sy / 2 - 0.06, pallet.z);
+        state.scene.add(hitMesh);
+      }
       state.palletHitMeshes.push(hitMesh);
     });
   }
@@ -2027,17 +2039,38 @@
   }
 
   function resetForShift() {
+    const overstockPallets = (state.world && Array.isArray(state.world.overstockPallets))
+      ? state.world.overstockPallets
+      : [];
+    overstockPallets.forEach((pallet) => {
+      if (!pallet) return;
+      pallet.isHitched = false;
+      if (pallet.group && pallet.homeX !== undefined && pallet.homeZ !== undefined) {
+        pallet.group.position.set(pallet.homeX, 0, pallet.homeZ);
+        pallet.group.rotation.y = Number(pallet.homeRotY) || 0;
+      }
+      if (typeof pallet.syncPlacement === 'function') pallet.syncPlacement();
+    });
     rebuildRackAndPalletRegistries();
     buildPlacementTargets();
     spawnStartingBackstock();
   }
 
   function exportState() {
+    const overstockPallets = (state.world && Array.isArray(state.world.overstockPallets))
+      ? state.world.overstockPallets
+      : [];
     return {
       nextCaseSeq: Number(state.nextCaseSeq) || 1,
       nextAuditGroupSeq: Number(state.nextAuditGroupSeq) || 1,
       inventoryFinalized: Boolean(state.inventoryFinalized),
       heldCaseId: state.heldCase ? state.heldCase.id : null,
+      palletPositions: overstockPallets.map((p) => ({
+        palletId: p.palletId,
+        x: p.group ? Number(p.group.position.x) : Number(p.x) || 0,
+        z: p.group ? Number(p.group.position.z) : Number(p.z) || 0,
+        rotY: p.group ? Number(p.group.rotation.y) : Number(p.rotY) || 0
+      })),
       cases: (state.cases || []).map((c) => ({
         id: c.id,
         code: c.code,
@@ -2180,6 +2213,20 @@
       }
       state.cases.push(caseRec);
     });
+
+    const savedPositions = Array.isArray(data.palletPositions) ? data.palletPositions : [];
+    if (savedPositions.length > 0 && state.world && Array.isArray(state.world.overstockPallets)) {
+      savedPositions.forEach((sp) => {
+        if (!sp || !sp.palletId) return;
+        const pallet = state.world.overstockPallets.find((p) => p && p.palletId === sp.palletId);
+        if (pallet && pallet.group) {
+          pallet.isHitched = false;
+          pallet.group.position.set(Number(sp.x) || 0, 0, Number(sp.z) || 0);
+          pallet.group.rotation.y = Number(sp.rotY) || 0;
+          if (typeof pallet.syncPlacement === 'function') pallet.syncPlacement();
+        }
+      });
+    }
 
     Object.keys(state.palletStateById).forEach((pId) => {
       relayoutPalletCargo(pId);
