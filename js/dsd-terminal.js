@@ -780,7 +780,7 @@
         '<div class="crt-sum-subrow"><span>D 0 &nbsp; C 0 &nbsp; F 0</span></div>');
 
     return `
-      <div class="crt-sum-title">SHIFT SUMMARY</div>
+      <div class="crt-sum-title">TERMINAL SUMMARY</div>
 
       <div class="crt-sum-group">
         <div class="crt-sum-hdr"><span>RECEIPTS</span>${numVal(snap.totalReceiptsCount)}</div>

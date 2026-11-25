@@ -573,7 +573,7 @@
         ctx.fillText(row.title, leftX + 54, cy + Math.round(cardH * 0.57));
       });
 
-      // Right Column: SHIFT SUMMARY panel (.crt-menu-summary)
+      // Right Column: TERMINAL SUMMARY panel (.crt-menu-summary)
       ctx.fillStyle = 'rgba(2, 24, 10, 0.62)';
       ctx.fillRect(sumX, contentTop, sumW, contentH);
 
@@ -587,7 +587,7 @@
       ctx.fillStyle = '#22c55e';
       ctx.fillRect(sumX, contentTop, 4, contentH);
 
-      // Clip interior of Shift Summary to prevent overflow if many trucks exist
+      // Clip interior of Terminal Summary to prevent overflow if many trucks exist
       ctx.save();
       ctx.beginPath();
       ctx.rect(sumX + 6, contentTop + 4, sumW - 12, contentH - 8);
@@ -600,7 +600,7 @@
       ctx.font = 'bold 11px "Courier New", monospace';
       ctx.fillStyle = '#facc15';
       ctx.textAlign = 'left';
-      ctx.fillText('SHIFT SUMMARY', sxLeft, sy);
+      ctx.fillText('TERMINAL SUMMARY', sxLeft, sy);
 
       sy += 5;
       ctx.save();
