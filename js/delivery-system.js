@@ -287,8 +287,12 @@
         [1.35, -1.50], [-1.35, -1.50],
         [2.60, 0], [-2.60, 0],
         [0, 3.00], [1.35, 3.00], [-1.35, 3.00],
-        [2.60, 1.50], [-2.60, 1.50]
+        [2.60, 1.50], [-2.60, 1.50],
+        [2.60, -1.50], [-2.60, -1.50]
       ];
+      const approachOffsetZ = (o.approachOffsetZ !== undefined && Number.isFinite(Number(o.approachOffsetZ)))
+        ? Number(o.approachOffsetZ)
+        : null;
 
       for (let i = 0; i < offsets.length; i++) {
         const cx = pref.x + offsets[i][0];
@@ -297,9 +301,12 @@
         if (tileCheckFn && !tileCheckFn(cx, cz)) continue;
         // Require generous pallet+walk clearance (r = 0.78m) against grounded pallets, actors & walls
         const res = pointBlocked(cx, cz, 0.78, obstacles, { ignoreStatic: false });
-        if (!res.hit) {
-          return { x: cx, z: cz };
+        if (res.hit) continue;
+        if (approachOffsetZ !== null) {
+          const appRes = pointBlocked(cx, cz + approachOffsetZ, 0.52, obstacles, { ignoreStatic: false });
+          if (appRes.hit && !appRes.hitPlayer) continue;
         }
+        return { x: cx, z: cz };
       }
       return { x: pref.x, z: pref.z };
     }
@@ -496,7 +503,7 @@
           if (p.position.z < minZ) minZ = p.position.z;
         });
         const avgX = Math.max(-9.8, Math.min(9.8, sumX / offloaded.length));
-        const safeZ = Math.max(3.8, Math.min(12.5, minZ - 1.35));
+        const safeZ = Math.max(2.5, Math.min(12.5, minZ - 1.35));
         return { x: avgX, z: safeZ };
       }
       return VENDOR_DRIVER_STANDS[bayId] || VENDOR_DRIVER_STANDS[3];
@@ -553,7 +560,7 @@
     }
 
     function findClearBackroomStagingSpot(bayId, dropIdx, session) {
-      const base = getBackroomStagingSpot(bayId, dropIdx);
+      const base = DeliverySystem.getBackroomStagingSpot(bayId, dropIdx);
       const obstacles = collectSessionObstacles(session, null);
       return npcAvoidance.findClearStagingSpot({
         preferred: base,
@@ -561,7 +568,8 @@
         obstacles,
         isTileClear: isStagingTileClearForPallet,
         minZ: 2.8,
-        maxZ: 13.6
+        maxZ: 14.0,
+        approachOffsetZ: -1.88
       });
     }
 
@@ -823,7 +831,7 @@
         return;
       }
       if (hooks.getPlayer().hasElectricJack) {
-        hooks.showAlert('⚠️ Hands occupied! Drop/park the Electric Jack [Space] before reviewing invoice paperwork.');
+        hooks.showAlert('[[ico:claim]] Hands occupied! Drop/park the Electric Jack [Space] before reviewing invoice paperwork.');
         return;
       }
       if (window.DSDReceipts) window.DSDReceipts.enrichDelivery(delivery);
@@ -909,7 +917,7 @@
     function openWarehouseBol(delivery) {
       if (!delivery) return;
       if (hooks.getPlayer().hasElectricJack) {
-        hooks.showAlert('⚠️ Hands occupied! Drop/park the Electric Jack [Space] before signing the Bill of Lading.');
+        hooks.showAlert('[[ico:claim]] Hands occupied! Drop/park the Electric Jack [Space] before signing the Bill of Lading.');
         return;
       }
       currentOpenedBolDelivery = delivery;
@@ -954,11 +962,12 @@
         counts[z] = (counts[z] || 0) + 1;
       });
       if (zoneStripEl) {
+        const ico = (k) => (window.SvgIcons && typeof window.SvgIcons.render === 'function') ? window.SvgIcons.render(k) : '';
         const badges = [];
-        if (counts.F > 0) badges.push(`<span class="bol-zone-badge zone-f">❄️ FROZEN (F): ${counts.F} PALLETS ✓</span>`);
-        if (counts.C > 0) badges.push(`<span class="bol-zone-badge zone-c">🧊 CHILLED (C): ${counts.C} PALLETS ✓</span>`);
-        if (counts.D > 0) badges.push(`<span class="bol-zone-badge zone-d">📦 DRY (D): ${counts.D} PALLETS ✓</span>`);
-        if (!badges.length) badges.push(`<span class="bol-zone-badge zone-d">📦 DEPT 01 PALLETS VERIFIED ✓</span>`);
+        if (counts.F > 0) badges.push(`<span class="bol-zone-badge zone-f">${ico('snowflake')} FROZEN (F): ${counts.F} PALLETS ✓</span>`);
+        if (counts.C > 0) badges.push(`<span class="bol-zone-badge zone-c">${ico('thermometer')} CHILLED (C): ${counts.C} PALLETS ✓</span>`);
+        if (counts.D > 0) badges.push(`<span class="bol-zone-badge zone-d">${ico('box')} DRY (D): ${counts.D} PALLETS ✓</span>`);
+        if (!badges.length) badges.push(`<span class="bol-zone-badge zone-d">${ico('box')} DEPT 01 PALLETS VERIFIED ✓</span>`);
         zoneStripEl.innerHTML = badges.join('');
       }
 
@@ -1235,11 +1244,14 @@
       const pillEl = document.getElementById('overage-mode-pill');
       const txtEl = document.getElementById('overage-mode-text');
       if (txtEl) {
-        txtEl.textContent = `🚩 OVERAGE MODE (${d.carrier}) — Aim & click excess case(s) on Cart/Pallet`;
+        const msg = `[[ico:flag]] OVERAGE MODE (${d.carrier}) — Aim & click excess case(s) on Cart/Pallet`;
+        txtEl.innerHTML = (window.SvgIcons && typeof window.SvgIcons.formatHtml === 'function')
+          ? window.SvgIcons.formatHtml(msg)
+          : msg;
       }
       if (pillEl) pillEl.style.display = 'flex';
       hooks.updateLockHintDisplay();
-      hooks.showNotification(`🚩 Overage Mode active: click any excess case on ${d.carrier}'s cart/pallet to flag it.`);
+      hooks.showNotification(`[[ico:flag]] Overage Mode active: click any excess case on ${d.carrier}'s cart/pallet to flag it.`);
     }
 
     function exitOverageFlagMode(reopenClipboard) {
@@ -1301,7 +1313,7 @@
         closeShortageQtyModal();
         SoundSystem.playButtonClick();
         if (uiState.shortageMode) {
-          hooks.showNotification('📝 Shortage Mode: click any invoice row to enter actual received quantity.');
+          hooks.showNotification('[[ico:document]] Shortage Mode: click any invoice row to enter actual received quantity.');
         }
         renderInvoiceDocument(d, 'invoice');
       });
@@ -1347,17 +1359,17 @@
           const credDone = Boolean(d.docStates && d.docStates.creditCreated);
           if (hasCred && invDone && !credDone) {
             showInvoiceAlertPopup(
-              '⚠️ CREDIT MEMO STILL PENDING!',
+              '[[ico:claim]] CREDIT MEMO STILL PENDING!',
               `Main Invoice #${d.invoiceNo} is receipted, but you still need to check in Credit Memo #${d.creditInvoiceNo} on the Handheld Scanner [F] (using [NEG] mode) and press [DONE] before signing.`
             );
           } else if (hasCred && credDone && !invDone) {
             showInvoiceAlertPopup(
-              '⚠️ MAIN INVOICE STILL PENDING!',
+              '[[ico:claim]] MAIN INVOICE STILL PENDING!',
               `Credit Memo #${d.creditInvoiceNo} is receipted, but you still need to check in Main Invoice #${d.invoiceNo} on the Handheld Scanner [F] and press [DONE] before signing.`
             );
           } else {
             showInvoiceAlertPopup(
-              '⚠️ DSD CHECK-IN INCOMPLETE!',
+              '[[ico:claim]] DSD CHECK-IN INCOMPLETE!',
               `Standard Receiving Protocol requires opening your Handheld Scanner [F] to create a digital receipt (Vendor #${d.vendorNo}, Dept #${d.deptNo}, Invoice #${d.invoiceNo || d.docNum}) and pressing [DONE] before signing.`
             );
           }
@@ -1368,7 +1380,7 @@
         if (scannedNonOver < nonOverageBoxes.length) {
           SoundSystem.playErrorBuzzer();
           showInvoiceAlertPopup(
-            '⚠️ CARGO NOT FULLY SCANNED!',
+            '[[ico:claim]] CARGO NOT FULLY SCANNED!',
             `Only ${scannedNonOver} of ${nonOverageBoxes.length} unflagged cases verified. Aim your scanner [F] at the shipment and press [SCAN] (or key PLU + Qty) — or flag any excess cases under [OVERAGE].`
           );
           return;
@@ -1924,7 +1936,7 @@
           window.DSDReceipts.enrichDelivery(d);
         }
         if (d.type === 'warehouse') {
-          d.dialogueGreeting = `Apex Logistics #${(d.invoiceNo || '400').slice(-3)} docked at Bay ${d.dockBay} (${d.totalPallets} pallets). May I come in to check in?`;
+          d.dialogueGreeting = `${d.driverName} from Apex Logistics (#${(d.invoiceNo || '400').slice(-3)}) docked at Bay ${d.dockBay} (${d.totalPallets} pallets). May I come in to check in?`;
         }
 
         const slotIdx = (DOOR_SLOT_INDEX[doorKey] !== undefined) ? DOOR_SLOT_INDEX[doorKey] : 1;
@@ -1935,6 +1947,7 @@
         const driverObj = createHumanoidDriver3D({
           variant: d.type,
           name: d.driverName,
+          gender: d.driverGender,
           initialPos: spawnPos,
           initialYaw: spawnYaw
         });
@@ -2041,7 +2054,7 @@
         }
 
         SoundSystem.playSideDoorChime();
-        hooks.showNotification(`🔔 ${doorKey} Arrival: ${d.driverName} (${d.carrier}) is waiting outside the Side Door.`, 'low');
+        hooks.showNotification(`[[ico:bell]] ${doorKey} Arrival: ${d.driverName} (${d.carrier}) is waiting outside the Side Door.`, 'low');
         this.updateDeliveryHud();
         return session;
       },
@@ -2129,7 +2142,7 @@
           if (d.type === 'sidedoor') {
             openInvoice(d);
           } else if (d.type === 'warehouse') {
-            hooks.showNotification(`📋 Checked in ${d.driverName}. Open Bay ${d.dockBay} dock door [E] so trailer opens!`, 'low');
+            hooks.showNotification(`[[ico:clipboard]] Checked in ${d.driverName}. Open Bay ${d.dockBay} dock door [E] so trailer opens!`, 'low');
             SoundSystem.playPaperRustle();
             session.state = 'MOVING_TO_DOCK_STAND';
             const stand = WAREHOUSE_DRIVER_STANDS[d.dockBay] || WAREHOUSE_DRIVER_STANDS[2];
@@ -2142,7 +2155,7 @@
           } else if (d.type === 'vendor_truck') {
             const bay = d.dockBay || 3;
             SoundSystem.playPaperRustle();
-            hooks.showNotification(`📋 Checked in ${d.driverName}. Open Bay ${bay} dock door [E] so vendor can open trailer & unload!`, 'low');
+            hooks.showNotification(`[[ico:clipboard]] Checked in ${d.driverName}. Open Bay ${bay} dock door [E] so vendor can open trailer & unload!`, 'low');
             this.startVendorUnload(session);
           }
         } else if (session.state === 'AWAITING_PLAYER_UNLOAD') {
@@ -2154,7 +2167,7 @@
           if (correctStaged >= bayPallets.length) {
             openWarehouseBol(d);
           } else {
-            hooks.showNotification(`⚠️ Bay ${bay} warehouse unload incomplete: ${correctStaged}/${bayPallets.length} pallets staged into zones.`, 'high');
+            hooks.showNotification(`[[ico:claim]] Bay ${bay} warehouse unload incomplete: ${correctStaged}/${bayPallets.length} pallets staged into zones.`, 'high');
           }
         } else if (session.state === 'WAITING_SIGN') {
           if (d.type === 'warehouse') {
@@ -2170,18 +2183,18 @@
                 this.updateDeliveryHud();
                 if (res && res.complete) {
                   if (session.state === 'WAITING_EXIT' && sideRollupDoor.isOpen && sideRollupDoor.currentProgress >= 0.65) {
-                    hooks.showNotification(`📄 Handed printed receipt(s) to ${d.driverName} — exiting Side Door!`, 'status');
+                    hooks.showNotification(`[[ico:document]] Handed printed receipt(s) to ${d.driverName} — exiting Side Door!`, 'status');
                   } else {
-                    hooks.showNotification(`📄 Handed printed receipt(s) to ${d.driverName}! Press [E] on Side Rollup Door button to let them out.`, 'high');
+                    hooks.showNotification(`[[ico:document]] Handed printed receipt(s) to ${d.driverName}! Press [E] on Side Rollup Door button to let them out.`, 'high');
                   }
                 } else if (res && res.missing && res.missing.length > 0) {
-                  hooks.showNotification(`⚠️ ${d.driverName} still needs printed receipt(s): ${res.missing.map((rn) => '#' + rn).join(', ')}.`, 'high');
+                  hooks.showNotification(`[[ico:claim]] ${d.driverName} still needs printed receipt(s): ${res.missing.map((rn) => '#' + rn).join(', ')}.`, 'high');
                 }
               }
             });
           } else {
             SoundSystem.playButtonClick();
-            hooks.showNotification(`⚠️ ${d.driverName}: "Ready to head out — press [E] on the Side Rollup Door button when you can!"`, 'high');
+            hooks.showNotification(`[[ico:claim]] ${d.driverName}: "Ready to head out — press [E] on the Side Rollup Door button when you can!"`, 'high');
           }
         }
       },
@@ -2252,10 +2265,10 @@
           if (!audit.ok) {
             SoundSystem.playErrorBuzzer();
             const pts = audit.penaltyTotal || 100;
-            hooks.showNotification(`⚠️ ${d.carrier} Completed WITH PENALTY (-${pts} pts): ${audit.errors.join(' · ')}`, 5500);
+            hooks.showNotification(`[[ico:claim]] ${d.carrier} Completed WITH PENALTY (-${pts} pts): ${audit.errors.join(' · ')}`, 5500);
           } else {
             SoundSystem.playSuccessChime();
-            hooks.showNotification(`✅ Side Door Delivery Accepted: ${d.carrier} (Receipt #${d.receiptNumber || 'DSD'})`);
+            hooks.showNotification(`[[ico:checkCircle]] Side Door Delivery Accepted: ${d.carrier} (Receipt #${d.receiptNumber || 'DSD'})`);
           }
           if (session) this.startSideDoorExit(session);
         } else if (d.type === 'warehouse') {
@@ -2280,10 +2293,10 @@
           if (!audit.ok) {
             SoundSystem.playErrorBuzzer();
             const pts = audit.penaltyTotal || 100;
-            hooks.showNotification(`⚠️ ${d.carrier} Signed WITH PENALTY (-${pts} pts): ${audit.errors.join(' · ')}`, 5500);
+            hooks.showNotification(`[[ico:claim]] ${d.carrier} Signed WITH PENALTY (-${pts} pts): ${audit.errors.join(' · ')}`, 5500);
           } else {
             SoundSystem.playSuccessChime();
-            hooks.showNotification(`✅ Receipt Signed & Verified: ${d.carrier} (Receipt #${d.receiptNumber || 'DSD'})`);
+            hooks.showNotification(`[[ico:checkCircle]] Receipt Signed & Verified: ${d.carrier} (Receipt #${d.receiptNumber || 'DSD'})`);
           }
           if (session) this.startDriverExit(session);
         }
@@ -2355,7 +2368,7 @@
           ]);
           session.currentWaypointIdx = 0;
           if (!receiptsReady && d) {
-            hooks.showNotification(`⚠️ ${d.driverName} is waiting by Side Door — hand over printed receipt(s) [E] before exit!`, 'high');
+            hooks.showNotification(`[[ico:claim]] ${d.driverName} is waiting by Side Door — hand over printed receipt(s) [E] before exit!`, 'high');
           }
         }
         this.updateDeliveryHud();
@@ -2374,16 +2387,27 @@
 
       getBackroomStagingSpot: function (bayId, dropIdx) {
         const colPairs = {
-          1: [0.1, 1.3],
-          2: [2.8, 4.0],
-          3: [5.8, 7.0],
-          4: [7.8, 9.0]
+          1: [0.90, 2.15],
+          2: [2.80, 4.08],
+          3: [5.75, 7.03],
+          4: [7.55, 8.83]
         };
         const pair = colPairs[bayId] || colPairs[3];
         const col = pair[dropIdx % 2];
-        const row = 12.0 + Math.floor(dropIdx / 2) * 1.65;
-        const world = gridToWorld(col, Math.min(14.2, row));
+        const row = 12.0 + Math.floor(dropIdx / 2) * 1.55;
+        const world = gridToWorld(col, Math.min(15.1, row));
         return { x: world.x, z: world.z };
+      },
+
+      getBackroomAisleMidX: function (bayId) {
+        const colPairs = {
+          1: [0.90, 2.15],
+          2: [2.80, 4.08],
+          3: [5.75, 7.03],
+          4: [7.55, 8.83]
+        };
+        const pair = colPairs[bayId] || colPairs[3];
+        return gridToWorld((pair[0] + pair[1]) * 0.5, 12.0).x;
       },
 
       startVendorUnload: function (session) {
@@ -2442,7 +2466,7 @@
 
         if (this.sessions.length === 0 && DELIVERY_MANIFEST.every((d) => d.completed || d.refused)) {
           SoundSystem.playSuccessChime();
-          hooks.showNotification('🎉 All scheduled DSD side-door & vendor truck deliveries handled!');
+          hooks.showNotification('[[ico:sparkle]] All scheduled DSD side-door & vendor truck deliveries handled!');
         }
       },
 
@@ -2524,22 +2548,32 @@
           if (session.state === 'VENDOR_UNLOADING_DRIVE_OUT' && session._activeDropPos) {
             const dp = session._activeDropPos;
             const dpBlocked = npcAvoidance.pointBlocked(dp.x, dp.z, 0.72, obstacles, { ignoreStatic: false });
-            if (dpBlocked.hit) {
+            const dpApproachRes = npcAvoidance.pointBlocked(dp.x, dp.z - 1.88, 0.50, obstacles, { ignoreStatic: false });
+            const dpApproachBlocked = dpApproachRes.hit && !dpApproachRes.hitPlayer;
+            if (dpBlocked.hit || dpApproachBlocked) {
               const bay = (session.delivery && session.delivery.dockBay) ? session.delivery.dockBay : 3;
               const fresh = findClearBackroomStagingSpot(bay, session.vendorDroppedCount || 0, session);
               session._activeDropPos = fresh;
               const lastIdx = session.waypoints.length - 1;
+              if (session.waypoints.length >= 3 && session.currentWaypointIdx <= 1) {
+                session.waypoints[1] = new THREE.Vector3(fresh.x, 0, 3.0);
+              }
               if (lastIdx >= 0) {
                 session.waypoints[lastIdx] = new THREE.Vector3(fresh.x, 0, fresh.z - 1.88);
               }
             }
           }
 
-          // Skip intermediate waypoint if a pallet/actor sits directly on it and driver is close enough to flow past
+          // Advance intermediate waypoints cleanly once cleared (or bypassed if obstructed), keeping dock-exit alignment
           while (session.currentWaypointIdx < session.waypoints.length - 1) {
             const wp = session.waypoints[session.currentWaypointIdx];
             const dWp = Math.hypot(wp.x - curPos.x, wp.z - curPos.z);
-            if (dWp < 1.35) {
+            const stillClearingDockThreshold = curPos.z < (doorZ + 0.60) && wp.z > (curPos.z + 0.10);
+            if (!stillClearingDockThreshold && dWp <= 0.52) {
+              session.currentWaypointIdx++;
+              continue;
+            }
+            if (dWp < 1.35 && !stillClearingDockThreshold) {
               const wpHit = npcAvoidance.pointBlocked(wp.x, wp.z, 0.55, obstacles, { ignoreStatic: true });
               if (wpHit.hit) {
                 session.currentWaypointIdx++;
@@ -2594,8 +2628,8 @@
                 const dName = (session.delivery && session.delivery.driverName) ? session.delivery.driverName : 'Driver';
                 hooks.showNotification(
                   steer.blockedByPlayer
-                    ? `🚧 ${dName} paused — step clear of the aisle.`
-                    : `📦 ${dName} waiting for pallets blocking the aisle.`,
+                    ? `[[ico:door]] ${dName} paused — step clear of the aisle.`
+                    : `[[ico:box]] ${dName} waiting for pallets blocking the aisle.`,
                   'low'
                 );
               }
@@ -2697,8 +2731,8 @@
           this.spawnCreditToteIfNeeded(session);
           hooks.showNotification(
             d.type === 'vendor_truck' && d.dockBay
-              ? `💬 ${d.driverName} (${session.doorKey}) is waiting near Bay ${d.dockBay}: [E] to Check In`
-              : `💬 ${d.driverName} (${session.doorKey}) is inside by the Side Door: [E] to Check In`,
+              ? `[[ico:chat]] ${d.driverName} (${session.doorKey}) is waiting near Bay ${d.dockBay}: [E] to Check In`
+              : `[[ico:chat]] ${d.driverName} (${session.doorKey}) is inside by the Side Door: [E] to Check In`,
             'low'
           );
           this.updateDeliveryHud();
@@ -2719,8 +2753,8 @@
             }
             hooks.showNotification(
               receiptsReady
-                ? `⚠️ ${d.driverName} is waiting by the Side Door — push the Side Door button [E] to let them out.`
-                : `⚠️ ${d.driverName} is waiting by the Side Door — hand over printed receipt(s) [E] before letting them out.`,
+                ? `[[ico:claim]] ${d.driverName} is waiting by the Side Door — push the Side Door button [E] to let them out.`
+                : `[[ico:claim]] ${d.driverName} is waiting by the Side Door — hand over printed receipt(s) [E] before letting them out.`,
               'high'
             );
           }
@@ -2738,7 +2772,7 @@
           session.state = 'WAITING_SIGN';
           session.driver.mesh.rotation.y = -Math.PI / 2;
           this.updateDeliveryHud();
-          hooks.showNotification(`📋 ${d.driverName} ready at receiving area: [E] to sign Bill of Lading for Bay ${d.dockBay}!`, 'low');
+          hooks.showNotification(`[[ico:clipboard]] ${d.driverName} ready at receiving area: [E] to sign Bill of Lading for Bay ${d.dockBay}!`, 'low');
         } else if (session.state === 'VENDOR_WALK_TO_BAY') {
           const bay = (d && d.dockBay) ? d.dockBay : 3;
           const dd = dockDoors.find((dItem) => dItem.id === bay);
@@ -2749,7 +2783,7 @@
             session.currentWaypointIdx = 0;
           } else {
             session.state = 'VENDOR_WAIT_DOOR_OPEN';
-            hooks.showNotification(`⏳ ${d.driverName} is at Bay ${bay} — open Dock Door ${bay} [E] so he can open his trailer.`, 'high');
+            hooks.showNotification(`[[ico:clock]] ${d.driverName} is at Bay ${bay} — open Dock Door ${bay} [E] so they can open their trailer.`, 'high');
           }
           this.updateDeliveryHud();
         } else if (session.state === 'VENDOR_GETTING_OWN_JACK') {
@@ -2810,11 +2844,21 @@
           session._activeDropPos = dropPos;
 
           session.state = 'VENDOR_UNLOADING_DRIVE_OUT';
-          session.waypoints = [
-            new THREE.Vector3(bayX, 0, 1.5),
-            new THREE.Vector3(dropPos.x, 0, 3.0),
-            new THREE.Vector3(dropPos.x, 0, dropPos.z - 1.88)
-          ];
+          if (dropPos.z > 7.2) {
+            const aisleMidX = DeliverySystem.getBackroomAisleMidX(bay);
+            session.waypoints = [
+              new THREE.Vector3(bayX, 0, 1.05),
+              new THREE.Vector3(aisleMidX, 0, 3.0),
+              new THREE.Vector3(aisleMidX, 0, Math.max(7.6, dropPos.z - 2.05)),
+              new THREE.Vector3(dropPos.x, 0, dropPos.z - 1.88)
+            ];
+          } else {
+            session.waypoints = [
+              new THREE.Vector3(bayX, 0, 1.05),
+              new THREE.Vector3(dropPos.x, 0, 3.0),
+              new THREE.Vector3(dropPos.x, 0, dropPos.z - 1.88)
+            ];
+          }
           session.currentWaypointIdx = 0;
         } else if (session.state === 'VENDOR_UNLOADING_DRIVE_OUT') {
           const bay = (d && d.dockBay) ? d.dockBay : 3;
@@ -2847,18 +2891,36 @@
           if (remainingBayPallets.length > 0) {
             const nextPallet = remainingBayPallets[0];
             session.state = 'VENDOR_UNLOADING_DRIVE_IN';
-            session.waypoints = [
+            const returnWps = [];
+            if (session.driver && session.driver.mesh && session.driver.mesh.position.z > 7.2) {
+              const aisleMidX = DeliverySystem.getBackroomAisleMidX(bay);
+              returnWps.push(
+                new THREE.Vector3(aisleMidX, 0, Math.max(7.6, session.driver.mesh.position.z - 0.5)),
+                new THREE.Vector3(aisleMidX, 0, 4.2)
+              );
+            }
+            returnWps.push(
               new THREE.Vector3(bayX, 0, 2.5),
               new THREE.Vector3(nextPallet.position.x, 0, 0.5),
               new THREE.Vector3(nextPallet.position.x, 0, nextPallet.position.z + 1.88)
-            ];
+            );
+            session.waypoints = returnWps;
             session.currentWaypointIdx = 0;
           } else {
             session.state = 'VENDOR_RETURNING_JACK';
-            session.waypoints = [
+            const retWps = [];
+            if (session.driver && session.driver.mesh && session.driver.mesh.position.z > 7.2) {
+              const aisleMidX = DeliverySystem.getBackroomAisleMidX(bay);
+              retWps.push(
+                new THREE.Vector3(aisleMidX, 0, Math.max(7.6, session.driver.mesh.position.z - 0.5)),
+                new THREE.Vector3(aisleMidX, 0, 4.2)
+              );
+            }
+            retWps.push(
               new THREE.Vector3(bayX, 0, 1.5),
               new THREE.Vector3(bayX, 0, -0.50)
-            ];
+            );
+            session.waypoints = retWps;
             session.currentWaypointIdx = 0;
           }
         } else if (session.state === 'VENDOR_RETURNING_JACK') {
@@ -2889,7 +2951,7 @@
           session.state = 'WAITING_SIGN';
           session.driver.mesh.rotation.y = 0;
           this.updateDeliveryHud();
-          hooks.showNotification(`📦 ${d.driverName} unloaded all pallets by Bay ${d.dockBay}! Scan cases [F], then [E] to sign.`, 'low');
+          hooks.showNotification(`[[ico:box]] ${d.driverName} unloaded all pallets by Bay ${d.dockBay}! Scan cases [F], then [E] to sign.`, 'low');
         }
       },
 
@@ -2971,6 +3033,7 @@
           const driverObj = createHumanoidDriver3D({
             variant: d.type,
             name: d.driverName,
+            gender: d.driverGender,
             initialPos: spawnPos,
             initialYaw: spawnYaw
           });

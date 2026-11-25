@@ -12,22 +12,40 @@
   const BAY_PREFERENCE_WAREHOUSE = [1, 2, 3, 4];
   const BAY_PREFERENCE_VENDOR = [4, 3, 2, 1];
 
+  const FEMALE_FIRST_NAMES = new Set([
+    'elena', 'hannah', 'nadia', 'claire', 'maya', 'tessa', 'rachel', 'lauren',
+    'sarah', 'maria', 'lisa', 'laura', 'emily', 'sophia', 'chloe', 'olivia',
+    'grace', 'diana', 'monica', 'paula', 'brenda', 'karen', 'jessica', 'amber',
+    'jenna', 'natalie', 'veronica', 'samantha', 'ashley', 'nicole', 'megan'
+  ]);
+
   const DRIVER_NAMES_POOL = [
     'Marcus Vance',
-    'Ray Kowalski',
     'Elena Rostova',
-    'Carlos Mendez',
-    'terrence Cole',
+    'Ray Kowalski',
     'Hannah Brooks',
-    'Devon Brooks',
-    'Victor Holloway',
+    'Carlos Mendez',
     'Nadia Chen',
-    'Garrett Pike'
+    'Terrence Cole',
+    'Claire Bennett',
+    'Devon Brooks',
+    'Maya Patel',
+    'Victor Holloway',
+    'Tessa Kowalski',
+    'Garrett Pike',
+    'Rachel Diaz',
+    'Dave Miller',
+    'Lauren Price'
   ];
 
   function capName(s) {
     if (!s) return 'Driver';
     return s.charAt(0).toUpperCase() + s.slice(1);
+  }
+
+  function resolveDriverGender(name) {
+    const first = String(name || '').trim().toLowerCase().split(/\s+/)[0];
+    return FEMALE_FIRST_NAMES.has(first) ? 'f' : 'm';
   }
 
   function formatEta(hour, minute) {
@@ -357,11 +375,14 @@
       : null;
     const whCarrier = String((whVendor && whVendor.name) || 'Apex Logistics').toUpperCase();
 
+    const whDriverName = opts.driverName || `${(whVendor && whVendor.name) || 'Apex Logistics'} Dispatch`;
+
     return {
       id: opts.id,
       type: 'warehouse',
       priority: 'HIGH',
-      driverName: opts.driverName || `${(whVendor && whVendor.name) || 'Apex Logistics'} Dispatch`,
+      driverName: whDriverName,
+      driverGender: opts.driverGender || resolveDriverGender(whDriverName),
       carrier: whCarrier,
       subtitle: 'WAREHOUSE TRAILER (DEPT 01)',
       etaHour: opts.etaHour,
@@ -498,6 +519,7 @@
       type: isSideDoor ? 'sidedoor' : 'vendor_truck',
       priority: 'NORMAL',
       driverName: driverName,
+      driverGender: opts.driverGender || resolveDriverGender(driverName),
       carrier: carrier,
       subtitle: isSideDoor ? 'DIRECT STORE DELIVERY (SIDE DOOR HAND CART)' : 'FULL TRUCKLOAD COMMERCIAL VENDOR',
       etaHour: opts.etaHour,
@@ -563,6 +585,7 @@
     const shuffledSideDoor = shuffleArray(sideDoorRaw);
     const shuffledTruck = shuffleArray(truckRaw);
     const shuffledDrivers = shuffleArray(DRIVER_NAMES_POOL);
+    let drvIdx = 0;
     const usedVendorNos = new Set();
 
     // 1. Plan 8-10 delivery slot types first, placing 1-2 evenly spaced Warehouse Trucks
@@ -634,10 +657,12 @@
       const trucksStillAfter = Math.max(0, validWhSlots.length - 1 - idxPos);
       const remBudget = state.shiftLimits.dryRemaining + state.shiftLimits.chilledRemaining + state.shiftLimits.frozenRemaining;
       const maxForTruck = Math.max(6, Math.min(20, remBudget - trucksStillAfter * 6));
+      const whDriverName = capName(shuffledDrivers[drvIdx++ % shuffledDrivers.length]);
       const whEntry = buildWarehouseTruckEntry({
         id: `wh_truck_${whIdxNum}_${slotIdx}`,
         index: whIdxNum,
-        driverName: `Apex Logistics #${400 + randInt(1, 99)}`,
+        driverName: whDriverName,
+        driverGender: resolveDriverGender(whDriverName),
         etaHour: Math.floor(totalMin / 60),
         etaMinute: totalMin % 60,
         palletCount: randInt(6, maxForTruck),
@@ -685,7 +710,6 @@
 
     let sdIdx = 0;
     let trIdx = 0;
-    let drvIdx = 0;
     const entries = [];
 
     function pickNextVendor(pool, idxRef) {
@@ -1117,7 +1141,7 @@
 
     if (typeof state.hooks.showNotification === 'function') {
       state.hooks.showNotification(
-        `🚨 HIGH PRIORITY WAREHOUSE TRUCK docked at Bay ${truck.dockBay} (${truck.totalPallets} pallets). Driver waiting at Side Door!`,
+        `[[ico:siren]] HIGH PRIORITY WAREHOUSE TRUCK docked at Bay ${truck.dockBay} (${truck.totalPallets} pallets). Driver waiting at Side Door!`,
         'critical'
       );
     }
@@ -1139,7 +1163,7 @@
     }
     if (typeof state.hooks.showNotification === 'function') {
       state.hooks.showNotification(
-        `📦 BAY ${truck.dockBay} UNLOADED! Meet ${truck.driverName} to sign the Bill of Lading [E].`,
+        `[[ico:box]] BAY ${truck.dockBay} UNLOADED! Meet ${truck.driverName} to sign the Bill of Lading [E].`,
         'low'
       );
     }
@@ -1208,7 +1232,7 @@
     if (typeof state.hooks.showNotification === 'function') {
       const recStr = truck.receiptNumber ? `#${truck.receiptNumber}` : '01-AUTO';
       state.hooks.showNotification(
-        `🏭 WAREHOUSE BOL SIGNED! Receipt ${recStr} auto-finalized (+350 pts). Let ${truck.driverName} out Side Door!`,
+        `[[ico:warehouse]] WAREHOUSE BOL SIGNED! Receipt ${recStr} auto-finalized (+350 pts). Let ${truck.driverName} out Side Door!`,
         'status'
       );
     }
@@ -1271,7 +1295,7 @@
     if (typeof state.hooks.playError === 'function') state.hooks.playError();
     if (typeof state.hooks.showAlert === 'function') {
       state.hooks.showAlert(
-        `⚠️ PRIORITY ADHERENCE VIOLATION (-150 pts): High-Priority Warehouse Truck is waiting at Bay ${waitingWh.dockBay}! Prioritize Warehouse freight over ${delivery.carrier}.`
+        `[[ico:claim]] PRIORITY ADHERENCE VIOLATION (-150 pts): High-Priority Warehouse Truck is waiting at Bay ${waitingWh.dockBay}! Prioritize Warehouse freight over ${delivery.carrier}.`
       );
     }
     return true;
@@ -1637,6 +1661,7 @@
     getActiveWarehouseTruck: getActiveWarehouseTruck,
     getCounterSummary: getCounterSummary,
     getUnfinishedSummary: getUnfinishedSummary,
-    computeTempCurtainPlans: computeTempCurtainPlans
+    computeTempCurtainPlans: computeTempCurtainPlans,
+    resolveDriverGender: resolveDriverGender
   };
 })(window);

@@ -1339,7 +1339,7 @@
 
     if (spawned.length > 0 && typeof state.showNotification === 'function') {
       const names = Array.from(racksTouched).map((id) => getRackDisplayName(id)).join(', ');
-      state.showNotification(`⚠️ Backstock left behind: ${spawned.length} case${spawned.length !== 1 ? 's' : ''} staged on floor pallet (${names}).`, 'high');
+      state.showNotification(`[[ico:claim]] Backstock left behind: ${spawned.length} case${spawned.length !== 1 ? 's' : ''} staged on floor pallet (${names}).`, 'high');
     }
 
     return spawned;

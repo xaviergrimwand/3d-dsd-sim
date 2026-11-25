@@ -246,7 +246,7 @@
       if (snap.afterNoon && !snap.shiftEnded && !state.noonPunchOutNotified) {
         state.noonPunchOutNotified = true;
         if (typeof state.hooks.showNotification === 'function') {
-          state.hooks.showNotification('🕛 12:00 PM — Walk to the Hallway Timeclock [E] when ready to punch out for end of shift.', 'high');
+          state.hooks.showNotification('[[ico:clock]] 12:00 PM — Walk to the Hallway Timeclock [E] when ready to punch out for end of shift.', 'high');
         }
       }
     }
@@ -593,7 +593,7 @@
 
     global.ShiftClock.on('onPreShiftEndWarning', () => {
       if (typeof state.hooks.showNotification === 'function') {
-        state.hooks.showNotification('⚠️ 1:50 PM: 10 minutes until 2:00 PM shift end! Wrap up tasks & punch out at the Hallway Timeclock [E] before overtime.', 'high');
+        state.hooks.showNotification('[[ico:claim]] 1:50 PM: 10 minutes until 2:00 PM shift end! Wrap up tasks & punch out at the Hallway Timeclock [E] before overtime.', 'high');
       }
     });
 
@@ -602,7 +602,7 @@
       if (evt.isStart) {
         if (typeof state.hooks.playDoorAlarm === 'function') state.hooks.playDoorAlarm();
         if (typeof state.hooks.showNotification === 'function') {
-          state.hooks.showNotification('🚨 2:00 PM OVERTIME ALERT: Scheduled shift ended! Punch out at the Hallway Timeclock [E] now — overtime penalties accrue every 10 min until 3:00 PM.', 'critical');
+          state.hooks.showNotification('[[ico:siren]] 2:00 PM OVERTIME ALERT: Scheduled shift ended! Punch out at the Hallway Timeclock [E] now — overtime penalties accrue every 10 min until 3:00 PM.', 'critical');
         }
         updateHud(true);
         return;
@@ -613,10 +613,10 @@
       if (typeof state.hooks.showNotification === 'function') {
         if (evt.isCutoff) {
           const totalOtPts = (global.ShiftStats.getStats().overtimePenalties || 1) * (Number(evt.penaltyPoints) || 100);
-          state.hooks.showNotification('🚨 3:00 PM HARD CUTOFF: Kicked off timeclock! Shift force-ended with -' + totalOtPts + ' pts in overtime penalties.', 'critical');
+          state.hooks.showNotification('[[ico:siren]] 3:00 PM HARD CUTOFF: Kicked off timeclock! Shift force-ended with -' + totalOtPts + ' pts in overtime penalties.', 'critical');
         } else {
           const timeLbl = evt.time && evt.time.formatted12h ? evt.time.formatted12h : ('2:' + String(evt.overtimeMinutes).padStart(2, '0') + ' PM');
-          state.hooks.showNotification('🚨 OVERTIME PENALTY (-' + (Number(evt.penaltyPoints) || 100) + ' pts): ' + timeLbl + ' (' + evt.overtimeMinutes + 'm past 2:00 PM). Punch out at Timeclock [E] before 3:00 PM!', 'critical');
+          state.hooks.showNotification('[[ico:siren]] OVERTIME PENALTY (-' + (Number(evt.penaltyPoints) || 100) + ' pts): ' + timeLbl + ' (' + evt.overtimeMinutes + 'm past 2:00 PM). Punch out at Timeclock [E] before 3:00 PM!', 'critical');
         }
       }
       updateHud(true);
@@ -809,7 +809,7 @@
     if (!snap || !snap.afterNoon) {
       if (typeof state.hooks.playButtonClick === 'function') state.hooks.playButtonClick();
       if (typeof state.hooks.showNotification === 'function') {
-        state.hooks.showNotification('⏱️ Timeclock punch-out opens at 12:00 PM noon.', 'high');
+        state.hooks.showNotification('[[ico:clock]] Timeclock punch-out opens at 12:00 PM noon.', 'high');
       }
       return false;
     }

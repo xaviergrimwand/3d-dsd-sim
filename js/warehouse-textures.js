@@ -2292,18 +2292,34 @@
       }
     }
 
+    const drawZoneVectorIcon = (zoneKey, cx, cy, sz) => {
+      if (global.SvgIcons && typeof global.SvgIcons.drawCanvasZoneIcon === 'function') {
+        global.SvgIcons.drawCanvasZoneIcon(ctx, zoneKey, cx, cy, sz);
+        return;
+      }
+      ctx.beginPath();
+      ctx.arc(cx, cy, sz * 0.35, 0, Math.PI * 2);
+      ctx.fill();
+    };
+
     if (tempType === 'F' || tempType === 'frozen') {
       ctx.fillStyle = '#0284c7';
+      ctx.strokeStyle = '#0284c7';
+      drawZoneVectorIcon('F', 353, 88, 13);
       ctx.font = 'bold 16px sans-serif';
-      ctx.fillText('❄ FROZEN', 345, 94);
+      ctx.fillText('FROZEN', 364, 94);
     } else if (tempType === 'C' || tempType === 'refrigerated') {
       ctx.fillStyle = '#0369a1';
+      ctx.strokeStyle = '#0369a1';
+      drawZoneVectorIcon('C', 353, 88, 13);
       ctx.font = 'bold 16px sans-serif';
-      ctx.fillText('🌡 COOLER', 345, 94);
+      ctx.fillText('COOLER', 364, 94);
     } else {
       ctx.fillStyle = '#d97706';
+      ctx.strokeStyle = '#d97706';
+      drawZoneVectorIcon('D', 353, 88, 13);
       ctx.font = 'bold 16px sans-serif';
-      ctx.fillText('📦 AMBIENT', 345, 94);
+      ctx.fillText('AMBIENT', 364, 94);
     }
 
     // Case inventory/check-in tag on the bottom-left corner:
@@ -2357,45 +2373,64 @@
     ctx.fillStyle = '#1e3f1a';
     ctx.fillRect(0, 0, 256, 256);
 
+    // Subtle cotton-twill weave & vertical cap panel seam lines
     ctx.fillStyle = '#163113';
     for (let x = 0; x < 256; x += 4) {
       ctx.fillRect(x, 0, 2, 256);
     }
-
-    // Keystone "KGS" patch
-    ctx.fillStyle = '#b45309';
-    ctx.beginPath();
-    ctx.moveTo(78, 80);
-    ctx.lineTo(178, 80);
-    ctx.lineTo(198, 140);
-    ctx.lineTo(128, 185);
-    ctx.lineTo(58, 140);
-    ctx.closePath();
-    ctx.fill();
-
-    ctx.fillStyle = '#0f2910';
-    ctx.beginPath();
-    ctx.moveTo(84, 86);
-    ctx.lineTo(172, 86);
-    ctx.lineTo(190, 138);
-    ctx.lineTo(128, 178);
-    ctx.lineTo(66, 138);
-    ctx.closePath();
-    ctx.fill();
-
-    ctx.fillStyle = '#fbbf24';
-    ctx.font = '900 32px "Arial Black", sans-serif';
-    ctx.textAlign = 'center';
-    ctx.fillText('KGS', 128, 142);
+    ctx.strokeStyle = '#12280f';
+    ctx.lineWidth = 2;
+    [42, 85, 128, 170, 213].forEach((sx) => {
+      ctx.beginPath();
+      ctx.moveTo(sx, 0);
+      ctx.lineTo(sx, 256);
+      ctx.stroke();
+    });
 
     return new THREE.CanvasTexture(canvas);
   }
 
-  function createDriverBadgeTexture() {
+  function createKgsCapPatchTexture() {
+    const canvas = document.createElement('canvas');
+    canvas.width = 128; canvas.height = 128;
+    const ctx = canvas.getContext('2d');
+    ctx.clearRect(0, 0, 128, 128);
+
+    // Outer amber embroidered keystone border
+    ctx.fillStyle = '#b45309';
+    ctx.beginPath();
+    ctx.moveTo(22, 16);
+    ctx.lineTo(106, 16);
+    ctx.lineTo(118, 68);
+    ctx.lineTo(64, 114);
+    ctx.lineTo(10, 68);
+    ctx.closePath();
+    ctx.fill();
+
+    // Inner dark green keystone field
+    ctx.fillStyle = '#0f2910';
+    ctx.beginPath();
+    ctx.moveTo(27, 22);
+    ctx.lineTo(101, 22);
+    ctx.lineTo(111, 67);
+    ctx.lineTo(64, 106);
+    ctx.lineTo(17, 67);
+    ctx.closePath();
+    ctx.fill();
+
+    ctx.fillStyle = '#fbbf24';
+    ctx.font = '900 28px "Arial Black", sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('KGS', 64, 72);
+
+    return new THREE.CanvasTexture(canvas);
+  }
+
+  function createDriverBadgeTexture(gender) {
     const canvas = document.createElement('canvas');
     canvas.width = 128; canvas.height = 192;
     const ctx = canvas.getContext('2d');
-    ctx.fillStyle = '#ffffff';
+    ctx.fillStyle = '#f8fafc';
     ctx.fillRect(0, 0, 128, 192);
 
     ctx.fillStyle = '#166534';
@@ -2406,12 +2441,23 @@
     ctx.textAlign = 'center';
     ctx.fillText('KGS LOGISTICS', 64, 24);
 
+    // Photo backdrop box
+    ctx.fillStyle = '#e2e8f0';
+    ctx.fillRect(24, 46, 80, 90);
     ctx.fillStyle = '#334155';
+    if (gender === 'f') {
+      // Hair silhouette behind head for female badge
+      ctx.beginPath();
+      ctx.arc(64, 78, 22, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillRect(42, 78, 44, 28);
+    }
+    ctx.fillStyle = '#475569';
     ctx.beginPath();
-    ctx.arc(64, 75, 24, 0, Math.PI * 2);
+    ctx.arc(64, 77, 17, 0, Math.PI * 2);
     ctx.fill();
     ctx.beginPath();
-    ctx.arc(64, 125, 34, Math.PI, 0);
+    ctx.arc(64, 124, 28, Math.PI, 0);
     ctx.fill();
 
     ctx.fillStyle = '#0f172a';
@@ -2422,54 +2468,174 @@
     return new THREE.CanvasTexture(canvas);
   }
 
-  function createDriverFaceTexture(variant) {
+  function createDriverFaceTexture(variantOrOptions) {
+    const opts = (typeof variantOrOptions === 'string')
+      ? { variant: variantOrOptions }
+      : (variantOrOptions || {});
+    const variant = opts.variant || 'clean';
+    const isFemale = opts.gender === 'f';
+    const skinColor = opts.skinColor || '#f6c59c';
+    const hairColor = opts.hairColor || (variant === 'grey' ? '#52525b' : '#3b2314');
+
+    // 512x256 equirectangular head map; u=0.5 (x=256) faces +Z when headMesh.rotation.y = -Math.PI/2
+    const W = 512;
+    const H = 256;
     const canvas = document.createElement('canvas');
-    canvas.width = 256; canvas.height = 256;
+    canvas.width = W; canvas.height = H;
     const ctx = canvas.getContext('2d');
-    ctx.fillStyle = '#f8c291';
-    ctx.fillRect(0, 0, 256, 256);
 
-    ctx.fillStyle = '#4a2810';
-    ctx.fillRect(60, 95, 38, 8);
-    ctx.fillRect(158, 95, 38, 8);
+    // Base skin coat
+    ctx.fillStyle = skinColor;
+    ctx.fillRect(0, 0, W, H);
 
-    ctx.fillStyle = '#1e293b';
+    // Subtle warm chin/side shading so sphere silhouette feels contoured
+    const faceShade = ctx.createRadialGradient(256, 132, 34, 256, 138, 122);
+    faceShade.addColorStop(0, 'rgba(255,255,255,0.08)');
+    faceShade.addColorStop(0.72, 'rgba(0,0,0,0)');
+    faceShade.addColorStop(1, 'rgba(67,20,7,0.12)');
+    ctx.fillStyle = faceShade;
+    ctx.fillRect(140, 40, 232, 210);
+
+    // Wrap-around hair (back of head, upper crown, sideburns / framing strands)
+    ctx.fillStyle = hairColor;
+    ctx.fillRect(0, 0, W, 86);          // Upper scalp (under cap)
+    ctx.fillRect(0, 0, 146, H);         // Back half-left (-Z -> -X)
+    ctx.fillRect(366, 0, 146, H);       // Back half-right (-Z -> +X)
+    // Tapered hairline from temples down toward ears/nape
     ctx.beginPath();
-    ctx.arc(78, 115, 8, 0, Math.PI * 2);
-    ctx.arc(178, 115, 8, 0, Math.PI * 2);
+    ctx.moveTo(144, 80);
+    ctx.quadraticCurveTo(174, 96, 168, isFemale ? 176 : 146);
+    ctx.lineTo(144, 178);
+    ctx.closePath();
     ctx.fill();
-
-    ctx.fillStyle = '#e5a56d';
     ctx.beginPath();
-    ctx.moveTo(128, 115);
-    ctx.lineTo(138, 148);
-    ctx.lineTo(118, 148);
+    ctx.moveTo(368, 80);
+    ctx.quadraticCurveTo(338, 96, 344, isFemale ? 176 : 146);
+    ctx.lineTo(368, 178);
     ctx.closePath();
     ctx.fill();
 
-    if (variant === 'kgs') {
-      ctx.fillStyle = '#4a2810';
+    // Soft forehead hairline arch visible cleanly beneath cap front edge
+    ctx.beginPath();
+    ctx.moveTo(166, 98);
+    ctx.quadraticCurveTo(256, isFemale ? 110 : 102, 346, 98);
+    ctx.lineTo(346, 72);
+    ctx.lineTo(166, 72);
+    ctx.closePath();
+    ctx.fill();
+
+    // Cheek warmth
+    ctx.fillStyle = isFemale ? 'rgba(219, 94, 94, 0.16)' : 'rgba(194, 98, 72, 0.08)';
+    ctx.beginPath();
+    ctx.ellipse(208, 160, 17, 9, 0, 0, Math.PI * 2);
+    ctx.ellipse(304, 160, 17, 9, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Brows (positioned cleanly below cap band/visor shadow)
+    ctx.strokeStyle = hairColor;
+    ctx.lineCap = 'round';
+    ctx.lineWidth = isFemale ? 3.5 : 5.2;
+    // Left brow
+    ctx.beginPath();
+    ctx.moveTo(207, 127);
+    ctx.quadraticCurveTo(222, isFemale ? 119 : 123, 237, 126);
+    ctx.stroke();
+    // Right brow
+    ctx.beginPath();
+    ctx.moveTo(275, 126);
+    ctx.quadraticCurveTo(290, isFemale ? 119 : 123, 305, 127);
+    ctx.stroke();
+
+    // Eyes (sclera + iris + pupil + catchlight + upper lash)
+    const drawEye = (cx, flip) => {
+      ctx.fillStyle = '#f8fafc';
       ctx.beginPath();
-      ctx.moveTo(40, 130);
-      ctx.lineTo(216, 130);
-      ctx.lineTo(200, 240);
-      ctx.lineTo(128, 256);
-      ctx.lineTo(56, 240);
-      ctx.closePath();
+      ctx.ellipse(cx, 141, 11, isFemale ? 7.2 : 6.2, 0, 0, Math.PI * 2);
       ctx.fill();
 
-      ctx.fillStyle = '#2d1808';
-      ctx.fillRect(108, 185, 40, 6);
-    } else if (variant === 'grey') {
-      ctx.fillStyle = '#52525b';
+      ctx.fillStyle = opts.eyeColor || '#3b2f2f';
       ctx.beginPath();
-      ctx.arc(128, 205, 38, 0, Math.PI);
+      ctx.arc(cx, 141, 5.2, 0, Math.PI * 2);
       ctx.fill();
-      ctx.fillRect(104, 172, 48, 10);
-    } else {
-      ctx.fillStyle = '#b45309';
-      ctx.fillRect(112, 182, 32, 6);
+
+      ctx.fillStyle = '#0f172a';
+      ctx.beginPath();
+      ctx.arc(cx, 141, 2.7, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.fillStyle = '#ffffff';
+      ctx.beginPath();
+      ctx.arc(cx + 1.8, 139.2, 1.3, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Upper eyelid crease / subtle lash
+      ctx.strokeStyle = '#1e1b18';
+      ctx.lineWidth = isFemale ? 2.6 : 2.0;
+      ctx.beginPath();
+      ctx.ellipse(cx, 140.5, 11.5, isFemale ? 7.4 : 6.4, 0, Math.PI * 1.08, Math.PI * 1.92);
+      ctx.stroke();
+      if (isFemale) {
+        const lx = cx + flip * 11;
+        ctx.beginPath();
+        ctx.moveTo(lx, 139);
+        ctx.lineTo(lx + flip * 3.5, 135);
+        ctx.stroke();
+      }
+    };
+    drawEye(222, -1);
+    drawEye(290, 1);
+
+    // Nose bridge + soft tip shadow
+    ctx.fillStyle = 'rgba(120, 53, 15, 0.19)';
+    ctx.beginPath();
+    ctx.ellipse(256, 160, 9, 4.5, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(120, 53, 15, 0.22)';
+    ctx.lineWidth = 2.5;
+    ctx.beginPath();
+    ctx.moveTo(254, 141);
+    ctx.lineTo(253, 158);
+    ctx.stroke();
+
+    // Male facial hair (never drawn on female models)
+    if (!isFemale && variant === 'kgs') {
+      ctx.fillStyle = hairColor;
+      ctx.beginPath();
+      ctx.moveTo(194, 165);
+      ctx.quadraticCurveTo(200, 232, 256, 238);
+      ctx.quadraticCurveTo(312, 232, 318, 165);
+      ctx.quadraticCurveTo(302, 180, 286, 178);
+      ctx.quadraticCurveTo(256, 170, 226, 178);
+      ctx.quadraticCurveTo(210, 180, 194, 165);
+      ctx.closePath();
+      ctx.fill();
+    } else if (!isFemale && variant === 'grey') {
+      ctx.fillStyle = hairColor;
+      // Neat mustache & chin beard
+      ctx.beginPath();
+      ctx.ellipse(256, 178, 22, 6, 0, Math.PI, Math.PI * 2);
+      ctx.fill();
+      ctx.beginPath();
+      ctx.ellipse(256, 206, 22, 16, 0, 0, Math.PI);
+      ctx.fill();
     }
+
+    // Mouth / warm expression
+    if (isFemale) {
+      ctx.fillStyle = '#b9535c';
+      ctx.beginPath();
+      ctx.moveTo(240, 185);
+      ctx.quadraticCurveTo(256, 181, 272, 185);
+      ctx.quadraticCurveTo(256, 194, 240, 185);
+      ctx.closePath();
+      ctx.fill();
+    }
+    ctx.strokeStyle = isFemale ? '#7f1d1d' : '#5c2d1c';
+    ctx.lineWidth = isFemale ? 2.0 : 3.0;
+    ctx.beginPath();
+    ctx.moveTo(241, 185);
+    ctx.quadraticCurveTo(256, 191, 271, 185);
+    ctx.stroke();
 
     return new THREE.CanvasTexture(canvas);
   }
@@ -2890,6 +3056,7 @@
     createOfficeDeskEnamelTexture: createOfficeDeskEnamelTexture,
     createCardboardBoxTexture: createCardboardBoxTexture,
     createKgsCapTexture: createKgsCapTexture,
+    createKgsCapPatchTexture: createKgsCapPatchTexture,
     createDriverBadgeTexture: createDriverBadgeTexture,
     createDriverFaceTexture: createDriverFaceTexture,
     createCartTexture: createCartTexture,

@@ -327,7 +327,7 @@
     enrichDelivery(d);
     if (!d.requiresTempCheck) {
       playBeep();
-      notify('🌡️ Temp probe is only required for chilled/frozen deliveries.', 3000);
+      notify('[[ico:thermometer]] Temp probe is only required for chilled/frozen deliveries.', 3000);
       return { ok: false, error: 'TEMP PROBE NOT REQUIRED' };
     }
     d.tempChecked = true;
@@ -337,10 +337,10 @@
     d.observedTemp = actualTempStr;
     if (d.outOfTemp) {
       playError();
-      notify('🌡️ TEMP FAIL: ' + actualTempStr + ' — Click [REFUSE] on the Invoice window!', 5000);
+      notify('[[ico:thermometer]] TEMP FAIL: ' + actualTempStr + ' — Click [REFUSE] on the Invoice window!', 5000);
     } else {
       playSuccess();
-      notify('🌡️ TEMP PROBE OK: ' + actualTempStr, 3500);
+      notify('[[ico:thermometer]] TEMP PROBE OK: ' + actualTempStr, 3500);
     }
     if (typeof state.hooks.onReceiptUpdated === 'function') state.hooks.onReceiptUpdated(d);
     return { ok: true, passed: !d.outOfTemp, observedTemp: actualTempStr };
@@ -572,12 +572,12 @@
     const hasShort = (d.invoiceItems || []).some((it) => it.physicalQty < it.qty);
     if (!hasShort) {
       playBeep();
-      notify('📋 No physical shortage detected on this invoice.', 3200);
+      notify('[[ico:clipboard]] No physical shortage detected on this invoice.', 3200);
       return { ok: true, changed: false, message: 'No shortage detected.' };
     }
     const loggedMsg = syncDiscrepancyFlagsAndTotals(d, 'short');
     playSuccess();
-    notify('📋 ' + (loggedMsg || 'Shortage stamped on paper invoice'), 4000);
+    notify('[[ico:clipboard]] ' + (loggedMsg || 'Shortage stamped on paper invoice'), 4000);
     if (typeof state.hooks.onReceiptUpdated === 'function') state.hooks.onReceiptUpdated(d);
     return { ok: true, changed: true, message: loggedMsg || 'Shortage stamped.' };
   }
@@ -591,12 +591,12 @@
     const hasOver = (d.invoiceItems || []).some((it) => it.physicalQty > it.qty);
     if (!hasOver) {
       playBeep();
-      notify('📋 No overage cases detected on this pallet/cart.', 3200);
+      notify('[[ico:clipboard]] No overage cases detected on this pallet/cart.', 3200);
       return { ok: true, changed: false, message: 'No overage detected.' };
     }
     const loggedMsg = syncDiscrepancyFlagsAndTotals(d, 'over');
     playSuccess();
-    notify('📦 ' + (loggedMsg || 'Overage cases flagged on cart/pallet'), 4000);
+    notify('[[ico:box]] ' + (loggedMsg || 'Overage cases flagged on cart/pallet'), 4000);
     if (typeof state.hooks.onReceiptUpdated === 'function') state.hooks.onReceiptUpdated(d);
     return { ok: true, changed: true, message: loggedMsg || 'Overage flagged.' };
   }
@@ -609,7 +609,7 @@
     enrichDelivery(d);
     if (!d.hasDiscrepancy) {
       playBeep();
-      notify('📋 No physical shortage or overage detected on this invoice.', 3200);
+      notify('[[ico:clipboard]] No physical shortage or overage detected on this invoice.', 3200);
       return { ok: true, changed: false, message: 'No physical shortage or overage.' };
     }
     const msg = handleDiscrepancyKey(d);
@@ -1309,7 +1309,7 @@
     const autoPool = inCreditContext ? (d.creditBoxes || []) : (d.physicalBoxes || []);
     if (explicitBox && explicitBox.overageFlagged) {
       playError();
-      notify('🚩 Case is flagged as OVERAGE (excess — unflag to scan).', 2800);
+      notify('[[ico:flag]] Case is flagged as OVERAGE (excess — unflag to scan).', 2800);
       return;
     }
     const nextBox = explicitBox || (hovered && !hovered.overageFlagged
@@ -1676,7 +1676,7 @@
           lbl.isPluCase = false;
           playLabel();
           setScannerMessage(res.wasPlu ? 'PRINTED YELLOW UPC!' : 'YELLOW LABEL PRINTED', 'ok');
-          notify('🏷️ Printed yellow UPC label for ' + res.caseRec.name + (res.wasPlu ? ' (PLU -> UPC).' : '.'), 2400);
+          notify('[[ico:tag]] Printed yellow UPC label for ' + res.caseRec.name + (res.wasPlu ? ' (PLU -> UPC).' : '.'), 2400);
         }
       }
     } else {
@@ -1926,7 +1926,7 @@
           sc.phase = 'supply-done';
           setScannerMessage('ORDER QUEUED!', 'ok');
           playSuccess();
-          notify('🚚 Dept 60 order (' + submittedCases + ' case' + (submittedCases === 1 ? '' : 's') + ') finalized for Vendor #601 delivery on ' + etaInfo.mmddyyyy + '.', 4000);
+          notify('[[ico:truck]] Dept 60 order (' + submittedCases + ' case' + (submittedCases === 1 ? '' : 's') + ') finalized for Vendor #601 delivery on ' + etaInfo.mmddyyyy + '.', 4000);
         }
       } else if (action === 'slash') {
         sup.cartSelectedIdx = Math.max(0, cart.length - 1);
@@ -2580,7 +2580,7 @@
         sc.phase = 'inventory-done';
         setScannerMessage('AUDIT LOGGED!', 'ok');
         playSuccess();
-        notify('📋 Daily Backroom Inventory finalized (' + (summary.auditedCases || 0) + ' case' + (summary.auditedCases === 1 ? '' : 's') + ' audited).', 3600);
+        notify('[[ico:clipboard]] Daily Backroom Inventory finalized (' + (summary.auditedCases || 0) + ' case' + (summary.auditedCases === 1 ? '' : 's') + ' audited).', 3600);
       } else if (action === 'back') {
         sc.screen = 'inventory';
         sc.phase = 'inventory';
@@ -2905,14 +2905,14 @@
   function handleDiscrepancyKey(d) {
     if (!d.hasDiscrepancy) {
       playBeep();
-      notify('📋 No physical shortage or overage on this shipment.', 3200);
+      notify('[[ico:clipboard]] No physical shortage or overage on this shipment.', 3200);
       return 'No discrepancy.';
     }
 
     const loggedMsg = syncDiscrepancyFlagsAndTotals(d, 'both');
 
     playSuccess();
-    notify('📋 ' + (loggedMsg || 'Discrepancy logged on paperwork'), 4000);
+    notify('[[ico:clipboard]] ' + (loggedMsg || 'Discrepancy logged on paperwork'), 4000);
     if (typeof state.hooks.onReceiptUpdated === 'function') state.hooks.onReceiptUpdated(d);
     return loggedMsg || 'DISCREPANCY LOGGED';
   }
@@ -2990,7 +2990,7 @@
       sc.phase = 'complete';
       playSuccess();
       setScannerMessage('', 'ok');
-      notify('✅ Receipt #' + rec.receiptNumber + ' finalized! Record Receipt # on paperwork.', 4500);
+      notify('[[ico:checkCircle]] Receipt #' + rec.receiptNumber + ' finalized! Record Receipt # on paperwork.', 4500);
       return;
     }
 
@@ -3084,19 +3084,19 @@
     if (!headerMatchesDelivery) {
       playError();
       setScannerMessage('WRONG HEADER — EDIT IN [2]', 'warn');
-      notify('⚠️ Receipt #' + latestNo + ' saved, but header differs from paperwork! Edit Receipt Header in Terminal [2].', 'high');
+      notify('[[ico:claim]] Receipt #' + latestNo + ' saved, but header differs from paperwork! Edit Receipt Header in Terminal [2].', 'high');
     } else if (!bothDone) {
       playSuccess();
       const needsInvoice = Boolean(d.docStates.invoiceRequired && !d.docStates.invoiceCreated);
       const remainingLabel = needsInvoice ? 'Invoice' : 'Credit';
       setScannerMessage('', 'ok');
-      notify('✅ Receipt #' + latestNo + ' finalized! Press ENTER to continue for remaining ' + remainingLabel + ' receipt.', 4500);
+      notify('[[ico:checkCircle]] Receipt #' + latestNo + ' finalized! Press ENTER to continue for remaining ' + remainingLabel + ' receipt.', 4500);
     } else {
       playSuccess();
       d.receiptCreated = true;
       d.receiptNumber = d.lastReceiptNumber || latestNo;
       setScannerMessage('', 'ok');
-      notify('✅ Digital Receipt #' + latestNo + ' finalized! Record Receipt # and Sign on Paperwork.', 4500);
+      notify('[[ico:checkCircle]] Digital Receipt #' + latestNo + ' finalized! Record Receipt # and Sign on Paperwork.', 4500);
     }
     const switchTab = headerMatchesDelivery ? getPendingCounterpartTab(d, isCreditReceipt) : null;
     if (switchTab) d.preferredInvoiceTab = switchTab;
@@ -3114,7 +3114,7 @@
       const reason = (d.requiresTempCheck && !d.tempChecked)
         ? 'Refused cold delivery without running Temp Probe!'
         : 'Refused delivery when temp check did not fail!';
-      notify('❌ PENALTY (-300 pts): ' + reason, 'critical');
+      notify('[[ico:crossCircle]] PENALTY (-300 pts): ' + reason, 'critical');
     } else {
       playSuccess();
       if (stats) {
@@ -3124,7 +3124,7 @@
           stats.increment('vendorsProcessed', 1);
         }
       }
-      notify('🛡️ GOOD CATCH! Refused failed-temp shipment. No penalty!', 4500);
+      notify('[[ico:shield]] GOOD CATCH! Refused failed-temp shipment. No penalty!', 4500);
     }
 
     d.receiptCreated = false;

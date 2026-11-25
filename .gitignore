@@ -16,6 +16,8 @@ desktop.ini
 # Standalone UI test sandboxes & automated test suite
 tooltip-testing.html
 tutorial-testing.html
+driver-models-testing.html
+svg-icons-testing.html
 js/tutorial-system.js
 css/tutorial-overlay.css
 /tests/

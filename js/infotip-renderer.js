@@ -5,7 +5,7 @@
    * InfotipRenderer - Renders Tabulated Infotip cards safely and diffs DOM updates
    * so the 60fps raycast hover loop performs zero redundant DOM writes.
    */
-  const ICONS = Object.freeze({
+  const FALLBACK_ICONS = Object.freeze({
     barcode: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 5v14M7 5v14M10 5v10M14 5v14M17 5v10M21 5v14"/><path d="M9 18h2M16 18h2" stroke-width="2.4"/></svg>',
     plu: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8 8h2M12 8h2M16 8h0M8 12h2M12 12h2M16 12h0M8 16h2M12 16h4" stroke-linecap="round"/></svg>',
     flag: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 3v18M5 4h11l-2 4 2 4H5"/></svg>',
@@ -28,12 +28,21 @@
     driver: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="4"/><path d="M5 20a7 7 0 0 1 14 0"/></svg>'
   });
 
+  const ICONS = (global.SvgIcons && global.SvgIcons.ICONS) ? global.SvgIcons.ICONS : FALLBACK_ICONS;
+
   function escapeHtml(s) {
     return String(s === undefined || s === null ? '' : s)
       .replace(/&/g, '&amp;')
       .replace(/</g, '&lt;')
       .replace(/>/g, '&gt;')
       .replace(/"/g, '&quot;');
+  }
+
+  function formatInlineHtml(s) {
+    if (global.SvgIcons && typeof global.SvgIcons.formatHtml === 'function') {
+      return global.SvgIcons.formatHtml(s);
+    }
+    return escapeHtml(s);
   }
 
   function buildTabulatedInfotipHtml(spec, isTouch) {
@@ -49,7 +58,7 @@
 
     (s.chips || []).forEach((c) => {
       if (!c) return;
-      const clean = String(c.text || '').trim().replace(/^⚠️\s*/u, '');
+      const clean = String(c.text || '').trim().replace(/^(?:⚠️|\[\[ico:claim\]\])\s*/u, '');
       if (c.cls === 'plu' || /^PLU\s+/i.test(clean)) {
         pluDigits = clean.replace(/^PLU\s+/i, '');
       } else if (/^UPC\s+/i.test(clean)) {
@@ -143,7 +152,7 @@
     if (Array.isArray(s.facts)) {
       s.facts.forEach((f) => {
         const toks = (f.tokens || []).map((t) =>
-          `<span class="${escapeHtml(t.cls || 'ti-st-neutral')}">${escapeHtml(t.text)}</span>`
+          `<span class="${escapeHtml(t.cls || 'ti-st-neutral')}">${formatInlineHtml(t.text)}</span>`
         ).join('');
         rows.push(
           `<tr>` +

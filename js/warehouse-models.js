@@ -11,6 +11,7 @@
       createElectricJackDecalTexture,
       createCartTexture,
       createKgsCapTexture,
+      createKgsCapPatchTexture,
       createDriverBadgeTexture,
       createDriverFaceTexture
     } = global.WarehouseTextures;
@@ -1323,220 +1324,409 @@
     }
 
     // ==========================================
-    // 3D MODULAR HUMANOID DRIVER RIG (MOCKUPS 1, 2, 3)
+    // 3D MODULAR HUMANOID DRIVER RIG (M/F x 3 VARIANTS)
     // ==========================================
-    function createHumanoidDriver3D(options) {
-      const variant = options.variant || 'sidedoor';
-      const driverGroup = new THREE.Group();
-      driverGroup.position.copy(options.initialPos);
-      driverGroup.rotation.y = options.initialYaw || 0;
+    const DRIVER_SKIN_TONES = ['#f6c59c', '#eab38a', '#c98a5b', '#8d5837'];
+    const DRIVER_HAIR_TONES = ['#3b2314', '#1e1b18', '#7c4a26', '#b8864b', '#52525b'];
+    const DRIVER_EYE_TONES = ['#334155', '#3f2a1d', '#1e3a5f'];
+    const FEMALE_FIRST_NAMES = new Set([
+      'elena', 'hannah', 'nadia', 'claire', 'maya', 'tessa', 'rachel', 'lauren',
+      'sarah', 'maria', 'lisa', 'laura', 'emily', 'sophia', 'chloe', 'olivia',
+      'grace', 'diana', 'monica', 'paula', 'brenda', 'karen', 'jessica', 'amber',
+      'jenna', 'natalie', 'veronica', 'samantha', 'ashley', 'nicole', 'megan'
+    ]);
 
-      let shirtColor = 0x3b6e8c; // Sidedoor: Work Blue
-      let pantsColor = 0x7d7565; // Sidedoor: Khaki
-      let capColor = 0x1e3a5f;   // Sidedoor: Navy Blue
-      let skinColor = 0xf8c291;  // Realistic skin tone
-      let hairColor = 0x4a2810;  // Dark brown hair
-      let bootsColor = 0x271911; // Heavy-duty work boot brown
+    function inferDriverGenderFromName(name) {
+      const first = String(name || '').trim().toLowerCase().split(/\s+/)[0];
+      if (!first) return 'm';
+      if (FEMALE_FIRST_NAMES.has(first)) return 'f';
+      if (global.WarehouseTrucks && typeof global.WarehouseTrucks.resolveDriverGender === 'function') {
+        return global.WarehouseTrucks.resolveDriverGender(name);
+      }
+      return 'm';
+    }
 
-      if (variant === 'warehouse') {
-        shirtColor = 0x1e3f1a; // KGS Forest Green
-        pantsColor = 0x2d5a27; // KGS Forest Green trousers
-        capColor = 0x1e3f1a;
-      } else if (variant === 'vendor_truck') {
-        shirtColor = 0x4b5563; // Industrial Slate / Charcoal Grey
-        pantsColor = 0x374151; // Charcoal Grey work pants
-        capColor = 0x4b5563;
+    function resolveDriverProfile(opts) {
+      const nameStr = String(opts.name || 'Vendor Driver');
+      const variant = opts.variant || 'sidedoor';
+      const gender = (opts.gender === 'f' || opts.gender === 'm')
+        ? opts.gender
+        : inferDriverGenderFromName(nameStr);
+      const isFemale = gender === 'f';
+
+      let h = 2166136261;
+      const seedKey = `${nameStr}|${variant}|${gender}`;
+      for (let i = 0; i < seedKey.length; i++) {
+        h ^= seedKey.charCodeAt(i);
+        h = Math.imul(h, 16777619) >>> 0;
       }
 
-      const matShirt = new THREE.MeshStandardMaterial({ color: shirtColor, roughness: 0.8 });
+      const skinHex = DRIVER_SKIN_TONES[h % DRIVER_SKIN_TONES.length];
+      let hairHex = DRIVER_HAIR_TONES[(h >>> 4) % DRIVER_HAIR_TONES.length];
+      if (isFemale && hairHex === '#52525b') {
+        hairHex = DRIVER_HAIR_TONES[(h >>> 4) % 4];
+      } else if (!isFemale && variant === 'vendor_truck' && ((h >>> 8) & 1)) {
+        hairHex = '#52525b';
+      }
+      const eyeColor = DRIVER_EYE_TONES[(h >>> 12) % DRIVER_EYE_TONES.length];
+      const faceVariant = isFemale ? 'female' : (variant === 'warehouse' ? 'kgs' : (variant === 'vendor_truck' ? 'grey' : 'clean'));
+
+      return {
+        gender: gender,
+        isFemale: isFemale,
+        skinHex: skinHex,
+        hairHex: hairHex,
+        skinColorNum: parseInt(skinHex.slice(1), 16),
+        hairColorNum: parseInt(hairHex.slice(1), 16),
+        eyeColor: eyeColor,
+        faceVariant: faceVariant
+      };
+    }
+
+    function createHumanoidDriver3D(options, _legacyY, legacyOpts) {
+      const opts = (options && typeof options === 'object' && typeof options.x !== 'number')
+        ? options
+        : ((legacyOpts && typeof legacyOpts === 'object') ? legacyOpts : {});
+      const variant = opts.variant || 'sidedoor';
+      const profile = resolveDriverProfile(opts);
+      const isFemale = profile.isFemale;
+
+      const driverGroup = new THREE.Group();
+      if (opts.initialPos && typeof driverGroup.position.copy === 'function') {
+        driverGroup.position.copy(opts.initialPos);
+      } else {
+        driverGroup.position.set(0, 0, 0);
+      }
+      driverGroup.rotation.y = Number(opts.initialYaw) || 0;
+
+      let shirtColor = 0x3b6e8c; // Sidedoor: Work Blue
+      let shirtTrimColor = 0x29526b;
+      let pantsColor = 0x7d7565; // Sidedoor: Khaki
+      let capColor = 0x1e3a5f;   // Sidedoor: Navy Blue
+      let capBrimColor = 0x142945;
+      const bootsColor = 0x271911;
+
+      if (variant === 'warehouse') {
+        shirtColor = 0x1e3f1a;     // KGS Forest Green
+        shirtTrimColor = 0x142b11;
+        pantsColor = 0x2d5a27;     // KGS Forest Green trousers
+        capColor = 0x1e3f1a;
+        capBrimColor = 0x142b11;
+      } else if (variant === 'vendor_truck') {
+        shirtColor = 0x4b5563;     // Industrial Slate / Charcoal Grey
+        shirtTrimColor = 0x374151;
+        pantsColor = 0x374151;     // Charcoal Grey work pants
+        capColor = 0x4b5563;
+        capBrimColor = 0x1f2937;
+      }
+
+      const matShirt = new THREE.MeshStandardMaterial({ color: shirtColor, roughness: 0.78 });
+      const matShirtTrim = new THREE.MeshStandardMaterial({ color: shirtTrimColor, roughness: 0.8 });
       const matPants = new THREE.MeshStandardMaterial({ color: pantsColor, roughness: 0.85 });
       const matCap = new THREE.MeshStandardMaterial({ color: capColor, roughness: 0.7 });
-      const matSkin = new THREE.MeshStandardMaterial({ color: skinColor, roughness: 0.6 });
-      const matBoots = new THREE.MeshStandardMaterial({ color: bootsColor, roughness: 0.7, metalness: 0.2 });
+      const matCapBrim = new THREE.MeshStandardMaterial({ color: capBrimColor, roughness: 0.78 });
+      const matSkin = new THREE.MeshStandardMaterial({ color: profile.skinColorNum, roughness: 0.62 });
+      const matHair = new THREE.MeshStandardMaterial({ color: profile.hairColorNum, roughness: 0.86 });
+      const matBoots = new THREE.MeshStandardMaterial({ color: bootsColor, roughness: 0.72, metalness: 0.16 });
       const matBelt = new THREE.MeshStandardMaterial({ color: 0x0f172a, roughness: 0.8 });
       const matPaper = new THREE.MeshStandardMaterial({ color: 0xfafafa, roughness: 0.4 });
       const matClipboard = new THREE.MeshStandardMaterial({ color: 0x78350f, roughness: 0.7 });
+
+      // Body proportions scaled cleanly within shared hitbox
+      const shoulderX = isFemale ? 0.214 : 0.240;
+      const hipHalfX = isFemale ? 0.098 : 0.108;
+      const pelvisR = isFemale ? 0.170 : 0.182;
+      const chestTopR = isFemale ? 0.180 : 0.210;
+      const waistR = isFemale ? 0.152 : 0.180;
+      const thighTopR = isFemale ? 0.068 : 0.076;
+      const thighBotR = isFemale ? 0.056 : 0.064;
+      const calfTopR = isFemale ? 0.055 : 0.062;
+      const calfBotR = isFemale ? 0.046 : 0.052;
+      const armUpperR = isFemale ? 0.048 : 0.056;
+      const armLowerR = isFemale ? 0.039 : 0.045;
 
       // 1. Pelvis & Belt (Pivot Y = 0.88m)
       const pelvisGroup = new THREE.Group();
       pelvisGroup.position.set(0, 0.88, 0);
       driverGroup.add(pelvisGroup);
 
-      const hips = new THREE.Mesh(new THREE.BoxGeometry(0.38, 0.16, 0.24), matPants);
-      hips.position.set(0, 0, 0);
+      const hips = new THREE.Mesh(new THREE.CylinderGeometry(pelvisR, pelvisR * 1.03, 0.16, 16), matPants);
+      hips.scale.set(1.12, 1.0, 0.68);
       pelvisGroup.add(hips);
 
-      const belt = new THREE.Mesh(new THREE.BoxGeometry(0.39, 0.045, 0.25), matBelt);
-      belt.position.set(0, 0.08, 0);
+      const belt = new THREE.Mesh(new THREE.CylinderGeometry(pelvisR + 0.005, pelvisR + 0.005, 0.044, 16), matBelt);
+      belt.scale.set(1.13, 1.0, 0.70);
+      belt.position.set(0, 0.075, 0);
       pelvisGroup.add(belt);
 
-      const buckle = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.05, 0.02), new THREE.MeshStandardMaterial({ color: 0xd4d4d8, metalness: 0.8, roughness: 0.2 }));
-      buckle.position.set(0, 0.08, 0.13);
+      const buckle = new THREE.Mesh(new THREE.BoxGeometry(0.055, 0.046, 0.018), new THREE.MeshStandardMaterial({ color: 0xd4d4d8, metalness: 0.8, roughness: 0.2 }));
+      buckle.position.set(0, 0.075, pelvisR * 0.71);
       pelvisGroup.add(buckle);
 
-      // 2. Torso (Pivot Y = 0.98m)
+      // 2. Torso & Sloped Shoulders (Pivot Y = 0.98m)
       const torsoGroup = new THREE.Group();
       torsoGroup.position.set(0, 0.98, 0);
       driverGroup.add(torsoGroup);
 
-      const chest = new THREE.Mesh(new THREE.BoxGeometry(0.44, 0.48, 0.26), matShirt);
-      chest.position.set(0, 0.24, 0);
+      const chest = new THREE.Mesh(new THREE.CylinderGeometry(chestTopR, waistR, 0.45, 16), matShirt);
+      chest.scale.set(1.06, 1.0, 0.64);
+      chest.position.set(0, 0.225, 0);
       torsoGroup.add(chest);
 
-      const collar = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.06, 0.20), matShirt);
-      collar.position.set(0, 0.48, 0.02);
+      const shoulderYoke = new THREE.Mesh(new THREE.CylinderGeometry(chestTopR * 0.62, chestTopR, 0.055, 16), matShirt);
+      shoulderYoke.scale.set(1.05, 1.0, 0.64);
+      shoulderYoke.position.set(0, 0.475, 0);
+      torsoGroup.add(shoulderYoke);
+
+      const collar = new THREE.Mesh(new THREE.CylinderGeometry(0.082, 0.106, 0.048, 14), matShirtTrim);
+      collar.scale.set(1.05, 1.0, 0.92);
+      collar.position.set(0, 0.505, 0.004);
       torsoGroup.add(collar);
 
-      // Lanyard and Badge for Warehouse Driver (Mockup 1)
+      const chestFrontZ = chestTopR * 0.64;
+      const placket = new THREE.Mesh(new THREE.BoxGeometry(0.036, 0.13, 0.014), matShirtTrim);
+      placket.position.set(0, 0.39, chestFrontZ - 0.004);
+      torsoGroup.add(placket);
+
+      // Lanyard & Badge for Warehouse Driver, clean chest pocket otherwise
       if (variant === 'warehouse') {
         const matLanyard = new THREE.MeshBasicMaterial({ color: 0x0f172a });
-        [-0.07, 0.07].forEach(lx => {
-          const strap = new THREE.Mesh(new THREE.BoxGeometry(0.016, 0.32, 0.005), matLanyard);
-          strap.position.set(lx, 0.32, 0.135);
+        [-0.065, 0.065].forEach((lx) => {
+          const strap = new THREE.Mesh(new THREE.BoxGeometry(0.015, 0.31, 0.006), matLanyard);
+          strap.position.set(lx, 0.31, chestFrontZ + 0.004);
           torsoGroup.add(strap);
         });
 
-        const matBadge = new THREE.MeshStandardMaterial({ map: createDriverBadgeTexture(), roughness: 0.4 });
-        const badgeMesh = new THREE.Mesh(new THREE.PlaneGeometry(0.12, 0.17), matBadge);
-        badgeMesh.position.set(0, 0.18, 0.14);
+        const matBadge = new THREE.MeshStandardMaterial({ map: createDriverBadgeTexture(profile.gender), roughness: 0.4 });
+        const badgeMesh = new THREE.Mesh(new THREE.PlaneGeometry(0.115, 0.165), matBadge);
+        badgeMesh.position.set(0, 0.175, chestFrontZ + 0.008);
         torsoGroup.add(badgeMesh);
+      } else {
+        const pocket = new THREE.Mesh(new THREE.BoxGeometry(0.082, 0.092, 0.012), matShirtTrim);
+        pocket.position.set(isFemale ? 0.085 : 0.10, 0.32, chestFrontZ - 0.002);
+        torsoGroup.add(pocket);
       }
 
-      // 3. Head & Cap Group (Pivot Y = 1.50m)
+      // 3. Rounded Head, Anchored Neck & Non-Clipping Domed Cap Group (Pivot Y = 1.50m)
       const headGroup = new THREE.Group();
       headGroup.position.set(0, 1.50, 0);
       driverGroup.add(headGroup);
 
-      const neck = new THREE.Mesh(new THREE.CylinderGeometry(0.065, 0.075, 0.08, 12), matSkin);
-      neck.position.set(0, 0.04, 0);
+      // Seated down into collar (y = -0.025..+0.095 relative to headGroup = 1.475..1.595) so zero neck gap
+      const neck = new THREE.Mesh(new THREE.CylinderGeometry(0.054, isFemale ? 0.062 : 0.068, 0.125, 12), matSkin);
+      neck.position.set(0, 0.032, 0);
       headGroup.add(neck);
 
-      const faceVariant = (variant === 'warehouse' ? 'kgs' : (variant === 'vendor_truck' ? 'grey' : 'clean'));
-      const matFace = new THREE.MeshStandardMaterial({
-        map: createDriverFaceTexture(faceVariant),
-        roughness: 0.8
+      const matHeadFace = new THREE.MeshStandardMaterial({
+        map: createDriverFaceTexture({
+          variant: profile.faceVariant,
+          gender: profile.gender,
+          skinColor: profile.skinHex,
+          hairColor: profile.hairHex,
+          eyeColor: profile.eyeColor
+        }),
+        roughness: 0.72
       });
-      const headMesh = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.24, 0.22), [
-        matSkin, // right
-        matSkin, // left
-        matSkin, // top
-        matSkin, // bottom
-        matFace, // front (+Z)
-        new THREE.MeshStandardMaterial({ color: hairColor, roughness: 0.9 }) // back (-Z)
-      ]);
-      headMesh.position.set(0, 0.18, 0);
+
+      const headGeo = THREE.SphereGeometry
+        ? new THREE.SphereGeometry(0.116, 18, 14)
+        : new THREE.CylinderGeometry(0.112, 0.106, 0.24, 14);
+      const headMesh = new THREE.Mesh(headGeo, matHeadFace);
+      const headScaleX = isFemale ? 0.93 : 0.97;
+      headMesh.scale.set(headScaleX, 1.13, 1.00);
+      headMesh.rotation.y = -Math.PI / 2; // Centers u=0.5 directly forward along +Z
+      headMesh.position.set(0, 0.176, 0);
       headGroup.add(headMesh);
 
-      const capCrownGeo = new THREE.CylinderGeometry(0.125, 0.13, 0.09, 16);
+      // Subtle low-poly ears
+      const earGeo = THREE.SphereGeometry ? new THREE.SphereGeometry(0.019, 8, 8) : new THREE.BoxGeometry(0.018, 0.036, 0.024);
+      [-1, 1].forEach((side) => {
+        const ear = new THREE.Mesh(earGeo, matSkin);
+        ear.scale.set(0.55, 1.05, 0.75);
+        ear.position.set(side * (0.114 * headScaleX), 0.168, -0.006);
+        headGroup.add(ear);
+      });
+
+      // Domed baseball cap: hemisphere stops at theta=PI/2 (no overlap with band) -> ZERO Z-fighting or clipping
       let capCrownMat = matCap;
       if (variant === 'warehouse') {
-        capCrownMat = new THREE.MeshStandardMaterial({ map: createKgsCapTexture(), roughness: 0.7 });
+        capCrownMat = new THREE.MeshStandardMaterial({ map: createKgsCapTexture(), roughness: 0.72 });
       }
-      const capCrown = new THREE.Mesh(capCrownGeo, capCrownMat);
-      capCrown.position.set(0, 0.30, 0.01);
+      const capDomeGeo = THREE.SphereGeometry
+        ? new THREE.SphereGeometry(0.128, 18, 10, 0, Math.PI * 2, 0, Math.PI * 0.50)
+        : new THREE.CylinderGeometry(0.122, 0.128, 0.095, 16);
+      const capCrown = new THREE.Mesh(capDomeGeo, capCrownMat);
+      capCrown.scale.set(0.99, 0.96, 1.04);
+      capCrown.position.set(0, 0.214, -0.003);
       headGroup.add(capCrown);
 
-      const visor = new THREE.Mesh(new THREE.BoxGeometry(0.20, 0.02, 0.12), matCap);
-      visor.position.set(0, 0.28, 0.14);
-      visor.rotation.x = 0.12;
+      const capBand = new THREE.Mesh(new THREE.CylinderGeometry(0.127, 0.129, 0.017, 18), matCapBrim);
+      capBand.scale.set(0.99, 1.0, 1.04);
+      capBand.position.set(0, 0.207, -0.003);
+      headGroup.add(capBand);
+
+      const capButton = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.012, 0.008, 8), matCapBrim);
+      capButton.position.set(0, 0.338, -0.003);
+      headGroup.add(capButton);
+
+      // Curved front baseball bill extending clearly in front of forehead
+      const visor = new THREE.Mesh(new THREE.CylinderGeometry(0.098, 0.104, 0.012, 18), matCapBrim);
+      visor.scale.set(0.98, 1.0, 1.16);
+      visor.position.set(0, 0.202, 0.114);
+      visor.rotation.x = 0.14;
       headGroup.add(visor);
 
-      // 4. Legs (Left & Right, Pivot Y = 0.84m)
-      const legL = new THREE.Group();
-      legL.position.set(-0.11, 0.84, 0);
-      driverGroup.add(legL);
+      if (variant === 'warehouse' && typeof createKgsCapPatchTexture === 'function') {
+        const patchMat = new THREE.MeshStandardMaterial({
+          map: createKgsCapPatchTexture(),
+          transparent: true,
+          alphaTest: 0.2,
+          roughness: 0.65
+        });
+        const patch = new THREE.Mesh(new THREE.PlaneGeometry(0.064, 0.054), patchMat);
+        patch.position.set(0, 0.264, 0.128);
+        patch.rotation.x = -0.34;
+        headGroup.add(patch);
+      }
 
-      const thighL = new THREE.Mesh(new THREE.BoxGeometry(0.15, 0.42, 0.16), matPants);
-      thighL.position.set(0, -0.21, 0);
-      legL.add(thighL);
+      // Female ponytail emerging cleanly through cap back cutout
+      if (isFemale) {
+        const hairTie = new THREE.Mesh(new THREE.CylinderGeometry(0.023, 0.023, 0.014, 10), matBelt);
+        hairTie.position.set(0, 0.206, -0.130);
+        hairTie.rotation.x = 0.45;
+        headGroup.add(hairTie);
 
-      const calfL = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.42, 0.15), matPants);
-      calfL.position.set(0, -0.58, 0);
-      legL.add(calfL);
+        const ponyTop = new THREE.Mesh(new THREE.CylinderGeometry(0.019, 0.027, 0.068, 10), matHair);
+        ponyTop.position.set(0, 0.184, -0.146);
+        ponyTop.rotation.x = 0.42;
+        headGroup.add(ponyTop);
 
-      const bootL = new THREE.Mesh(new THREE.BoxGeometry(0.15, 0.12, 0.24), matBoots);
-      bootL.position.set(0, -0.80, 0.04);
-      legL.add(bootL);
+        const ponyTail = new THREE.Mesh(new THREE.CylinderGeometry(0.008, 0.019, 0.115, 10), matHair);
+        ponyTail.position.set(0, 0.115, -0.168);
+        ponyTail.rotation.x = 0.18;
+        headGroup.add(ponyTail);
+      }
 
-      const legR = new THREE.Group();
-      legR.position.set(0.11, 0.84, 0);
-      driverGroup.add(legR);
+      // 4. Legs & Rounded Floor-Seated Boots (Left & Right, Pivot Y = 0.84m)
+      const kneeGeo = THREE.SphereGeometry ? new THREE.SphereGeometry(thighBotR, 8, 8) : new THREE.CylinderGeometry(thighBotR, calfTopR, 0.06, 8);
+      const footRadius = isFemale ? 0.047 : 0.064;
+      const footScaleX = isFemale ? 0.92 : 1.06;
+      const footScaleY = isFemale ? 0.62 : 0.68;
+      const footScaleZ = isFemale ? 1.38 : 1.62;
+      const footPosY = isFemale ? -0.808 : -0.794;
+      const footPosZ = isFemale ? 0.036 : 0.056;
+      const toeGeo = THREE.SphereGeometry
+        ? new THREE.SphereGeometry(footRadius, 12, 10)
+        : new THREE.BoxGeometry(isFemale ? 0.088 : 0.132, 0.065, isFemale ? 0.13 : 0.20);
 
-      const thighR = new THREE.Mesh(new THREE.BoxGeometry(0.15, 0.42, 0.16), matPants);
-      thighR.position.set(0, -0.21, 0);
-      legR.add(thighR);
+      function createLeg(offsetX) {
+        const leg = new THREE.Group();
+        leg.position.set(offsetX, 0.84, 0);
+        driverGroup.add(leg);
 
-      const calfR = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.42, 0.15), matPants);
-      calfR.position.set(0, -0.58, 0);
-      legR.add(calfR);
+        const thigh = new THREE.Mesh(new THREE.CylinderGeometry(thighTopR, thighBotR, 0.40, 12), matPants);
+        thigh.position.set(0, -0.20, 0);
+        leg.add(thigh);
 
-      const bootR = new THREE.Mesh(new THREE.BoxGeometry(0.15, 0.12, 0.24), matBoots);
-      bootR.position.set(0, -0.80, 0.04);
-      legR.add(bootR);
+        const knee = new THREE.Mesh(kneeGeo, matPants);
+        knee.position.set(0, -0.40, 0);
+        leg.add(knee);
 
-      // 5. Arms (Left & Right, Pivot Y = 1.42m)
-      const armL = new THREE.Group();
-      armL.position.set(-0.26, 1.42, 0);
-      driverGroup.add(armL);
+        const calf = new THREE.Mesh(new THREE.CylinderGeometry(calfTopR, calfBotR, 0.36, 12), matPants);
+        calf.position.set(0, -0.58, 0);
+        leg.add(calf);
 
-      const upperArmL = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.28, 0.12), matShirt);
-      upperArmL.position.set(0, -0.14, 0);
-      armL.add(upperArmL);
+        const bootUpper = new THREE.Mesh(
+          new THREE.CylinderGeometry(calfBotR + (isFemale ? 0.004 : 0.007), calfBotR + (isFemale ? 0.006 : 0.013), isFemale ? 0.095 : 0.105, 12),
+          matBoots
+        );
+        bootUpper.position.set(0, isFemale ? -0.782 : -0.778, 0);
+        leg.add(bootUpper);
 
-      const forearmL = new THREE.Group();
-      forearmL.position.set(0, -0.28, 0);
-      armL.add(forearmL);
+        const bootToe = new THREE.Mesh(toeGeo, matBoots);
+        bootToe.scale.set(footScaleX, footScaleY, footScaleZ);
+        bootToe.position.set(0, footPosY, footPosZ);
+        leg.add(bootToe);
 
-      const lowerArmMeshL = new THREE.Mesh(new THREE.BoxGeometry(0.10, 0.26, 0.10), matSkin);
-      lowerArmMeshL.position.set(0, -0.13, 0);
-      forearmL.add(lowerArmMeshL);
+        return leg;
+      }
 
-      const handL = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.08, 0.06), matSkin);
-      handL.position.set(0, -0.28, 0);
-      forearmL.add(handL);
+      const legL = createLeg(-hipHalfX);
+      const legR = createLeg(hipHalfX);
+
+      // 5. Arms (Left & Right, Pivot Y = 1.40m so shoulder blends smoothly into yoke)
+      const shoulderGeo = THREE.SphereGeometry ? new THREE.SphereGeometry(armUpperR * 0.96, 10, 8) : new THREE.CylinderGeometry(armUpperR, armUpperR, 0.06, 8);
+      const elbowGeo = THREE.SphereGeometry ? new THREE.SphereGeometry(armLowerR * 0.96, 8, 8) : new THREE.CylinderGeometry(armLowerR, armLowerR, 0.05, 8);
+      const handGeo = THREE.SphereGeometry ? new THREE.SphereGeometry(armLowerR * 0.92, 10, 8) : new THREE.BoxGeometry(0.075, 0.08, 0.06);
+
+      function createArm(offsetX) {
+        const arm = new THREE.Group();
+        arm.position.set(offsetX, 1.40, 0);
+        driverGroup.add(arm);
+
+        const shoulderCap = new THREE.Mesh(shoulderGeo, matShirt);
+        shoulderCap.position.set(0, -0.01, 0);
+        arm.add(shoulderCap);
+
+        const upperArm = new THREE.Mesh(new THREE.CylinderGeometry(armUpperR, armUpperR * 1.04, 0.25, 12), matShirt);
+        upperArm.position.set(0, -0.135, 0);
+        arm.add(upperArm);
+
+        const sleeveCuff = new THREE.Mesh(new THREE.CylinderGeometry(armUpperR * 1.06, armUpperR * 1.06, 0.022, 12), matShirtTrim);
+        sleeveCuff.position.set(0, -0.255, 0);
+        arm.add(sleeveCuff);
+
+        const forearm = new THREE.Group();
+        forearm.position.set(0, -0.26, 0);
+        arm.add(forearm);
+
+        const elbow = new THREE.Mesh(elbowGeo, matSkin);
+        forearm.add(elbow);
+
+        const lowerArmMesh = new THREE.Mesh(new THREE.CylinderGeometry(armLowerR, armLowerR * 0.82, 0.23, 12), matSkin);
+        lowerArmMesh.position.set(0, -0.12, 0);
+        forearm.add(lowerArmMesh);
+
+        const hand = new THREE.Mesh(handGeo, matSkin);
+        hand.scale.set(0.85, 1.08, 0.72);
+        hand.position.set(0, -0.255, 0);
+        forearm.add(hand);
+
+        return { arm: arm, forearm: forearm };
+      }
+
+      const armLeftRig = createArm(-shoulderX);
+      const armL = armLeftRig.arm;
+      const forearmL = armLeftRig.forearm;
 
       armL.rotation.x = variant === 'sidedoor' ? 0.08 : ((variant === 'warehouse' || variant === 'vendor_truck') ? -0.55 : 0.55); // Clipboard arms reach in front.
       forearmL.rotation.x = variant === 'sidedoor' ? -Math.PI / 2 : ((variant === 'warehouse' || variant === 'vendor_truck') ? -0.65 : 0.65);
       forearmL.rotation.y = variant === 'sidedoor' ? 0 : 0.25;
 
-      const clipboard = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.32, 0.015), matClipboard);
+      const clipboard = new THREE.Group();
       clipboard.visible = variant !== 'sidedoor';
-      clipboard.position.set(0, -0.28, 0.10);
+      clipboard.position.set(0.01, -0.255, 0.034);
       clipboard.rotation.x = 0.35;
       forearmL.add(clipboard);
 
-      const paperSheet = new THREE.Mesh(new THREE.PlaneGeometry(0.21, 0.28), matPaper);
+      const clipboardBoard = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.30, 0.014), matClipboard);
+      clipboardBoard.position.set(0, 0.03, 0);
+      clipboard.add(clipboardBoard);
+
+      const paperSheet = new THREE.Mesh(new THREE.PlaneGeometry(0.19, 0.255), matPaper);
       paperSheet.visible = variant !== 'sidedoor';
-      paperSheet.position.set(0, -0.28, 0.11);
-      paperSheet.rotation.x = 0.35;
-      forearmL.add(paperSheet);
+      paperSheet.position.set(0, 0.022, 0.0085);
+      clipboard.add(paperSheet);
 
-      const clip = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.03, 0.02), matBelt);
+      const matClipSteel = new THREE.MeshStandardMaterial({ color: 0xcbd5e1, metalness: 0.65, roughness: 0.32 });
+      const clip = new THREE.Mesh(new THREE.BoxGeometry(0.078, 0.032, 0.018), matClipSteel);
       clip.visible = variant !== 'sidedoor';
-      clip.position.set(0, -0.13, 0.11);
-      clip.rotation.x = 0.35;
-      forearmL.add(clip);
+      clip.position.set(0, 0.164, 0.006);
+      clipboard.add(clip);
 
-      // Right Arm
-      const armR = new THREE.Group();
-      armR.position.set(0.26, 1.42, 0);
-      driverGroup.add(armR);
-
-      const upperArmR = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.28, 0.12), matShirt);
-      upperArmR.position.set(0, -0.14, 0);
-      armR.add(upperArmR);
-
-      const forearmR = new THREE.Group();
-      forearmR.position.set(0, -0.28, 0);
-      armR.add(forearmR);
-
-      const lowerArmMeshR = new THREE.Mesh(new THREE.BoxGeometry(0.10, 0.26, 0.10), matSkin);
-      lowerArmMeshR.position.set(0, -0.13, 0);
-      forearmR.add(lowerArmMeshR);
-
-      const handR = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.08, 0.06), matSkin);
-      handR.position.set(0, -0.28, 0);
-      forearmR.add(handR);
+      const armRightRig = createArm(shoulderX);
+      const armR = armRightRig.arm;
+      const forearmR = armRightRig.forearm;
 
       if (variant === 'sidedoor') {
         armR.rotation.x = 0.08;
@@ -1589,7 +1779,8 @@
         paperSheet: paperSheet,
         clip: clip,
         variant: variant,
-        name: options.name || 'Vendor Driver',
+        gender: profile.gender,
+        name: opts.name || 'Vendor Driver',
         setOperatingJack: function (usingJack) {
           isOperatingJack = Boolean(usingJack);
           const showClipboard = !isOperatingJack && variant !== 'sidedoor';
@@ -1622,9 +1813,11 @@
           if (isMoving) {
             walkCycle += dt * 8.5;
             const swing = Math.sin(walkCycle) * 0.55;
+            const subtleBounce = (1 - Math.cos(walkCycle * 2)) * 0.0035;
             legL.rotation.x = swing;
             legR.rotation.x = -swing;
-            torsoGroup.position.y = 0.98 + Math.abs(Math.sin(walkCycle * 2)) * 0.035;
+            torsoGroup.position.y = 0.98 + subtleBounce;
+            headGroup.position.y = 1.50 + subtleBounce;
 
             if (variant !== 'sidedoor' && !isOperatingJack) {
               armR.rotation.x = -swing * 0.65;
@@ -1633,6 +1826,7 @@
             legL.rotation.x *= 0.8;
             legR.rotation.x *= 0.8;
             torsoGroup.position.y = 0.98;
+            headGroup.position.y = 1.50;
             if (variant !== 'sidedoor' && !isOperatingJack) {
               armR.rotation.x *= 0.8;
             }

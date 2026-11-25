@@ -3946,12 +3946,6 @@ tr.inv-short-pickable:hover {
   color: #e2e8f0;
 }
 
-#game-container.invoice-open #pending-deliveries-panel,
-#game-container.phase2-open:not(.nightdrop-docked) #pending-deliveries-panel {
-  opacity: 0;
-  pointer-events: none;
-}
-
 .pd-header {
   display: flex;
   justify-content: space-between;
@@ -8467,4 +8461,54 @@ tr.inv-short-pickable:hover {
 #game-container.invoice-open #hud-infotip,
 #game-container:has(#invoice-modal.active, #terminal-modal.active, #bol-modal.active, #door-queue-modal.active, #trash-receipt-modal.active, #hand-receipt-modal.active, #shortage-qty-modal.active, #pause-menu-overlay.active, #shift-summary-modal.active, #save-load-modal.active, #menu-info-modal.active, #game-alert-modal.active) #hud-infotip {
   display: none !important;
+}
+
+/* ==================== INLINE SVG ICON SYSTEM ==================== */
+.svg-ico {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.12em;
+  height: 1.12em;
+  vertical-align: -0.18em;
+  margin-right: 0.24em;
+  flex-shrink: 0;
+  color: currentColor;
+}
+.svg-ico svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+.svg-ico.svg-ico-only,
+.scanner-badge-icon .svg-ico,
+.term-key-bksp .svg-ico,
+.lcd-status-right .svg-ico,
+.prh-minimized-tab .svg-ico {
+  margin-right: 0;
+}
+.svg-ico.svg-ico-claim { color: #fbbf24; }
+.svg-ico.svg-ico-siren,
+.svg-ico.svg-ico-crossCircle,
+.svg-ico.svg-ico-ban,
+.svg-ico.svg-ico-statusDotRed,
+.svg-ico.svg-ico-trash { color: #f87171; }
+.svg-ico.svg-ico-checkCircle,
+.svg-ico.svg-ico-shield { color: #4ade80; }
+.svg-ico.svg-ico-trophy,
+.svg-ico.svg-ico-sparkle { color: #facc15; }
+.svg-ico.svg-ico-snowflake,
+.svg-ico.svg-ico-thermometer { color: #38bdf8; }
+.svg-ico.svg-ico-flag { color: #fb923c; }
+
+/* Preserve exact monochrome / phosphor tint inside LCD, CRT, paper slips & BOL badges */
+.scanner-device .svg-ico,
+.crt-modal .svg-ico,
+.bol-zone-badge .svg-ico,
+.filing-mini-stamp .svg-ico,
+.arch-pin-btn .svg-ico,
+.filing-pin-btn .svg-ico,
+.slm-mini-btn .svg-ico,
+.slm-ftr-btn .svg-ico {
+  color: currentColor !important;
 }

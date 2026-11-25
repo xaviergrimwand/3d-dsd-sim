@@ -2023,7 +2023,7 @@
         const moving = (getDeliverySystem() && getDeliverySystem().getMovingDoorSessions)
           ? getDeliverySystem().getMovingDoorSessions() : [];
         if (moving.length > 0) {
-          showAlert('⚠️ Stand clear: A driver is standing inside the side door frame.');
+          showAlert('[[ico:claim]] Stand clear: A driver is standing inside the side door frame.');
           SoundSystem.playErrorBuzzer();
           return;
         }
@@ -2038,9 +2038,9 @@
         const motorTime = Math.max(0.3, remainingTravel * SIDE_DOOR_DURATION);
         SoundSystem.playDoorMotor(motorTime);
         if (sideRollupDoor.isOpen && waitingExit.length > 0) {
-          showNotification(`⚡ Side Door opening — letting ${waitingExit.length === 1 ? waitingExit[0].delivery.driverName : waitingExit.length + ' driver(s)'} out.`, 'status');
+          showNotification(`[[ico:lightning]] Side Door opening — letting ${waitingExit.length === 1 ? waitingExit[0].delivery.driverName : waitingExit.length + ' driver(s)'} out.`, 'status');
         } else if (sideRollupDoor.isOpen && waiting.length > 0) {
-          showNotification(`⚡ Side Door open — ${waiting.length} waiting outside. Speak [E] to pick who may enter.`, 'low');
+          showNotification(`[[ico:lightning]] Side Door open — ${waiting.length} waiting outside. Speak [E] to pick who may enter.`, 'low');
         }
       }
     };

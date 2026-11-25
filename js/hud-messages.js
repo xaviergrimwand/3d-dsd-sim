@@ -39,6 +39,13 @@
       .replace(/'/g, '&#39;');
   }
 
+  function formatMessageHtml(str) {
+    if (global.SvgIcons && typeof global.SvgIcons.formatHtml === 'function') {
+      return global.SvgIcons.formatHtml(str);
+    }
+    return escapeHtml(str);
+  }
+
   function normalizeText(msg) {
     return String(msg === undefined || msg === null ? '' : msg)
       .replace(/\r?\n+/g, ' · ')
@@ -89,6 +96,7 @@
 
     // 2. TASKS ('low'): Pending actionable assignments & dispatches (not completed milestones)
     if (
+      upper.includes('[[ICO:MAILBOX]]') ||
       upper.includes('📬') ||
       upper.includes('RECEIVING TASK') ||
       upper.includes('ARRIVAL:') ||
@@ -140,6 +148,8 @@
       upper.includes('CANNOT BE FLAGGED') ||
       upper.includes('STAYS UPRIGHT') ||
       upper.includes('NO PRINTED RECEIPTS') ||
+      upper.includes('[[ICO:CLAIM]]') ||
+      upper.includes('[[ICO:LOCK]]') ||
       upper.includes('⚠️') ||
       upper.includes('🔒')
     ) {
@@ -187,7 +197,7 @@
         dom.list.innerHTML = filtered.map((m, idx) =>
           `<div class="hud-msg-item ${prioCss(m.priority)} ${idx < unreadCount ? 'unread' : ''}">` +
           `<div class="hud-msg-meta"><span>${prioLabel(m.priority)}</span><span>${escapeHtml(m.time)}</span></div>` +
-          `<div>${escapeHtml(m.text)}</div></div>`
+          `<div>${formatMessageHtml(m.text)}</div></div>`
         ).join('');
       }
     }
@@ -198,9 +208,9 @@
         : `(${history.length})`;
     }
     if (dom.preview) {
-      dom.preview.textContent = history[0]
-        ? `${history[0].time} · ${history[0].text}`
-        : 'Ready — session alerts & updates';
+      dom.preview.innerHTML = history[0]
+        ? `${escapeHtml(history[0].time)} · ${formatMessageHtml(history[0].text)}`
+        : 'Ready — session alerts &amp; updates';
     }
     if (dom.unreadDot) {
       dom.unreadDot.style.display = unreadCount > 0 ? 'inline-block' : 'none';
@@ -211,7 +221,7 @@
     if (!dom.liveStack || isOpen) return;
     const el = document.createElement('div');
     el.className = `hud-msg-toast ${prioCss(entry.priority)}`;
-    el.innerHTML = `<span>${escapeHtml(entry.text)}</span><span class="hud-msg-toast-time">${escapeHtml(entry.time)}</span>`;
+    el.innerHTML = `<span>${formatMessageHtml(entry.text)}</span><span class="hud-msg-toast-time">${escapeHtml(entry.time)}</span>`;
     dom.liveStack.prepend(el);
     while (dom.liveStack.children.length > MAX_LIVE_STACK) {
       dom.liveStack.removeChild(dom.liveStack.lastElementChild);

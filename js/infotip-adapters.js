@@ -1284,7 +1284,7 @@
       facts: [{
         key: 'POWER',
         tokens: [
-          { cls: low ? 'ti-st-crit' : 'ti-st-ok', text: `🔋 ${batt}% CHARGE` },
+          { cls: low ? 'ti-st-crit' : 'ti-st-ok', text: `[[ico:battery]] ${batt}% CHARGE` },
           { cls: docked ? 'ti-bin-placed' : 'ti-st-neutral', text: docked ? 'CHARGER DOCKED' : 'ON DOCK FLOOR' },
           { cls: 'ti-st-neutral', text: 'REQUIRED FOR PALLETS' }
         ]

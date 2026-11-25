@@ -49,6 +49,13 @@
     printReceiptSlip
   } = bridge.core;
 
+  const fmtIco = (key) => (global.SvgIcons && typeof global.SvgIcons.render === 'function')
+    ? global.SvgIcons.render(key)
+    : '';
+  const fmtIcoHtml = (str) => (global.SvgIcons && typeof global.SvgIcons.formatHtml === 'function')
+    ? global.SvgIcons.formatHtml(str)
+    : escapeHtml(str);
+
   function resetScannerSession() {
     return typeof bridge.fn.resetScannerSession === 'function' ? bridge.fn.resetScannerSession.apply(null, arguments) : undefined;
   }
@@ -1209,7 +1216,7 @@
         <tr class="crt-row-click" data-rec-no="${escapeHtml(r.receiptNumber)}">
           <td><strong>${escapeHtml(r.receiptNumber)}</strong></td>
           <td style="white-space:nowrap;">${escapeHtml(dateStr)}</td>
-          <td style="white-space:nowrap;">${r.type === 'credit' ? '<span style="color:#f59e0b;">CRD</span>' : (r.type === 'po' ? '<span style="color:#38bdf8;">PO</span>' : 'INV')}${hoTag}</td>
+          <td style="white-space:nowrap;">${r.type === 'credit' ? '<span style="color:#f87171;">CRD</span>' : (r.type === 'po' ? '<span style="color:#38bdf8;">PO</span>' : 'INV')}${hoTag}</td>
           <td>D#${escapeHtml(r.deptNo)} / V#${escapeHtml(r.vendorNo)}</td>
           <td>#${escapeHtml(r.invoiceNo)}</td>
           <td>${totalCases}</td>
@@ -1651,7 +1658,7 @@
         const kindTag = task.type === 'shortage'
           ? 'SHORTAGE TASK'
           : (task.type === 'overage' ? 'OVERAGE TASK' : 'MISSING RECEIPT');
-        notify('📬 RECEIVING TASK (' + kindTag + '): ' + task.vendorName + ' Inv #' + task.invoiceNo + ' — Terminal [4].', 4500);
+        notify('[[ico:mailbox]] RECEIVING TASK (' + kindTag + '): ' + task.vendorName + ' Inv #' + task.invoiceNo + ' — Terminal [4].', 4500);
       });
       if (state.terminalOpen && (state.currentScreen === 'tasks' || state.currentScreen === 'menu')) {
         renderTerminalUI();
@@ -1882,13 +1889,13 @@
       const stats = getStats();
       if (stats) stats.increment('tasksCompleted', 1);
       playSuccess();
-      notify('✅ DNR confirmed for Inv #' + task.invoiceNo + ' (+250 pts).', 3600);
+      notify('[[ico:checkCircle]] DNR confirmed for Inv #' + task.invoiceNo + ' (+250 pts).', 3600);
     } else {
       task.status = 'failed';
       task.failReason = 'Invoice #' + task.invoiceNo + ' exists in File Cabinet (' + (existing ? existing.day.dateStr : task.dateStr) + ') — needed receipt.';
       task.feedbackMsg = '(-100 pts) ' + task.failReason;
       task.feedbackKind = 'err';
-      applyHomeOfficeTaskPenalty('❌ TASK FAILED: Inv #' + task.invoiceNo + ' exists in File Cabinet! (-100 pts)');
+      applyHomeOfficeTaskPenalty('[[ico:crossCircle]] TASK FAILED: Inv #' + task.invoiceNo + ' exists in File Cabinet! (-100 pts)');
     }
     renderTerminalUI();
   }
@@ -1918,13 +1925,13 @@
       const stats = getStats();
       if (stats) stats.increment('tasksCompleted', 1);
       playSuccess();
-      notify('✅ True Vendor Shortage verified for Inv #' + task.invoiceNo + ' (+250 pts).', 3600);
+      notify('[[ico:checkCircle]] True Vendor Shortage verified for Inv #' + task.invoiceNo + ' (+250 pts).', 3600);
     } else {
       task.status = 'failed';
       task.failReason = 'No red SHORT stamp on Inv #' + task.invoiceNo + ' — receiver under-keyed receipt.';
       task.feedbackMsg = '(-100 pts) ' + task.failReason;
       task.feedbackKind = 'err';
-      applyHomeOfficeTaskPenalty('❌ TASK FAILED: Inv #' + task.invoiceNo + ' has NO SHORT stamp! (-100 pts)');
+      applyHomeOfficeTaskPenalty('[[ico:crossCircle]] TASK FAILED: Inv #' + task.invoiceNo + ' has NO SHORT stamp! (-100 pts)');
     }
     renderTerminalUI();
   }
@@ -1936,14 +1943,14 @@
     if (task.type === 'shortage' && task.isVendorShort) {
       task.feedbackKind = 'err';
       task.feedbackMsg = '(-100 pts) Paper invoice in File Cabinet is stamped SHORT — use [ TRUE SHORTAGE ] instead.';
-      applyHomeOfficeTaskPenalty('❌ Inv #' + task.invoiceNo + ' is a True Vendor Shortage — use [ TRUE SHORTAGE ] (-100 pts).');
+      applyHomeOfficeTaskPenalty('[[ico:crossCircle]] Inv #' + task.invoiceNo + ' is a True Vendor Shortage — use [ TRUE SHORTAGE ] (-100 pts).');
       renderTerminalUI();
       return;
     }
     if (task.type === 'receipt_not_found' && task.isDnr) {
       task.feedbackKind = 'err';
       task.feedbackMsg = '(-100 pts) No invoice exists in File Cabinet for ' + task.dateStr + ' — use [ DNR ] instead.';
-      applyHomeOfficeTaskPenalty('❌ Inv #' + task.invoiceNo + ' does not exist in File Cabinet — use [ DNR ] (-100 pts).');
+      applyHomeOfficeTaskPenalty('[[ico:crossCircle]] Inv #' + task.invoiceNo + ' does not exist in File Cabinet — use [ DNR ] (-100 pts).');
       renderTerminalUI();
       return;
     }
@@ -1968,7 +1975,7 @@
     if (headerBad) {
       task.feedbackKind = 'err';
       task.feedbackMsg = '(-100 pts) Header mismatch on #' + headerBad.receiptNumber + ' (got D#' + headerBad.deptNo + '/V#' + headerBad.vendorNo + ', need D#' + task.deptNo + '/V#' + task.vendorNo + '). Fix or void in [2].';
-      applyHomeOfficeTaskPenalty('❌ Header mismatch on Receipt #' + headerBad.receiptNumber + ' (-100 pts).');
+      applyHomeOfficeTaskPenalty('[[ico:crossCircle]] Header mismatch on Receipt #' + headerBad.receiptNumber + ' (-100 pts).');
       renderTerminalUI();
       return;
     }
@@ -1986,7 +1993,7 @@
       if (extraCodes.length > 0) {
         task.feedbackKind = 'err';
         task.feedbackMsg = '(-100 pts) Unexpected SKU #' + extraCodes[0] + ' included on adjustment receipt. Void & correct in [2].';
-        applyHomeOfficeTaskPenalty('❌ Extra SKU on correction receipt for Inv #' + task.invoiceNo + ' (-100 pts).');
+        applyHomeOfficeTaskPenalty('[[ico:crossCircle]] Extra SKU on correction receipt for Inv #' + task.invoiceNo + ' (-100 pts).');
         renderTerminalUI();
         return;
       }
@@ -1997,7 +2004,7 @@
         const signStr = task.targetDelta > 0 ? '+' + task.targetDelta : String(task.targetDelta);
         task.feedbackKind = 'err';
         task.feedbackMsg = '(-100 pts) Correction qty mismatch for #' + task.itemCode + ': got ' + (netDelta > 0 ? '+' + netDelta : netDelta) + 'u, expected ' + signStr + 'u (to equal ' + task.invoiceQty + 'u). Fix or void in [2].';
-        applyHomeOfficeTaskPenalty('❌ Correction qty mismatch on Inv #' + task.invoiceNo + ' (-100 pts).');
+        applyHomeOfficeTaskPenalty('[[ico:crossCircle]] Correction qty mismatch on Inv #' + task.invoiceNo + ' (-100 pts).');
         renderTerminalUI();
         return;
       }
@@ -2008,7 +2015,7 @@
       const stats = getStats();
       if (stats) stats.increment('tasksCompleted', 1);
       playSuccess();
-      notify('✅ Task verified for Inv #' + task.invoiceNo + ' (+250 pts)!', 3600);
+      notify('[[ico:checkCircle]] Task verified for Inv #' + task.invoiceNo + ' (+250 pts)!', 3600);
       renderTerminalUI();
       return;
     }
@@ -2032,7 +2039,7 @@
     if (diffs.length > 0) {
       task.feedbackKind = 'err';
       task.feedbackMsg = '(-100 pts) Receipt lines do not match Inv #' + task.invoiceNo + ': ' + diffs.slice(0, 2).join(', ') + '. Fix or void in [2].';
-      applyHomeOfficeTaskPenalty('❌ Receipt lines mismatch for Inv #' + task.invoiceNo + ' (-100 pts).');
+      applyHomeOfficeTaskPenalty('[[ico:crossCircle]] Receipt lines mismatch for Inv #' + task.invoiceNo + ' (-100 pts).');
       renderTerminalUI();
       return;
     }
@@ -2043,7 +2050,7 @@
     const stats = getStats();
     if (stats) stats.increment('tasksCompleted', 1);
     playSuccess();
-    notify('✅ Missing receipt verified for Inv #' + task.invoiceNo + ' (+250 pts)!', 3600);
+    notify('[[ico:checkCircle]] Missing receipt verified for Inv #' + task.invoiceNo + ' (+250 pts)!', 3600);
     renderTerminalUI();
   }
 
@@ -2089,7 +2096,7 @@
       recallHtml = `
         <div class="crt-panel" style="border-color:#ef4444; border-left:5px solid #ef4444; margin-bottom:8px; flex:0 0 auto; padding:8px 10px;">
           <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:3px;">
-            <span style="font-weight:800; font-size:12px; color:#f87171;">🚨 ${escapeHtml(rec.productName)}</span>
+            <span style="font-weight:800; font-size:12px; color:#f87171;">${fmtIco('siren')} ${escapeHtml(rec.productName)}</span>
             <span style="border:1px solid #ef4444; color:#f87171; padding:1px 6px; font-size:10px; font-weight:800;">RECALL TASK</span>
           </div>
           ${actionHtml}
@@ -2131,7 +2138,7 @@
         }
 
         const feedbackHtml = t.feedbackMsg
-          ? `<div style="margin-top:5px; padding:4px 8px; background:rgba(239,68,68,0.14); border:1px solid #ef4444; color:#fca5a5; font-size:11px;">⚠️ ${escapeHtml(t.feedbackMsg)}</div>`
+          ? `<div style="margin-top:5px; padding:4px 8px; background:rgba(239,68,68,0.14); border:1px solid #ef4444; color:#fca5a5; font-size:11px;">${fmtIcoHtml(t.feedbackMsg)}</div>`
           : '';
 
         return `
@@ -2224,16 +2231,16 @@
         const res = ct.submitRecallCount(state.terminalRecallCount);
         if (!res || !res.ok) {
           playError();
-          notify('❌ Enter a valid affected unit count!', 'high');
+          notify('[[ico:crossCircle]] Enter a valid affected unit count!', 'high');
           return;
         }
         state.terminalRecallCount = '';
         if (res.matched) {
           playSuccess();
-          notify('🎉 RECALL COMPLETE! "' + res.productName + '" verified (+500 pts).', 'status');
+          notify('[[ico:sparkle]] RECALL COMPLETE! "' + res.productName + '" verified (+500 pts).', 'status');
         } else {
           playError();
-          notify('⚠️ Recall count mismatch recorded. Task completed with error (-100 pts).', 'critical');
+          notify('[[ico:claim]] Recall count mismatch recorded. Task completed with error (-100 pts).', 'critical');
         }
         renderTerminalUI();
       });
@@ -2797,7 +2804,7 @@
     }
 
     playSuccess();
-    notify('📄 Night Drop Invoice #' + resolved.invoiceNo + ' matched & cleared (' + receiptNumber + ')!', 4000);
+    notify('[[ico:document]] Night Drop Invoice #' + resolved.invoiceNo + ' matched & cleared (' + receiptNumber + ')!', 4000);
     if (state.nightDropPanelOpen) renderNightDropPanel();
     if (state.filingOpen) populateFilingCards();
     notifyDeskStateChanged();
@@ -2807,7 +2814,7 @@
   function openNightDropPanel(dockedBesideTerminal) {
     if (state.nightDropInvoices.length === 0 && state.pinnedArchiveItems.length === 0) {
       playBeep();
-      notify('📥 Inbox tray is empty — all Night Drop invoices are keyed and nothing is pinned.');
+      notify('[[ico:tray]] Inbox tray is empty — all Night Drop invoices are keyed and nothing is pinned.');
       return false;
     }
     state.nightDropPanelOpen = true;
@@ -3145,7 +3152,7 @@
       state.hooks.onReceiptPrinted(null, { fromTerminal: true, storeCopy: true, receiptNumber: rec.receiptNumber });
     }
     if (state.filingOpen) populateFilingCards();
-    notify('🖨️ Store Copy #' + rec.receiptNumber + ' printed & placed in Daily Filing folder.', 3400);
+    notify('[[ico:printer]] Store Copy #' + rec.receiptNumber + ' printed & placed in Daily Filing folder.', 3400);
     return { ok: true, receipt: rec };
   }
 
@@ -3314,10 +3321,10 @@
     });
 
     if (remaining > 0) {
-      return { status: 'remaining', label: '⚠ REMAINING (' + remaining + ' CASES SHORT)', qtyDiff: -remaining };
+      return { status: 'remaining', label: '[[ico:claim]] REMAINING (' + remaining + ' CASES SHORT)', qtyDiff: -remaining };
     }
     if (overage > 0) {
-      return { status: 'overage', label: '⚠ OVERAGE (+' + overage + ' EXCESS)', qtyDiff: overage };
+      return { status: 'overage', label: '[[ico:claim]] OVERAGE (+' + overage + ' EXCESS)', qtyDiff: overage };
     }
     return { status: 'matched', label: '✓ MATCHED (' + linkedReceipts.length + ' RCPT)', qtyDiff: 0 };
   }
@@ -3329,7 +3336,7 @@
 
     if (rec.invoiceNo !== inv.docNo || rec.vendorNo !== inv.vendorNo || rec.deptNo !== inv.deptNo) {
       playError();
-      notify('⚠️ Receipt #' + rec.receiptNumber + ' (V#' + rec.vendorNo + ' D#' + rec.deptNo + ' Inv#' + rec.invoiceNo + ') does not match Invoice #' + inv.docNo + '!');
+      notify('[[ico:claim]] Receipt #' + rec.receiptNumber + ' (V#' + rec.vendorNo + ' D#' + rec.deptNo + ' Inv#' + rec.invoiceNo + ') does not match Invoice #' + inv.docNo + '!');
       state.filingSelectedSide = null;
       state.filingSelectedIdx = -1;
       renderFilingCards();
@@ -3337,7 +3344,7 @@
     }
     if (rec.type !== inv.docType) {
       playError();
-      notify('⚠️ Type mismatch: cannot pair a ' + rec.type.toUpperCase() + ' receipt with a ' + inv.docType.toUpperCase() + ' card.');
+      notify('[[ico:claim]] Type mismatch: cannot pair a ' + rec.type.toUpperCase() + ' receipt with a ' + inv.docType.toUpperCase() + ' card.');
       state.filingSelectedSide = null;
       state.filingSelectedIdx = -1;
       renderFilingCards();
@@ -3432,7 +3439,7 @@
         : (' draggable="true" data-filing-side="rec" data-filing-idx="' + idx + '"');
       const actionBadge = nested
         ? ('<button class="filing-unlink-btn" type="button" data-unlink-rec="' + escapeHtml(rec.receiptNumber) + '" title="Move Store Copy back to loose stack">✕ UNCLIP</button>')
-        : ('<span class="filing-mini-stamp ' + (isLinked ? 'matched' : '') + '">' + (isLinked ? '📎 CLIPPED ✓' : 'DRAG / CLICK → INV') + '</span>');
+        : ('<span class="filing-mini-stamp ' + (isLinked ? 'matched' : '') + '">' + (isLinked ? (fmtIco('paperclip') + ' CLIPPED ✓') : 'DRAG / CLICK → INV') + '</span>');
 
       return '<div class="filing-mini-doc filing-mini-receipt ' + (rec.type === 'credit' ? 'is-credit ' : '') + (nested ? 'nested matched ' : (isLinked ? 'matched ' : 'unlinked ')) + (isSelected ? 'selected' : '') + '"' + dragAttrs + '>' +
         '<div class="filing-dm-banner">' +
@@ -3464,7 +3471,7 @@
         const docTotalUnits = (inv.items || []).reduce((sum, it) => sum + (Number(it.qty) || 0), 0);
 
         const pinBtn = inv.pendingNightDrop
-          ? '<button class="filing-pin-btn" data-pin-filing="' + idx + '">' + (pinnedMatch ? '📌 PINNED' : '📌 PIN TO DESK') + '</button>'
+          ? '<button class="filing-pin-btn" data-pin-filing="' + idx + '">' + (pinnedMatch ? (fmtIco('pin') + ' PINNED') : (fmtIco('pin') + ' PIN TO DESK')) + '</button>'
           : '';
 
         const invoiceSheetHtml = '<div class="filing-mini-doc filing-mini-invoice ' + kindCls + ' ' + evalRes.status + (isSelected ? ' selected' : '') + (awaitingInvoiceDrop ? ' awaiting-drop' : '') + '" draggable="true" data-filing-side="inv" data-filing-idx="' + idx + '">' +
@@ -3483,7 +3490,7 @@
           '</div>' +
           '<div class="filing-mini-lines">' + buildMiniLinesHtml(inv.items, 3, { isCredit: inv.docType === 'credit', isWarehouse: inv.isWarehouse || inv.deptNo === '01' }) + '</div>' +
           '<div class="filing-mini-ftr">' +
-          '<span class="filing-mini-stamp ' + evalRes.status + '">' + escapeHtml(evalRes.label) + '</span>' +
+          '<span class="filing-mini-stamp ' + evalRes.status + '">' + fmtIcoHtml(evalRes.label) + '</span>' +
           pinBtn +
           '</div>' +
           '</div>';
@@ -3496,7 +3503,7 @@
 
         return '<div class="filing-folder-group ' + evalRes.status + '">' +
           '<div class="filing-folder-tabbar">' +
-          '<span>📁 V#' + escapeHtml(inv.vendorNo) + ' · ' + tagLabel + ' #' + escapeHtml(inv.docNo) + '</span>' +
+          '<span>' + fmtIco('folder') + ' V#' + escapeHtml(inv.vendorNo) + ' · ' + tagLabel + ' #' + escapeHtml(inv.docNo) + '</span>' +
           '<span style="color:' + (linkedRecs.length > 0 ? '#4ade80' : '#94a3b8') + ';">' + linkedRecs.length + ' STORE COPY</span>' +
           '</div>' +
           invoiceSheetHtml +
@@ -3506,7 +3513,7 @@
 
     const unprintedBannerHtml = unprintedStoreCopies.length > 0
       ? '<div class="filing-unprinted-notice">' +
-      '<strong>🖨️ ' + unprintedStoreCopies.length + ' STORE COPY RECEIPT(S) NOT PRINTED YET</strong><br>' +
+      '<strong>' + fmtIco('printer') + ' ' + unprintedStoreCopies.length + ' STORE COPY RECEIPT(S) NOT PRINTED YET</strong><br>' +
       'Open <strong>Computer Terminal → [2] Receipt Ledger</strong> and press <strong>[ PRINT ALL STORE COPIES ]</strong> to send them to this Daily Filing folder.' +
       '</div>'
       : '';
@@ -3532,13 +3539,13 @@
     const readyToFile = afterNoon && totalInv > 0 && unprintedStoreCopies.length === 0 && initialUnfinalized.length === 0 && pairedInvCount === totalInv && unlinkedRecCount === 0 && state.nightDropInvoices.length === 0;
 
     if (!afterNoon) {
-      statusBar.innerHTML = '<span style="color:#fbbf24;font-weight:700;">🔒 DAILY FILING LOCKED UNTIL 12:00 PM NOON (Current: ' + escapeHtml(snap.formatted12h) + ') — Print Store Copies in Terminal [2] &amp; pre-clip paperwork now.</span>';
+      statusBar.innerHTML = '<span style="color:#fbbf24;font-weight:700;">' + fmtIco('lock') + ' DAILY FILING LOCKED UNTIL 12:00 PM NOON (Current: ' + escapeHtml(snap.formatted12h) + ') — Print Store Copies in Terminal [2] &amp; pre-clip paperwork now.</span>';
     } else if (state.nightDropInvoices.length > 0) {
-      statusBar.innerHTML = '<span style="color:#f87171;font-weight:700;">⚠ ' + state.nightDropInvoices.length + ' NIGHT DROP INVOICE(S) STILL UNKEYED — Key in Terminal [1] before filing.</span>';
+      statusBar.innerHTML = '<span style="color:#f87171;font-weight:700;">' + fmtIco('claim') + ' ' + state.nightDropInvoices.length + ' NIGHT DROP INVOICE(S) STILL UNKEYED — Key in Terminal [1] before filing.</span>';
     } else if (unprintedStoreCopies.length > 0) {
-      statusBar.innerHTML = '<span style="color:#fbbf24;font-weight:700;">🖨️ ' + unprintedStoreCopies.length + ' RECEIPT(S) NEED STORE COPIES PRINTED — Use Terminal [2] Receipt Ledger → Print All Store Copies.</span>';
+      statusBar.innerHTML = '<span style="color:#fbbf24;font-weight:700;">' + fmtIco('printer') + ' ' + unprintedStoreCopies.length + ' RECEIPT(S) NEED STORE COPIES PRINTED — Use Terminal [2] Receipt Ledger → Print All Store Copies.</span>';
     } else if (initialUnfinalized.length > 0) {
-      statusBar.innerHTML = '<span style="color:#fbbf24;font-weight:700;">⚠ ' + initialUnfinalized.length + ' INITIAL RECEIPT(S) UNFINALIZED — Finalize before printing Store Copies.</span>';
+      statusBar.innerHTML = '<span style="color:#fbbf24;font-weight:700;">' + fmtIco('claim') + ' ' + initialUnfinalized.length + ' INITIAL RECEIPT(S) UNFINALIZED — Finalize before printing Store Copies.</span>';
     } else if (pairedInvCount < totalInv || unlinkedRecCount > 0) {
       statusBar.innerHTML = '<span style="color:#93c5fd;font-weight:700;">CLIP EVERY STORE COPY TO ITS INVOICE (' + pairedInvCount + '/' + totalInv + ' invoices clipped, ' + unlinkedRecCount + ' loose store copies)</span>';
     } else {
@@ -3649,12 +3656,12 @@
     const clock = getClock();
     if (clock && !clock.isAfterNoon()) {
       playError();
-      notify('🔒 Daily Filing is locked until 12:00 PM noon.');
+      notify('[[ico:lock]] Daily Filing is locked until 12:00 PM noon.');
       return;
     }
     if (state.nightDropInvoices.length > 0) {
       playError();
-      notify('⚠️ Key all Night Drop invoices on the Terminal [1] before filing.');
+      notify('[[ico:claim]] Key all Night Drop invoices on the Terminal [1] before filing.');
       return;
     }
     const unprintedStoreCopies = state.processedReceipts.filter(
@@ -3662,14 +3669,14 @@
     );
     if (unprintedStoreCopies.length > 0) {
       playError();
-      notify('🖨️ Print all Store Copies in Terminal [2] Receipt Ledger before filing.');
+      notify('[[ico:printer]] Print all Store Copies in Terminal [2] Receipt Ledger before filing.');
       return;
     }
     const unlinkedRecs = state.filingReceipts.filter((r) => !r.linkedToKey);
     const unlinkedInvs = state.filingInvoices.filter((inv) => !state.filingReceipts.some((r) => r.linkedToKey === inv.key));
     if (unlinkedRecs.length > 0 || unlinkedInvs.length > 0 || state.filingInvoices.length === 0) {
       playError();
-      notify('⚠️ Every invoice and receipt must be paired before filing.');
+      notify('[[ico:claim]] Every invoice and receipt must be paired before filing.');
       return;
     }
 
@@ -3772,7 +3779,7 @@
     }
 
     playSuccess();
-    notify('📁 Daily Filing Complete! ' + state.filedReceiptsCount + ' receipt(s) filed to Top Drawer Archive.', 4500);
+    notify('[[ico:folder]] Daily Filing Complete! ' + state.filedReceiptsCount + ' receipt(s) filed to Top Drawer Archive.', 4500);
     renderFilingCards();
     if (state.archiveOpen) renderInvoiceArchive();
     notifyDeskStateChanged();
@@ -4250,7 +4257,7 @@
 
     if (!currentDay || currentDay.placeholder || !currentVendor) {
       viewer.innerHTML = '<div class="arch-empty-viewer">' +
-        '<div style="font-size:28px;margin-bottom:8px;">🗄️</div>' +
+        '<div style="font-size:28px;margin-bottom:8px;">' + fmtIco('cabinet') + '</div>' +
         '<div style="font-weight:800;font-size:15px;color:#e2e8f0;">' + (currentDay && currentDay.placeholder ? 'TODAY\'S FOLDER AWAITING FILING (AFTER 12:00 PM)' : 'SELECT A DATE & VENDOR FOLDER') + '</div>' +
         '<div style="font-size:12px;color:#94a3b8;margin-top:6px;">Browse 31 historical days of invoices, shortage stamps, credit memos, and receipts — or pin one reference document to your desk tray.</div>' +
         '</div>';
@@ -4346,7 +4353,7 @@
       '<div class="arch-cat-meta">' +
       '<span>' + escapeHtml(currentDay.dateStr) + vendorTimeStr + '</span>' +
       '<button class="arch-pin-btn ' + (isCreditPinned ? 'pinned' : '') + '" id="arch-pin-credit-btn">' +
-      (isCreditPinned ? '☑ PINNED TO DESK' : '☐ PIN CREDIT TO DESK') +
+      (isCreditPinned ? (fmtIco('checkboxChecked') + ' PINNED TO DESK') : (fmtIco('checkboxEmpty') + ' PIN CREDIT TO DESK')) +
       '</button>' +
       '</div>' +
       '</div>' +
@@ -4507,7 +4514,7 @@
     };
 
     const missingReceiptNoticeHtml = invoiceReceiptEntries.length === 0
-      ? '<div class="arch-doc-group" style="margin-top:12px;"><div class="arch-doc-tray" style="background:#450a0a; border:2px dashed #ef4444; color:#fecaca; padding:12px; text-align:center; font-weight:800;">⚠️ NO INVOICE RECEIPT FOUND ON FILE FOR INVOICE #' + escapeHtml(currentVendor.invoiceNo) + '</div></div>'
+      ? '<div class="arch-doc-group" style="margin-top:12px;"><div class="arch-doc-tray" style="background:#450a0a; border:2px dashed #ef4444; color:#fecaca; padding:12px; text-align:center; font-weight:800;">' + fmtIco('claim') + ' NO INVOICE RECEIPT FOUND ON FILE FOR INVOICE #' + escapeHtml(currentVendor.invoiceNo) + '</div></div>'
       : '';
 
     const invoiceReceiptsHtml = missingReceiptNoticeHtml +
@@ -4523,7 +4530,7 @@
       '</div>' +
       '<div class="arch-cat-meta">' +
       '<span>' + escapeHtml(currentDay.dateStr) + vendorTimeStr + '</span>' +
-      '<button class="arch-pin-btn ' + (isInvPinned ? 'pinned' : '') + '" id="arch-pin-inv-btn">' + (isInvPinned ? '☑ PINNED TO DESK' : '☐ PIN TO DESK (0/1)') + '</button>' +
+      '<button class="arch-pin-btn ' + (isInvPinned ? 'pinned' : '') + '" id="arch-pin-inv-btn">' + (isInvPinned ? (fmtIco('checkboxChecked') + ' PINNED TO DESK') : (fmtIco('checkboxEmpty') + ' PIN TO DESK (0/1)')) + '</button>' +
       '</div>' +
       '</div>' +
       '<div class="arch-doc-tray">' +

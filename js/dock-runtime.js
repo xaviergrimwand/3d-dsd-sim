@@ -1321,14 +1321,14 @@
           const dropRes = window.ClaimsTotes.dropRecallToteIntoReceptacle(recMeta.id);
           if (dropRes && !dropRes.ok && dropRes.reason === 'items_remaining_on_cart') {
             SoundSystem.playErrorBuzzer();
-            showNotification('⚠️ Finish collecting all recalled units off the top shelf into the tote first!', 'high');
+            showNotification('[[ico:claim]] Finish collecting all recalled units off the top shelf into the tote first!', 'high');
             return true;
           }
           if (dropRes && dropRes.ok) {
             if (!dropRes.isCorrect) {
               SoundSystem.playErrorBuzzer();
               const ptsTxt = dropRes.penaltyPoints ? ` (-${dropRes.penaltyPoints} pts)` : '';
-              showNotification(`⚠️ Wrong container! "${dropRes.productName}" goes in ${dropRes.correctLabel}.${ptsTxt}`, 'critical');
+              showNotification(`[[ico:claim]] Wrong container! "${dropRes.productName}" goes in ${dropRes.correctLabel}.${ptsTxt}`, 'critical');
             } else {
               SoundSystem.playSuccessChime();
               showNotification(`✓ Disposed "${dropRes.productName}" into ${dropRes.placedLabel}! Enter counted total on Terminal [4].`, 'low');
@@ -1356,7 +1356,7 @@
               if (!dropRes.isCorrect) {
                 SoundSystem.playErrorBuzzer();
                 const ptsTxt = dropRes.penaltyPoints ? ` (-${dropRes.penaltyPoints} pts)` : ' (Logged error)';
-                showNotification(`⚠️ Wrong receptacle! ${dropRes.item.name} belongs in ${dropRes.correctLabel}.${ptsTxt}`, 'critical');
+                showNotification(`[[ico:claim]] Wrong receptacle! ${dropRes.item.name} belongs in ${dropRes.correctLabel}.${ptsTxt}`, 'critical');
               } else if (dropRes.placedIn === 'vendor_credit') {
                 SoundSystem.playSuccessChime();
               } else if (dropRes.placedIn === 'donate' || dropRes.placedIn === 'organics' || dropRes.placedIn === 'hazwaste') {
@@ -1367,7 +1367,7 @@
               if (dropRes.allDone) {
                 setTimeout(() => {
                   SoundSystem.playSuccessChime();
-                  showNotification('🏆 All Claims processed! (+400 pts)', 'status');
+                  showNotification('[[ico:trophy]] All Claims processed! (+400 pts)', 'status');
                 }, 450);
               }
               return true;
@@ -1402,7 +1402,7 @@
       if (bestRItemDist <= bestRToteDist && bestRItemDist <= bestItemDist && bestRItemDist <= bestToteDist && rItemHits.length > 0) {
         if (player.hasElectricJack) {
           SoundSystem.playErrorBuzzer();
-          showAlert('⚠️ Park the Electric Pallet Jack [Space] before handling recalled items!');
+          showAlert('[[ico:claim]] Park the Electric Pallet Jack [Space] before handling recalled items!');
           return true;
         }
         const recItem = rItemHits[0].object && rItemHits[0].object.userData ? rItemHits[0].object.userData.recallItemRef : null;
@@ -1418,13 +1418,13 @@
       if (bestRToteDist <= bestItemDist && bestRToteDist <= bestToteDist && rToteHits.length > 0) {
         if (player.hasElectricJack) {
           SoundSystem.playErrorBuzzer();
-          showAlert('⚠️ Park the Electric Pallet Jack [Space] before taking the Recall Tote!');
+          showAlert('[[ico:claim]] Park the Electric Pallet Jack [Space] before taking the Recall Tote!');
           return true;
         }
         const pickedTote = window.ClaimsTotes.pickupRecallTote();
         if (pickedTote && pickedTote.ok) {
           SoundSystem.playButtonClick();
-          showNotification(`🧺 Carrying Recall Tote — Collect all "${pickedTote.productName}" off the top shelf, then take to ${pickedTote.correctBinLabel}.`, 3800);
+          showNotification(`[[ico:tote]] Carrying Recall Tote — Collect all "${pickedTote.productName}" off the top shelf, then take to ${pickedTote.correctBinLabel}.`, 3800);
           if (uiState.terminalModalOpen && window.DSDReceipts && typeof window.DSDReceipts.renderTerminalUI === 'function') {
             window.DSDReceipts.renderTerminalUI();
           }
@@ -1437,7 +1437,7 @@
         if (itemRec) {
           if (player.hasElectricJack) {
             SoundSystem.playErrorBuzzer();
-            showAlert('⚠️ Park the Electric Pallet Jack [Space] before picking up claims items!');
+            showAlert('[[ico:claim]] Park the Electric Pallet Jack [Space] before picking up claims items!');
             return true;
           }
           if (!itemRec.scannerConfirmed) {
@@ -1461,7 +1461,7 @@
             if (fHits.length > 0 && fHits[0].object && fHits[0].object.userData && fHits[0].object.userData.claimsReceptacle) {
               const rec = fHits[0].object.userData.claimsReceptacle;
               SoundSystem.playErrorBuzzer();
-              showNotification(`🚫 Hold a confirmed claims item first before placing into ${rec.label || 'Receptacle'}.`, 'medium');
+              showNotification(`[[ico:ban]] Hold a confirmed claims item first before placing into ${rec.label || 'Receptacle'}.`, 'medium');
               return true;
             }
           }
@@ -1474,7 +1474,7 @@
 
       if (tote.isRed) {
         SoundSystem.playErrorBuzzer();
-        showNotification('🔴 Credit Tote stays upright — credits are stored there until the vendor\'s next delivery.', 'high');
+        showNotification('[[ico:statusDotRed]] Credit Tote stays upright — credits are stored there until the vendor\'s next delivery.', 'high');
         return true;
       }
 
@@ -1509,7 +1509,7 @@
         if (preview) {
           if (!preview.valid) {
             SoundSystem.playErrorBuzzer();
-            showAlert(`⚠️ ${preview.reason || 'Cannot place case here!'}`);
+            showAlert(`[[ico:claim]] ${preview.reason || 'Cannot place case here!'}`);
             return true;
           }
           const res = window.BackstockRacks.placeHeldCaseAtPreview(preview);
@@ -1547,7 +1547,7 @@
 
       if (player.hasElectricJack) {
         SoundSystem.playErrorBuzzer();
-        showAlert('⚠️ Park the Electric Pallet Jack [Space] before picking up cases!');
+        showAlert('[[ico:claim]] Park the Electric Pallet Jack [Space] before picking up cases!');
         return true;
       }
 
@@ -1555,7 +1555,7 @@
         const pickCheck = window.BackstockRacks.canPickupCase(caseRec);
         if (pickCheck && !pickCheck.ok) {
           SoundSystem.playErrorBuzzer();
-          showAlert(`⚠️ ${pickCheck.reason || 'Pull top cases before removing bottom cases'}`);
+          showAlert(`[[ico:claim]] ${pickCheck.reason || 'Pull top cases before removing bottom cases'}`);
           return true;
         }
       }
@@ -1716,12 +1716,12 @@
       if (uiState.overageDeliveryId) {
         if (boxDelivId && boxDelivId !== uiState.overageDeliveryId) {
           SoundSystem.playErrorBuzzer();
-          showAlert('⚠️ Case belongs to another delivery! Finish or return to the active invoice first.');
+          showAlert('[[ico:claim]] Case belongs to another delivery! Finish or return to the active invoice first.');
           return true;
         }
         if (box.isCredit) {
           SoundSystem.playErrorBuzzer();
-          showNotification('⚠️ Credit Tote return boxes cannot be flagged as invoice overages.', 2800);
+          showNotification('[[ico:claim]] Credit Tote return boxes cannot be flagged as invoice overages.', 2800);
           return true;
         }
         const ds = DeliverySystem.getSessionForDelivery(uiState.overageDeliveryId);
@@ -1733,8 +1733,8 @@
         if (res && res.ok) {
           showNotification(
             res.flagged
-              ? `🚩 Flagged ${box.name} as OVERAGE (excess kept on cart/pallet)`
-              : `↩️ Removed OVERAGE flag from ${box.name}`,
+              ? `[[ico:flag]] Flagged ${box.name} as OVERAGE (excess kept on cart/pallet)`
+              : `[[ico:returnKey]] Removed OVERAGE flag from ${box.name}`,
             2600
           );
         }
@@ -1802,7 +1802,7 @@
           const res = window.DSDReceipts.seedDummyReceiptsAllDepts();
           if (SoundSystem.playButtonClick) SoundSystem.playButtonClick();
           if (res && res.count > 0) {
-            showNotification(`🧪 Populated ${res.count} test receipts across all departments.`, 'low');
+            showNotification(`[[ico:flask]] Populated ${res.count} test receipts across all departments.`, 'low');
           }
         }
       });
@@ -2227,6 +2227,16 @@
         }
       }
 
+      // [V]: Toggle held Receipts bar at bottom of screen while holding receipts
+      if (!e.ctrlKey && !e.altKey && !e.metaKey && e.code === 'KeyV') {
+        if (!isEditableKeyTarget(e.target) && !uiState.terminalModalOpen && hasHeldReceiptSlips() &&
+            window.DSDReceipts && typeof window.DSDReceipts.togglePrintedReceiptHud === 'function') {
+          window.DSDReceipts.togglePrintedReceiptHud();
+          e.preventDefault();
+          return;
+        }
+      }
+
       // When scanner HUD is open, handle keypad keys (no literal F1-F8 keys; uses nav/edit cluster + numpad symbols)
       if (uiState.scannerModalOpen && !e.ctrlKey && !e.altKey && !e.metaKey) {
         // [Enter] / [NumpadEnter]: ENT Confirm / Create
@@ -2307,6 +2317,19 @@
           handleScannerKeyAction('nav', e.code.replace('Arrow', '').toLowerCase());
           e.preventDefault();
           return;
+        }
+      }
+
+      // [ArrowLeft]/[ArrowRight]: Switch held receipts when bottom Receipts bar is expanded
+      if (!e.ctrlKey && !e.altKey && !e.metaKey && (e.code === 'ArrowLeft' || e.code === 'ArrowRight')) {
+        if (!isEditableKeyTarget(e.target) && window.DSDReceipts &&
+            typeof window.DSDReceipts.isPrintedReceiptHudExpanded === 'function' &&
+            window.DSDReceipts.isPrintedReceiptHudExpanded() &&
+            typeof window.DSDReceipts.stepPrintedReceiptSlip === 'function') {
+          if (window.DSDReceipts.stepPrintedReceiptSlip(e.code === 'ArrowLeft' ? -1 : 1)) {
+            e.preventDefault();
+            return;
+          }
         }
       }
 
@@ -2607,7 +2630,11 @@
         window.DSDMessages.push(msg, priority);
         return;
       }
-      alertBanner.textContent = msg;
+      if (window.SvgIcons && typeof window.SvgIcons.formatHtml === 'function') {
+        alertBanner.innerHTML = window.SvgIcons.formatHtml(msg);
+      } else {
+        alertBanner.textContent = msg;
+      }
       alertBanner.style.display = 'block';
       if (alertTimeout) clearTimeout(alertTimeout);
       alertTimeout = setTimeout(() => {
@@ -2633,7 +2660,7 @@
         showAlert(typeof optsOrMessage === 'string' ? optsOrMessage : (optsOrMessage && optsOrMessage.message) || '');
         return;
       }
-      let title = '⚠️ NOTICE';
+      let title = '[[ico:claim]] NOTICE';
       let message = '';
       let tone = 'warn';
       let buttonText = 'OK';
@@ -2647,7 +2674,7 @@
         } else {
           message = raw;
         }
-        if (/^(🎉|🏆|✅)/.test(title) || /^(🎉|🏆|✅)/.test(message)) {
+        if (/^(?:🎉|🏆|✅|\[\[ico:(?:sparkle|trophy|checkCircle)\]\])/.test(title) || /^(?:🎉|🏆|✅|\[\[ico:(?:sparkle|trophy|checkCircle)\]\])/.test(message)) {
           tone = 'success';
         }
       } else if (optsOrMessage && typeof optsOrMessage === 'object') {
@@ -2657,8 +2684,18 @@
         if (optsOrMessage.buttonText) buttonText = String(optsOrMessage.buttonText);
       }
 
-      if (gameAlertTitle) gameAlertTitle.textContent = title;
-      gameAlertBody.textContent = message;
+      if (gameAlertTitle) {
+        if (window.SvgIcons && typeof window.SvgIcons.formatHtml === 'function') {
+          gameAlertTitle.innerHTML = window.SvgIcons.formatHtml(title);
+        } else {
+          gameAlertTitle.textContent = title;
+        }
+      }
+      if (window.SvgIcons && typeof window.SvgIcons.formatHtml === 'function') {
+        gameAlertBody.innerHTML = window.SvgIcons.formatHtml(message);
+      } else {
+        gameAlertBody.textContent = message;
+      }
       if (gameAlertOkBtn) gameAlertOkBtn.textContent = buttonText;
       gameAlertModal.setAttribute('data-tone', tone);
       gameAlertModal.classList.add('active');
@@ -3841,7 +3878,7 @@
                 tc.isOpen = true;
                 SoundSystem.playDoorMotor(1.0);
                 const zTxt = tc.zoneBehind === 'F' ? 'Frozen (-10°F)' : 'Chilled (34°F)';
-                showNotification(`❄️ ${zTxt} bulkhead curtain rolling up!`, 'status');
+                showNotification(`[[ico:snowflake]] ${zTxt} bulkhead curtain rolling up!`, 'status');
               }
             }
 
@@ -4110,25 +4147,25 @@
     function handleInteractE() {
       if (isCarryingBackstockCase()) {
         if (!handleBackstockInteract(false)) {
-          showNotification('📦 Aim at a steel shelf (or floor pallet) and press [E] / Click to place case.');
+          showNotification('[[ico:box]] Aim at a steel shelf (or floor pallet) and press [E] / Click to place case.');
         }
         return;
       }
       if (isArrangingRecallItem()) {
         if (!handleClaimsToteInteract(false)) {
-          showNotification('📦 Aim at Recall Cart top shelf and press [E] / Click to place item down.');
+          showNotification('[[ico:box]] Aim at Recall Cart top shelf and press [E] / Click to place item down.');
         }
         return;
       }
       if (isHoldingRecallTote()) {
         if (!handleClaimsToteInteract(false)) {
-          showNotification('🧺 Collect top-shelf items, set tote on bottom shelf, or dump at disposal receptacle.');
+          showNotification('[[ico:tote]] Collect top-shelf items, set tote on bottom shelf, or dump at disposal receptacle.');
         }
         return;
       }
       if (isHoldingClaimsItem()) {
         if (!handleClaimsToteInteract(false)) {
-          showNotification('📥 Aim at Trash, Organics, Hazwaste, Donations, or Red Credit Tote and press [E] / Click.');
+          showNotification('[[ico:tray]] Aim at Trash, Organics, Hazwaste, Donations, or Red Credit Tote and press [E] / Click.');
         }
         return;
       }
@@ -4159,22 +4196,22 @@
 
     function takeElectricJack() {
       if (isCarryingBackstockCase()) {
-        showAlert('⚠️ Hands occupied carrying a case! Place the case on steel before taking the Electric Jack.');
+        showAlert('[[ico:claim]] Hands occupied carrying a case! Place the case on steel before taking the Electric Jack.');
         SoundSystem.playErrorBuzzer();
         return;
       }
       if (isHoldingRecallTote() || isArrangingRecallItem()) {
-        showAlert('⚠️ Hands occupied with Recall work! Place the small gray tote on the Recall Cart bottom shelf before taking the Electric Jack.');
+        showAlert('[[ico:claim]] Hands occupied with Recall work! Place the small gray tote on the Recall Cart bottom shelf before taking the Electric Jack.');
         SoundSystem.playErrorBuzzer();
         return;
       }
       if (isHoldingClaimsItem()) {
-        showAlert('⚠️ Hands occupied carrying a damaged item! Place it in a receptacle before taking the Electric Jack.');
+        showAlert('[[ico:claim]] Hands occupied carrying a damaged item! Place it in a receptacle before taking the Electric Jack.');
         SoundSystem.playErrorBuzzer();
         return;
       }
       if (uiState.scannerModalOpen) {
-        showAlert('⚠️ Hands occupied! Close the Hand Scanner [F] before taking the Electric Jack.');
+        showAlert('[[ico:claim]] Hands occupied! Close the Hand Scanner [F] before taking the Electric Jack.');
         SoundSystem.playErrorBuzzer();
         return;
       }
@@ -4227,7 +4264,7 @@
 
     function dropElectricJack() {
       if (player.hitchedPallet) {
-        showAlert('⚠️ Lower and drop the pallet first before parking the electric jack.');
+        showAlert('[[ico:claim]] Lower and drop the pallet first before parking the electric jack.');
         return;
       }
       player.hasElectricJack = false;
@@ -4274,9 +4311,9 @@
         else SoundSystem.playDropSound();
         const displayPct = jackBattery >= 99.99 ? 100 : Math.max(0, Math.min(99, Math.floor(jackBattery)));
         if (displayPct < 100) {
-          showNotification(`⚡ Electric Pallet Jack plugged in & charging (${displayPct}%)`);
+          showNotification(`[[ico:lightning]] Electric Pallet Jack plugged in & charging (${displayPct}%)`);
         } else {
-          showNotification('⚡ Electric Pallet Jack plugged in (100% charged)');
+          showNotification('[[ico:lightning]] Electric Pallet Jack plugged in (100% charged)');
         }
         return;
       }
@@ -4334,7 +4371,7 @@
 
     function handlePalletAction() {
       if (isCarryingBackstockCase()) {
-        showAlert('⚠️ Hands occupied carrying a case! Place the case on steel before using the Electric Jack.');
+        showAlert('[[ico:claim]] Hands occupied carrying a case! Place the case on steel before using the Electric Jack.');
         SoundSystem.playErrorBuzzer();
         return;
       }
@@ -4387,9 +4424,9 @@
           if (distToJack < 2.8) {
             takeElectricJack();
           } else {
-            showAlert('⚠️ ELECTRIC PALLET JACK REQUIRED! You cannot move pallets by hand. Take the electric jack first.');
+            showAlert('[[ico:claim]] ELECTRIC PALLET JACK REQUIRED! You cannot move pallets by hand. Take the electric jack first.');
             SoundSystem.playErrorBuzzer();
-            showNotification('⚠️ Take the Electric Pallet Jack staged between Docks 1 & 2 (or where parked).', 'high');
+            showNotification('[[ico:claim]] Take the Electric Pallet Jack staged between Docks 1 & 2 (or where parked).', 'high');
           }
         }
       }
@@ -4525,25 +4562,25 @@
     function hitchPallet(pallet) {
       if (!pallet || pallet.isHitched) return;
       if (!player.hasElectricJack) {
-        showAlert('⚠️ ELECTRIC PALLET JACK REQUIRED! You cannot move pallets by hand. Take the electric jack first.');
+        showAlert('[[ico:claim]] ELECTRIC PALLET JACK REQUIRED! You cannot move pallets by hand. Take the electric jack first.');
         SoundSystem.playErrorBuzzer();
         return;
       }
       if (player.hitchedPallet) {
-        showAlert('⚠️ Already hauling a pallet. Press [Space] to lower & drop it first.');
+        showAlert('[[ico:claim]] Already hauling a pallet. Press [Space] to lower & drop it first.');
         return;
       }
       if (!(pallet.data && pallet.data.isOverstockPallet) && pallet.position.z < doorZ) {
         const bay = dockDoors.find((dd) => Math.abs(pallet.position.x - dd.worldX) <= TILE_SIZE);
         if (!bay || !bay.hasTrailer || !bay.trailerDoorOpen || bay.trailerDoorProgress < 0.70) {
-          showAlert('🔒 TRAILER DOOR CLOSED! Let the driver enter & open the dock door before unloading pallets.');
+          showAlert('[[ico:lock]] TRAILER DOOR CLOSED! Let the driver enter & open the dock door before unloading pallets.');
           SoundSystem.playErrorBuzzer();
           return;
         }
         if (bay.trailerType === 'warehouse' && Array.isArray(bay.tempCurtains)) {
           const blockingCurtain = bay.tempCurtains.find((tc) => tc && tc.active && tc.progress < 0.70 && pallet.position.z < tc.worldZ - 0.05);
           if (blockingCurtain) {
-            showAlert('❄️ THERMAL CURTAIN SEALED! Move both pallets in front of the curtain to raise it first.');
+            showAlert('[[ico:snowflake]] THERMAL CURTAIN SEALED! Move both pallets in front of the curtain to raise it first.');
             SoundSystem.playErrorBuzzer();
             return;
           }
@@ -4552,7 +4589,7 @@
 
       const clearPose = findClearHitchPose(pallet);
       if (!clearPose) {
-        showAlert('🚫 NO CLEARANCE TO LIFT PALLET! Align the electric jack from an open side so the pallet clears nearby walls or racks.');
+        showAlert('[[ico:ban]] NO CLEARANCE TO LIFT PALLET! Align the electric jack from an open side so the pallet clears nearby walls or racks.');
         SoundSystem.playErrorBuzzer();
         return;
       }
@@ -4614,13 +4651,13 @@
 
       const inHallway = samples.some((s) => s.tile === 'H' || (s.grid.col === 10 && s.grid.row >= 17 && s.grid.row <= 22));
       if (inHallway) {
-        showAlert('🚫 EMPLOYEE HALLWAY: Pallets cannot be dropped in the employee hallway!');
+        showAlert('[[ico:ban]] EMPLOYEE HALLWAY: Pallets cannot be dropped in the employee hallway!');
         SoundSystem.playErrorBuzzer();
         return;
       }
 
       if (tileType === 'Y') {
-        showAlert('🚫 BLOCKED TRANSIT LANE! Pallets cannot be dropped on yellow transit tiles.');
+        showAlert('[[ico:ban]] BLOCKED TRANSIT LANE! Pallets cannot be dropped on yellow transit tiles.');
         SoundSystem.playErrorBuzzer();
         return;
       }
@@ -4634,7 +4671,7 @@
         hitchedPallet: pallet,
         excludePallet: pallet
       })) {
-        showAlert('🚫 NO STAGING ZONE: Pallets cannot be placed inside walls, racking, or other pallets!');
+        showAlert('[[ico:ban]] NO STAGING ZONE: Pallets cannot be placed inside walls, racking, or other pallets!');
         SoundSystem.playErrorBuzzer();
         return;
       }
@@ -4661,7 +4698,7 @@
             pallet.data.status = (tileType === 'T') ? 'UNLOADED' : 'STAGED_CORRECT';
             if (pallet.data.status === 'STAGED_CORRECT') {
               SoundSystem.playSuccessChime();
-              showNotification(`📦 ${pallet.data.name || 'Vendor Pallet'} staged on dock floor.`, 'status');
+              showNotification(`[[ico:box]] ${pallet.data.name || 'Vendor Pallet'} staged on dock floor.`, 'status');
             }
           }
         }
@@ -4674,7 +4711,7 @@
         let zoneName = 'Main Dock Ambient Staging';
         if (tileType === 'F') zoneName = 'Freezer (0°F) Staging';
         else if (tileType === 'C') zoneName = 'Cooler (36°F) Staging';
-        showNotification(`✅ PERFECT! ${pallet.data.po} correctly staged in ${zoneName}`, 'status');
+        showNotification(`[[ico:checkCircle]] PERFECT! ${pallet.data.po} correctly staged in ${zoneName}`, 'status');
         if (window.WarehouseTrucks && typeof window.WarehouseTrucks.onPalletStaged === 'function') {
           window.WarehouseTrucks.onPalletStaged(pallet);
         }
@@ -4686,7 +4723,7 @@
         let correctZone = 'Main Dock';
         if (pallet.data.targetZone === 'F') correctZone = 'Freezer [Dark Blue]';
         else if (pallet.data.targetZone === 'C') correctZone = 'Cooler [Light Blue]';
-        showAlert(`⚠️ MISPLACED! ${pallet.data.name} must be staged in ${correctZone}!`);
+        showAlert(`[[ico:claim]] MISPLACED! ${pallet.data.name} must be staged in ${correctZone}!`);
       }
 
       updateStagedCounter();
@@ -4860,7 +4897,7 @@
           scannerLcd.classList.remove('scan-flash');
         }, 240);
       } else if (res && res.ok && res.isPlu) {
-        showNotification(`⚠️ PLU Item (${itemRec.name}): Type PLU code ${itemRec.code} & press ENT on Hand Scanner!`, 'high');
+        showNotification(`[[ico:claim]] PLU Item (${itemRec.name}): Type PLU code ${itemRec.code} & press ENT on Hand Scanner!`, 'high');
       }
       return res;
     }
@@ -4868,22 +4905,22 @@
     function openScanner(openOpts) {
       if (uiState.bolModalOpen) return;
       if (isCarryingBackstockCase()) {
-        showAlert('⚠️ Hands occupied carrying a case! Place the case on steel before opening the Hand Scanner.');
+        showAlert('[[ico:claim]] Hands occupied carrying a case! Place the case on steel before opening the Hand Scanner.');
         SoundSystem.playErrorBuzzer();
         return;
       }
       if (isHoldingRecallTote() || isArrangingRecallItem()) {
-        showAlert('⚠️ Hands occupied with Recall work! Set the small gray tote on the Recall Cart bottom shelf before opening the Hand Scanner.');
+        showAlert('[[ico:claim]] Hands occupied with Recall work! Set the small gray tote on the Recall Cart bottom shelf before opening the Hand Scanner.');
         SoundSystem.playErrorBuzzer();
         return;
       }
       if (isHoldingClaimsItem()) {
-        showAlert('⚠️ Hands occupied carrying a damaged item! Place it in a receptacle before opening the Hand Scanner.');
+        showAlert('[[ico:claim]] Hands occupied carrying a damaged item! Place it in a receptacle before opening the Hand Scanner.');
         SoundSystem.playErrorBuzzer();
         return;
       }
       if (player.hasElectricJack) {
-        showAlert('⚠️ Hands occupied operating Electric Jack! Drop/park the jack [Space] before using the Hand Scanner.');
+        showAlert('[[ico:claim]] Hands occupied operating Electric Jack! Drop/park the jack [Space] before using the Hand Scanner.');
         SoundSystem.playErrorBuzzer();
         return;
       }
@@ -5141,10 +5178,10 @@
         if (whDone >= whRows.length && dsdDone >= dsdRows.length) {
           SoundSystem.playSuccessChime();
           closeTerminal();
-          showNotification(`🏆 SHIFT RECEIVING COMPLETE!\n\nWarehouse Trucks: ${whDone}/${whRows.length} auto-posted.\nDSD Deliveries: ${dsdDone}/${dsdRows.length} signed.\n\nUse File Cabinet / End Shift to inspect full ledger!`, 'status');
+          showNotification(`[[ico:trophy]] SHIFT RECEIVING COMPLETE!\n\nWarehouse Trucks: ${whDone}/${whRows.length} auto-posted.\nDSD Deliveries: ${dsdDone}/${dsdRows.length} signed.\n\nUse File Cabinet / End Shift to inspect full ledger!`, 'status');
         } else {
           SoundSystem.playErrorBuzzer();
-          showAlert(`⚠️ SHIFT RECEIVING IN PROGRESS\n\nWarehouse Trucks Completed: ${whDone}/${whRows.length}\nDSD Side-Door / Vendor Trucks Completed: ${dsdDone}/${dsdRows.length}\n\nClear waiting bays & finish scheduled arrivals before shift end.`);
+          showAlert(`[[ico:claim]] SHIFT RECEIVING IN PROGRESS\n\nWarehouse Trucks Completed: ${whDone}/${whRows.length}\nDSD Side-Door / Vendor Trucks Completed: ${dsdDone}/${dsdRows.length}\n\nClear waiting bays & finish scheduled arrivals before shift end.`);
         }
         return;
       }
@@ -5167,16 +5204,16 @@
           if (counterLabel) counterLabel.textContent = 'PALLETS AUDITED: ';
           updateStagedCounter();
 
-          showNotification('🚀 PHASE 2 ACTIVE: Scan each staged pallet with Hand Scanner [F] to verify items & temp specs!', 'low');
+          showNotification('[[ico:sparkle]] PHASE 2 ACTIVE: Scan each staged pallet with Hand Scanner [F] to verify items & temp specs!', 'low');
           showPopupModal({
-            title: '🎉 PHASE 1 DOCK & STAGING COMPLETE!',
+            title: '[[ico:sparkle]] PHASE 1 DOCK & STAGING COMPLETE!',
             message: 'All 7 inbound pallets are staged in their correct temperature zones.\n\n▶ PHASE 2 INITIATED: AUDIT & PIECE VERIFICATION\nEquip your Hand Scanner [F], walk over to each staged pallet in the Cooler, Freezer, and Ambient Dock, and press [SCAN] to audit the 27 cases per pallet.',
             tone: 'success'
           });
         } else {
           SoundSystem.playErrorBuzzer();
           showPopupModal({
-            title: '⚠️ RECEIVING INCOMPLETE',
+            title: '[[ico:claim]] RECEIVING INCOMPLETE',
             message: `Only ${correct} of ${pallets.length} pallets properly staged. Check trailers, stage in designated bays, and ensure yellow transit corridors remain unblocked.`,
             tone: 'warn'
           });
@@ -5186,14 +5223,14 @@
         if (audited >= pallets.length) {
           SoundSystem.playSuccessChime();
           showPopupModal({
-            title: '🏆 SHIFT COMPLETE — 100% AUDIT ACCURACY!',
+            title: '[[ico:trophy]] SHIFT COMPLETE — 100% AUDIT ACCURACY!',
             message: 'All 7 inbound pallets (189 total cases) verified, barcode-certified, and temp-compliant!\n\nElectronic ASN & Bill of Lading transmitted to Central ERP.\n\nOutstanding work, Lead Receiver!',
             tone: 'success'
           });
         } else {
           SoundSystem.playErrorBuzzer();
           showPopupModal({
-            title: '⚠️ AUDIT INCOMPLETE',
+            title: '[[ico:claim]] AUDIT INCOMPLETE',
             message: `Only ${audited} of ${pallets.length} pallets audited. Use your Hand Scanner [F] to inspect and scan the remaining ${pallets.length - audited} pallets.`,
             tone: 'warn'
           });
@@ -5266,8 +5303,8 @@
         z: electricJackWorld.position.z,
         rotY: electricJackWorld.rotation.y || 0
       } : null),
-      onSideDoorBlocked: () => triggerBoundaryWarning('side_door_vendors_only', '⚠️ VENDORS ONLY: Receiving staff must remain on the dock.'),
-      onSealedTrailerBlocked: (dd) => triggerBoundaryWarning('bay_trailer_sealed_' + dd.id, `🔒 Bay ${dd.id} trailer door sealed! Let driver inside building to open trailer.`)
+      onSideDoorBlocked: () => triggerBoundaryWarning('side_door_vendors_only', '[[ico:claim]] VENDORS ONLY: Receiving staff must remain on the dock.'),
+      onSealedTrailerBlocked: (dd) => triggerBoundaryWarning('bay_trailer_sealed_' + dd.id, `[[ico:lock]] Bay ${dd.id} trailer door sealed! Let driver inside building to open trailer.`)
     });
 
     function triggerPalletBumpSound() {
@@ -5411,7 +5448,7 @@
         jackBattery = Math.max(5, jackBattery - drainPerSec * dt);
         if (!jackLowBatteryWarned && jackBattery <= 25) {
           jackLowBatteryWarned = true;
-          showNotification(`⚠️ ELECTRIC JACK BATTERY LOW (${Math.floor(jackBattery)}%) — Plug into Charger between Bays 1 & 2!`, 'high');
+          showNotification(`[[ico:claim]] ELECTRIC JACK BATTERY LOW (${Math.floor(jackBattery)}%) — Plug into Charger between Bays 1 & 2!`, 'high');
         }
 
         if (inputLen > 0.01) {
@@ -6012,7 +6049,7 @@
         onRecallTriggered: (rec) => {
           SoundSystem.playErrorBuzzer();
           setTimeout(() => SoundSystem.playButtonClick(), 260);
-          showAlert(`🚨 PRODUCT RECALL ALERT\n\n"${rec.productName}" has been recalled!\n1. Inspect & rearrange units on the Recall Cart top shelf to count them.\n2. Pick up the small gray tote on the bottom shelf & collect each unit into it.\n3. Dump in ${rec.correctBinLabel}, then submit your counted total on Computer Terminal [4].`);
+          showAlert(`[[ico:siren]] PRODUCT RECALL ALERT\n\n"${rec.productName}" has been recalled!\n1. Inspect & rearrange units on the Recall Cart top shelf to count them.\n2. Pick up the small gray tote on the bottom shelf & collect each unit into it.\n3. Dump in ${rec.correctBinLabel}, then submit your counted total on Computer Terminal [4].`);
           if (uiState.terminalModalOpen && window.DSDReceipts && typeof window.DSDReceipts.renderTerminalUI === 'function') {
             window.DSDReceipts.renderTerminalUI();
           }
@@ -6417,17 +6454,17 @@
           DeliverySystem.init();
           if (nextShiftSupplyOrders.length > 0) {
             const totalSupCases = nextShiftSupplyOrders.reduce((s, it) => s + Math.max(0, Number(it.cases || it.qty) || 0), 0);
-            showNotification(`🚚 Vendor #601 Dept 60 supply delivery (${totalSupCases} case${totalSupCases === 1 ? '' : 's'}) scheduled today!`, 'low');
+            showNotification(`[[ico:truck]] Vendor #601 Dept 60 supply delivery (${totalSupCases} case${totalSupCases === 1 ? '' : 's'}) scheduled today!`, 'low');
           }
           if (supplyUsageReport && Array.isArray(supplyUsageReport.outOfStock) && supplyUsageReport.outOfStock.length > 0) {
             const missingNames = supplyUsageReport.outOfStock.slice(0, 3).map((s) => s.name).join(', ');
             const extraMore = supplyUsageReport.outOfStock.length > 3 ? ` +${supplyUsageReport.outOfStock.length - 3} more` : '';
             const pts = supplyUsageReport.outOfStock.length * 200;
-            showAlert(`⚠️ SUPPLY OUT OF STOCK (-${pts} pts): ${missingNames}${extraMore}. Order Dept 60 on Scanner #2!`, 'critical');
+            showAlert(`[[ico:claim]] SUPPLY OUT OF STOCK (-${pts} pts): ${missingNames}${extraMore}. Order Dept 60 on Scanner #2!`, 'critical');
           } else if (supplyUsageReport && Array.isArray(supplyUsageReport.nowEmptySkus) && supplyUsageReport.nowEmptySkus.length > 0) {
             const emptyNames = supplyUsageReport.nowEmptySkus.slice(0, 3).map((s) => s.name).join(', ');
             const extraMore = supplyUsageReport.nowEmptySkus.length > 3 ? ` +${supplyUsageReport.nowEmptySkus.length - 3} more` : '';
-            showNotification(`⚠️ Dept 60 depleted today: ${emptyNames}${extraMore}. Order on Scanner #2 before next shift!`, 'high');
+            showNotification(`[[ico:claim]] Dept 60 depleted today: ${emptyNames}${extraMore}. Order on Scanner #2 before next shift!`, 'high');
           }
         }
       });
@@ -6628,7 +6665,7 @@
           renderPendingDeliveriesPanel();
           syncCrtMonitorDisplay();
           updateLockHintDisplay();
-          showNotification('📂 Shift progress loaded!', 3200);
+          showNotification('[[ico:folder]] Shift progress loaded!', 3200);
         }
       });
     }

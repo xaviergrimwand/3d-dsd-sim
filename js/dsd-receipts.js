@@ -1429,10 +1429,13 @@
     const slip = slips[state.activeSlipIndex];
 
     if (state.printedHudMinimized) {
+      const printerSvg = (global.SvgIcons && typeof global.SvgIcons.render === 'function')
+        ? global.SvgIcons.render('printer')
+        : '';
       hud.innerHTML = `
-        <button type="button" class="prh-minimized-tab" id="prh-expand-btn">
-          <span>🖨️</span>
-          <span>RECEIPTS (${slips.length})</span>
+        <button type="button" class="prh-minimized-tab" id="prh-expand-btn" title="Expand Receipt Bar [V]">
+          ${printerSvg}
+          <span>RECEIPTS (${slips.length}) [V]</span>
           <span>▲</span>
         </button>
       `;
@@ -1467,12 +1470,12 @@
       <div class="prh-sheet">
         <div class="prh-topbar">
           <div class="prh-pager">
-            <button type="button" class="prh-btn" id="prh-prev-btn" ${slips.length <= 1 ? 'disabled' : ''}>◀</button>
+            <button type="button" class="prh-btn" id="prh-prev-btn" title="Previous Receipt [←]" ${slips.length <= 1 ? 'disabled' : ''}>◀</button>
             <span>${state.activeSlipIndex + 1}/${slips.length}</span>
-            <button type="button" class="prh-btn" id="prh-next-btn" ${slips.length <= 1 ? 'disabled' : ''}>▶</button>
+            <button type="button" class="prh-btn" id="prh-next-btn" title="Next Receipt [→]" ${slips.length <= 1 ? 'disabled' : ''}>▶</button>
           </div>
           <span class="prh-copy-badge ${slip.isCopy ? 'is-copy' : ''}">${escapeHtml(copyLabel)}</span>
-          <button type="button" class="prh-btn" id="prh-min-btn" title="Tuck Receipt Bar">▼</button>
+          <button type="button" class="prh-btn" id="prh-min-btn" title="Toggle Receipt Bar [V]">▼</button>
         </div>
 
         <div class="prh-store-hdr">
@@ -1502,19 +1505,11 @@
 
     const prevBtn = document.getElementById('prh-prev-btn');
     if (prevBtn && slips.length > 1) {
-      prevBtn.addEventListener('click', () => {
-        playBeep();
-        state.activeSlipIndex = (state.activeSlipIndex - 1 + slips.length) % slips.length;
-        renderPrintedReceiptHud();
-      });
+      prevBtn.addEventListener('click', () => stepPrintedReceiptSlip(-1));
     }
     const nextBtn = document.getElementById('prh-next-btn');
     if (nextBtn && slips.length > 1) {
-      nextBtn.addEventListener('click', () => {
-        playBeep();
-        state.activeSlipIndex = (state.activeSlipIndex + 1) % slips.length;
-        renderPrintedReceiptHud();
-      });
+      nextBtn.addEventListener('click', () => stepPrintedReceiptSlip(1));
     }
     const minBtn = document.getElementById('prh-min-btn');
     if (minBtn) {
@@ -1526,9 +1521,23 @@
     }
   }
 
+  function stepPrintedReceiptSlip(delta) {
+    const slips = state.printedSlips;
+    if (!Array.isArray(slips) || slips.length <= 1) return false;
+    const step = Number(delta) < 0 ? -1 : 1;
+    state.activeSlipIndex = (state.activeSlipIndex + step + slips.length) % slips.length;
+    playBeep();
+    renderPrintedReceiptHud();
+    return true;
+  }
+
+  function isPrintedReceiptHudExpanded() {
+    return Boolean(Array.isArray(state.printedSlips) && state.printedSlips.length > 0 && !state.printedHudMinimized);
+  }
+
   function togglePrintedReceiptHud(forceExpand) {
     if (!state.printedSlips || state.printedSlips.length === 0) {
-      notify('🖨️ No printed receipts held. Receipts can be printed from Terminal [2].', 'high');
+      notify('[[ico:printer]] No printed receipts held. Receipts can be printed from Terminal [2].', 'high');
       playBeep();
       return;
     }
@@ -1592,9 +1601,9 @@
     notifyDeskStateChanged();
     if (!toTray) {
       renderPrintedReceiptHud();
-      notify('🖨️ Printed Receipt #' + rec.receiptNumber + copyTag + ' on Desk Dot-Matrix Printer.', 3600);
+      notify('[[ico:printer]] Printed Receipt #' + rec.receiptNumber + copyTag + ' on Desk Dot-Matrix Printer.', 3600);
     } else {
-      notify('🖨️ Sent Receipt #' + rec.receiptNumber + copyTag + ' to Desk Printer tray — pick up at desk.', 3600);
+      notify('[[ico:printer]] Sent Receipt #' + rec.receiptNumber + copyTag + ' to Desk Printer tray — pick up at desk.', 3600);
     }
     return { ok: true, slip, toTray };
   }
@@ -1774,9 +1783,14 @@
     const info = d ? getPendingReceiptHandoffInfo(d) : { required: [], missing: [], heldMatchingCount: 0, complete: true };
 
     if (titleEl) {
-      titleEl.textContent = d
-        ? ('📄 HAND RECEIPTS TO ' + String(d.driverName || 'DRIVER').toUpperCase())
-        : '📄 HAND RECEIPTS TO DRIVER';
+      const fmtHdr = (global.SvgIcons && typeof global.SvgIcons.formatHtml === 'function')
+        ? global.SvgIcons.formatHtml
+        : escapeHtml;
+      titleEl.innerHTML = fmtHdr(
+        d
+          ? ('[[ico:document]] HAND RECEIPTS TO ' + String(d.driverName || 'DRIVER').toUpperCase())
+          : '[[ico:document]] HAND RECEIPTS TO DRIVER'
+      );
     }
     if (summaryEl) {
       summaryEl.textContent = d
@@ -1790,9 +1804,12 @@
     }
 
     if (warnEl) {
+      const fmtWarn = (global.SvgIcons && typeof global.SvgIcons.formatHtml === 'function')
+        ? global.SvgIcons.formatHtml
+        : escapeHtml;
       if (state.handStatusError) {
         warnEl.style.display = 'block';
-        warnEl.textContent = state.handStatusError;
+        warnEl.innerHTML = fmtWarn(state.handStatusError);
       } else if (info.missing.length > 0) {
         warnEl.style.display = 'block';
         warnEl.textContent = 'Driver needs printed receipt(s): ' + info.missing.map((rn) => '#' + rn).join(', ') +
@@ -1926,7 +1943,7 @@
     const wrongSlip = chosen.find((s) => !missingSet.has(s.receiptNumber));
     if (wrongSlip) {
       playError();
-      state.handStatusError = '⚠️ Receipt #' + wrongSlip.receiptNumber + ' does not match what ' + (d.driverName || 'this driver') + ' still needs!';
+      state.handStatusError = '[[ico:claim]] Receipt #' + wrongSlip.receiptNumber + ' does not match what ' + (d.driverName || 'this driver') + ' still needs!';
       renderHandReceiptDialog();
       return;
     }
@@ -1940,7 +1957,7 @@
     });
     if (dupSlip) {
       playError();
-      state.handStatusError = '⚠️ Select only 1 slip for #' + dupSlip.receiptNumber + ' (discard extra copies in the Trash Can under the desk).';
+      state.handStatusError = '[[ico:claim]] Select only 1 slip for #' + dupSlip.receiptNumber + ' (discard extra copies in the Trash Can under the desk).';
       renderHandReceiptDialog();
       return;
     }
@@ -2290,6 +2307,8 @@
     resetDailyReceipts,
     renderPrintedReceiptHud,
     togglePrintedReceiptHud,
+    stepPrintedReceiptSlip,
+    isPrintedReceiptHudExpanded,
     printReceiptSlip,
     collectPrinterTraySlips,
     discardActivePrintedReceipt,
@@ -2427,6 +2446,8 @@
     collectPrinterTraySlips,
     renderPrintedReceiptHud,
     togglePrintedReceiptHud,
+    stepPrintedReceiptSlip,
+    isPrintedReceiptHudExpanded,
     openTrashCanDialog,
     closeTrashCanDialog,
     openHandReceiptDialog,

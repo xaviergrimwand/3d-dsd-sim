@@ -93,11 +93,18 @@
     }
   }
 
+  function fmtIconHtml(text) {
+    if (global.SvgIcons && typeof global.SvgIcons.formatHtml === 'function') {
+      return global.SvgIcons.formatHtml(text);
+    }
+    return escapeHtml(text);
+  }
+
   function syncAudioControls() {
     if (!global.SoundSystem || typeof global.SoundSystem.getSettings !== 'function') return;
     const s = global.SoundSystem.getSettings();
     if (dom.btnPauseMute) {
-      dom.btnPauseMute.textContent = s.muted ? '🔇 MUTED' : '🔊 SOUND: ON';
+      dom.btnPauseMute.innerHTML = fmtIconHtml(s.muted ? '[[ico:volumeOff]] MUTED' : '[[ico:volumeOn]] SOUND: ON');
       dom.btnPauseMute.classList.toggle('muted', Boolean(s.muted));
     }
     if (dom.pauseVolSlider) {
@@ -108,7 +115,7 @@
     if (global.DSDGraphics && typeof global.DSDGraphics.getSettings === 'function') {
       const gs = global.DSDGraphics.getSettings();
       if (dom.btnPauseGfx) {
-        dom.btnPauseGfx.textContent = '🖥️ GFX: ' + String(gs.quality || 'balanced').toUpperCase();
+        dom.btnPauseGfx.innerHTML = fmtIconHtml('[[ico:terminal]] GFX: ' + String(gs.quality || 'balanced').toUpperCase());
       }
       if (dom.btnPauseFpsHud) {
         dom.btnPauseFpsHud.textContent = gs.showFps ? 'FPS HUD: ON' : 'FPS HUD: OFF';
@@ -172,7 +179,7 @@
     const isSave = state.slotModalMode === 'save';
 
     if (dom.slmTitle) {
-      dom.slmTitle.textContent = isSave ? '💾 SAVE SHIFT PROGRESS' : '📂 LOAD SHIFT PROGRESS';
+      dom.slmTitle.innerHTML = fmtIconHtml(isSave ? '[[ico:save]] SAVE SHIFT PROGRESS' : '[[ico:folder]] LOAD SHIFT PROGRESS');
     }
     if (dom.slmSubtitle) {
       dom.slmSubtitle.textContent = isSave
@@ -218,7 +225,7 @@
             ${detailHtml}
           </div>
           <div class="slm-slot-actions">
-            ${showExportBtn ? `<button type="button" class="slm-mini-btn" data-sl-export="${escapeHtml(slot.slotId)}" title="Export JSON">⬇ JSON</button>` : ''}
+            ${showExportBtn ? `<button type="button" class="slm-mini-btn" data-sl-export="${escapeHtml(slot.slotId)}" title="Export JSON">${fmtIconHtml('[[ico:download]] JSON')}</button>` : ''}
             ${showDeleteBtn ? `<button type="button" class="slm-mini-btn danger" data-sl-delete="${escapeHtml(slot.slotId)}" title="Delete Save">✕</button>` : ''}
             <button type="button" class="slm-primary-btn ${isSave && !isAuto ? 'save-btn' : ''}" data-sl-pick="${escapeHtml(slot.slotId)}" ${disableRow ? 'disabled' : ''}>${actionLabel}</button>
           </div>
@@ -250,7 +257,7 @@
   function openInfoModal(kind) {
     const isTutorial = kind === 'tutorial';
     if (dom.mimTitle) {
-      dom.mimTitle.textContent = isTutorial ? '📘 TRAINING TUTORIAL' : 'ℹ️ ABOUT 3D DSD RECEIVING SIMULATOR';
+      dom.mimTitle.innerHTML = fmtIconHtml(isTutorial ? '[[ico:book]] TRAINING TUTORIAL' : '[[ico:info]] ABOUT 3D DSD RECEIVING SIMULATOR');
     }
     if (dom.mimBody) {
       if (isTutorial) {
@@ -277,13 +284,13 @@
           <div class="mim-section">
             <h4>CONTROLS (DESKTOP &amp; MOBILE)</h4>
             <ul>
-              <li><strong>Desktop:</strong> Click viewport to lock mouse · <code>WASD</code> Move · <code>[E]</code> Interact / Doors / Drivers / Terminal · <code>[Space]</code> Walkie Jack / Pallets · <code>[F]</code> Handheld Scanner · <code>[ESC]</code> Pause Menu.</li>
+              <li><strong>Desktop:</strong> Click viewport to lock mouse · <code>WASD</code> Move · <code>[E]</code> Interact / Doors / Drivers / Terminal · <code>[Space]</code> Walkie Jack / Pallets · <code>[F]</code> Handheld Scanner · <code>[V]</code> / <code>[←][→]</code> Held Receipts Bar · <code>[ESC]</code> Pause Menu.</li>
               <li><strong>Mobile / Touch:</strong> Left thumbpad to walk · Right screen drag to look · Context action buttons appear automatically above the dock bar · Tap <strong>MENU</strong> top-right to Pause or Save.</li>
             </ul>
           </div>
           <div class="mim-section">
             <h4>SAVING ON GITHUB PAGES</h4>
-            <p>Progress auto-saves in your browser's local storage every 5 in-game minutes and when leaving/hiding the tab. Use <strong>Pause → Save Game → ⬇ JSON</strong> anytime to back up or move saves across devices.</p>
+            <p>Progress auto-saves in your browser's local storage every 5 in-game minutes and when leaving/hiding the tab. Use <strong>Pause → Save Game → ${fmtIconHtml('[[ico:download]]')} JSON</strong> anytime to back up or move saves across devices.</p>
           </div>
         `;
       }
