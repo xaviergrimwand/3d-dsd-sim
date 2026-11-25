@@ -3382,9 +3382,15 @@ tr.inv-short-pickable:hover {
 
 .crt-ledger-table th,
 .crt-ledger-table td {
-  padding: 4px 5px;
+  padding: 4px 4px;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.crt-ledger-table th:nth-child(-n+3),
+.crt-ledger-table td:nth-child(-n+3) {
+  padding-left: 3px;
+  padding-right: 3px;
 }
 
 .crt-ledger-table .crt-btn-sm {

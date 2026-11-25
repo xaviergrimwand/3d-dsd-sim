@@ -912,6 +912,147 @@
     return { col: col, row: row };
   }
 
+  /**
+   * Computes dynamic temperature-zone curtain boundaries for a warehouse trailer.
+   * Curtains are placed ONLY between distinct temp zones (F|C and/or C|D), never on all-dry trucks.
+   */
+  function computeTempCurtainPlans(palletSpecs, opts) {
+    const specs = Array.isArray(palletSpecs) ? palletSpecs : [];
+    if (specs.length === 0) return [];
+    const o = opts || {};
+    const TILE_SIZE = Number(o.TILE_SIZE) || 2.4;
+    const ORIGIN_X = Number.isFinite(Number(o.ORIGIN_X)) ? Number(o.ORIGIN_X) : -13.2;
+    const ORIGIN_Z = Number.isFinite(Number(o.ORIGIN_Z)) ? Number(o.ORIGIN_Z) : -24.0;
+    const doorZ = Number.isFinite(Number(o.doorZ)) ? Number(o.doorZ) : 0.0;
+    const colStart = Number.isFinite(Number(o.colStart)) ? Number(o.colStart) : 0;
+    const colEnd = Number.isFinite(Number(o.colEnd)) ? Number(o.colEnd) : (colStart + 1);
+
+    const numRows = Math.ceil(specs.length / 2);
+    const plans = [];
+
+    for (let r = 0; r < numRows - 1; r++) {
+      const deepSpec = specs[r * 2];
+      const frontIdx0 = (r + 1) * 2;
+      const frontSpec0 = specs[frontIdx0];
+      if (!deepSpec || !frontSpec0) continue;
+
+      const zoneBehind = deepSpec.targetZone;
+      const zoneFront = frontSpec0.targetZone;
+      if (!zoneBehind || !zoneFront || zoneBehind === zoneFront) continue;
+
+      const frontPallets = [];
+      [frontIdx0, frontIdx0 + 1].forEach((sIdx) => {
+        const sp = specs[sIdx];
+        if (!sp) return;
+        const row = Math.min(9, Math.floor(sIdx / 2));
+        const col = (sIdx % 2 === 0) ? colStart : colEnd;
+        frontPallets.push({
+          id: sp.id,
+          slotIdx: sIdx,
+          slotX: ORIGIN_X + (col + 0.5) * TILE_SIZE,
+          slotZ: ORIGIN_Z + (row + 0.5) * TILE_SIZE
+        });
+      });
+
+      const worldSeamZ = ORIGIN_Z + (r + 1) * TILE_SIZE;
+      plans.push({
+        zoneBehind: zoneBehind,
+        zoneFront: zoneFront,
+        rowAfter: r + 1,
+        localZ: worldSeamZ - doorZ,
+        worldZ: worldSeamZ,
+        frontPallets: frontPallets
+      });
+    }
+    return plans;
+  }
+
+  function clearDockTempCurtains(dd) {
+    if (!dd || !Array.isArray(dd.tempCurtains)) return;
+    dd.tempCurtains.forEach((tc) => {
+      if (!tc) return;
+      tc.active = false;
+      tc.isOpen = false;
+      tc.progress = 0;
+      tc._lastProg = -1;
+      tc.frontPallets = [];
+      if (tc.group) tc.group.visible = false;
+    });
+  }
+
+  function syncDockTempCurtainsForTruck(dd, truck, snapOpenIfCleared) {
+    if (!dd || !Array.isArray(dd.tempCurtains)) return;
+    clearDockTempCurtains(dd);
+    if (!truck || truck.type !== 'warehouse' || !dd.hasTrailer || dd.trailerType !== 'warehouse') return;
+
+    const gw = global.WarehouseWorld || {};
+    const plans = computeTempCurtainPlans(truck.palletSpecs, {
+      TILE_SIZE: gw.TILE_SIZE,
+      ORIGIN_X: gw.ORIGIN_X,
+      ORIGIN_Z: gw.ORIGIN_Z,
+      doorZ: dd.worldZ !== undefined ? dd.worldZ : 0,
+      colStart: dd.colStart,
+      colEnd: dd.colEnd
+    });
+
+    const pallets = state.hooks.pallets || [];
+    for (let i = 0; i < dd.tempCurtains.length; i++) {
+      const tc = dd.tempCurtains[i];
+      const plan = plans[i];
+      if (!tc) continue;
+      if (!plan) {
+        tc.active = false;
+        if (tc.group) tc.group.visible = false;
+        continue;
+      }
+
+      tc.active = true;
+      tc.zoneBehind = plan.zoneBehind;
+      tc.zoneFront = plan.zoneFront;
+      tc.rowAfter = plan.rowAfter;
+      tc.localZ = plan.localZ;
+      tc.worldZ = (dd.worldZ !== undefined ? dd.worldZ : 0) + plan.localZ;
+      tc.frontPallets = plan.frontPallets;
+      if (tc.curtainMat) {
+        const targetTex = (plan.zoneBehind === 'F') ? tc.texF : tc.texC;
+        if (targetTex && tc.curtainMat.map !== targetTex) {
+          tc.curtainMat.map = targetTex;
+          tc.curtainMat.needsUpdate = true;
+        }
+      }
+
+      let clearedNow = false;
+      if (snapOpenIfCleared && plan.frontPallets.length > 0) {
+        clearedNow = plan.frontPallets.every((fp) => {
+          const pObj = pallets.find((p) => p && p.data && p.data.id === fp.id);
+          if (!pObj) return true;
+          if (pObj.isHitched) return true;
+          if (pObj.data && pObj.data.status !== 'UNLOADED') return true;
+          const posX = pObj.position ? pObj.position.x : 0;
+          const posZ = pObj.position ? pObj.position.z : 0;
+          return Math.hypot(posX - fp.slotX, posZ - fp.slotZ) > 0.85;
+        });
+      }
+
+      tc.isOpen = Boolean(clearedNow);
+      tc.progress = clearedNow ? 1.0 : 0.0;
+      tc._lastProg = -1;
+      if (tc.group) {
+        tc.group.position.z = tc.localZ;
+        tc.group.visible = true;
+      }
+      if (tc.curtainMesh) {
+        const cH = tc.curtainH || 3.66;
+        const eased = 0.5 - 0.5 * Math.cos(tc.progress * Math.PI);
+        tc.curtainMesh.position.y = cH / 2 + eased * (cH - 0.22);
+        tc.curtainMesh.scale.y = Math.max(0.05, 1 - eased * 0.94);
+      }
+      if (tc.pilotMat && tc.pilotMat.color) {
+        tc.pilotMat.color.setHex(tc.isOpen ? 0x22c55e : (tc.zoneBehind === 'F' ? 0x38bdf8 : 0x22d3ee));
+      }
+    }
+  }
+
   function countUnloadedInBay(bayId) {
     const pallets = state.hooks.pallets || [];
     return pallets.filter((p) => p.data && p.data.truck === bayId && p.data.status === 'UNLOADED').length;
@@ -965,6 +1106,9 @@
     if (typeof state.hooks.playTruckDockBrake === 'function') state.hooks.playTruckDockBrake();
 
     loadWarehouseTrailer(truck);
+    if (dd) {
+      syncDockTempCurtainsForTruck(dd, truck, false);
+    }
     truck.status = 'UNLOADING';
 
     if (typeof state.hooks.onTruckArrived === 'function') {
@@ -1053,6 +1197,7 @@
     const docks = state.hooks.dockDoors || [];
     const dd = docks.find((d) => d.id === truck.dockBay);
     if (dd) {
+      clearDockTempCurtains(dd);
       dd.hasTrailer = false;
       dd.trailerType = null;
       dd.trailerDoorOpen = false;
@@ -1362,6 +1507,7 @@
     clearAllSpawnedPallets();
     const docks = state.hooks.dockDoors || [];
     docks.forEach((dd) => {
+      clearDockTempCurtains(dd);
       dd.hasTrailer = false;
       dd.trailerType = null;
       dd.trailerDoorOpen = false;
@@ -1401,6 +1547,8 @@
 
   function relinkSpawnedPallets(palletsList) {
     const list = Array.isArray(palletsList) ? palletsList : (state.hooks.pallets || []);
+    const docks = state.hooks.dockDoors || [];
+    docks.forEach((dd) => clearDockTempCurtains(dd));
     (state.schedule || []).forEach((entry) => {
       if (!entry) return;
       entry.spawnedPallets = [];
@@ -1410,6 +1558,12 @@
             entry.spawnedPallets.push(p);
           }
         });
+        if (!entry.completed && entry.dockBay) {
+          const dd = docks.find((d) => d.id === entry.dockBay);
+          if (dd && dd.hasTrailer) {
+            syncDockTempCurtainsForTruck(dd, entry, true);
+          }
+        }
       }
     });
     if (typeof state.hooks.updateStagedCounter === 'function') state.hooks.updateStagedCounter();
@@ -1420,6 +1574,7 @@
     clearAllSpawnedPallets();
     const docks = state.hooks.dockDoors || [];
     docks.forEach((dd) => {
+      clearDockTempCurtains(dd);
       dd.hasTrailer = false;
       dd.trailerType = null;
       dd.trailerDoorOpen = false;
@@ -1481,6 +1636,7 @@
     hasWaitingWarehouseTruck: hasWaitingWarehouseTruck,
     getActiveWarehouseTruck: getActiveWarehouseTruck,
     getCounterSummary: getCounterSummary,
-    getUnfinishedSummary: getUnfinishedSummary
+    getUnfinishedSummary: getUnfinishedSummary,
+    computeTempCurtainPlans: computeTempCurtainPlans
   };
 })(window);

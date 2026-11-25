@@ -1,9 +1,322 @@
 (function (global) {
   'use strict';
 
+  function createNpcAvoidanceHelper(env) {
+    const cfg = env || {};
+    const ORIGIN_X = Number(cfg.ORIGIN_X);
+    const ORIGIN_Z = Number(cfg.ORIGIN_Z);
+    const COLS = Number(cfg.COLS) || 11;
+    const ROWS = Number(cfg.ROWS) || 25;
+    const TILE_SIZE = Number(cfg.TILE_SIZE) || 2.4;
+    const doorZ = Number(cfg.doorZ) || 0;
+    const maxWorldX = -ORIGIN_X - 0.30;
+    const minWorldX = ORIGIN_X + 0.30;
+    const minWorldZ = ORIGIN_Z + 0.30;
+    const maxWorldZ = ORIGIN_Z + ROWS * TILE_SIZE - 0.30;
+
+    function clamp(v, lo, hi) {
+      return v < lo ? lo : (v > hi ? hi : v);
+    }
+
+    function circleHitsAABB(cx, cz, r, b) {
+      const qx = clamp(cx, b.minX, b.maxX);
+      const qz = clamp(cz, b.minZ, b.maxZ);
+      const dx = cx - qx;
+      const dz = cz - qz;
+      return (dx * dx + dz * dz) < (r * r - 1e-8);
+    }
+
+    function circleHitsOBB(cx, cz, r, ox, oz, rotY, hw, hd) {
+      const cosR = Math.cos(rotY);
+      const sinR = Math.sin(rotY);
+      const dx = cx - ox;
+      const dz = cz - oz;
+      const lx = dx * cosR - dz * sinR;
+      const lz = dx * sinR + dz * cosR;
+      const qx = clamp(lx, -hw, hw);
+      const qz = clamp(lz, -hd, hd);
+      const ex = lx - qx;
+      const ez = lz - qz;
+      return (ex * ex + ez * ez) < (r * r - 1e-8);
+    }
+
+    function collectObstacles(opts) {
+      const o = opts || {};
+      const excludePallet = o.excludePallet || null;
+      const palletsArr = typeof cfg.getPallets === 'function' ? (cfg.getPallets() || []) : [];
+      const overstockArr = typeof cfg.getOverstockPallets === 'function' ? (cfg.getOverstockPallets() || []) : [];
+      const solidWalls = typeof cfg.getSolidWalls === 'function' ? (cfg.getSolidWalls() || []) : [];
+      const deskKeepout = cfg.deskKeepout || null;
+      const otherDrivers = Array.isArray(o.otherDrivers) ? o.otherDrivers : [];
+      const playerPos = o.playerPos || null;
+
+      const obbObstacles = [];
+      for (let i = 0; i < palletsArr.length; i++) {
+        const p = palletsArr[i];
+        if (!p || p === excludePallet) continue;
+        if (p.mesh && p.mesh.visible === false) continue;
+        const px = p.position ? p.position.x : (Number(p.x) || 0);
+        const pz = p.position ? p.position.z : (Number(p.z) || 0);
+        const ry = p.mesh ? (Number(p.mesh.rotation.y) || 0) : (Number(p.rotY) || 0);
+        obbObstacles.push({ x: px, z: pz, rotY: ry, hw: 0.60, hd: 0.50, kind: 'pallet', ref: p });
+      }
+      for (let i = 0; i < overstockArr.length; i++) {
+        const op = overstockArr[i];
+        if (!op || op === excludePallet) continue;
+        if (op.group && op.group.visible === false) continue;
+        const px = op.group ? op.group.position.x : (Number(op.x) || 0);
+        const pz = op.group ? op.group.position.z : (Number(op.z) || 0);
+        const ry = op.group ? (Number(op.group.rotation.y) || 0) : (Number(op.rotY) || 0);
+        const hw = (Number(op.width) || 1.20) * 0.5;
+        const hd = (Number(op.depth) || 1.00) * 0.5;
+        obbObstacles.push({ x: px, z: pz, rotY: ry, hw, hd, kind: 'overstock', ref: op });
+      }
+
+      const circleActors = [];
+      if (playerPos && Number.isFinite(playerPos.x) && Number.isFinite(playerPos.z)) {
+        circleActors.push({ x: playerPos.x, z: playerPos.z, r: 0.48, isPlayer: true });
+      }
+      for (let i = 0; i < otherDrivers.length; i++) {
+        const od = otherDrivers[i];
+        if (!od) continue;
+        circleActors.push({ x: od.x, z: od.z, r: Number(od.r) || 0.45, isPlayer: false });
+      }
+
+      const staticBoxes = [];
+      if (deskKeepout) staticBoxes.push(deskKeepout);
+      for (let i = 0; i < solidWalls.length; i++) {
+        const b = solidWalls[i];
+        if (!b || b._isOverstockPallet) continue;
+        staticBoxes.push(b);
+      }
+
+      return { obbObstacles, circleActors, staticBoxes };
+    }
+
+    function pointBlocked(px, pz, r, obstacles, opts) {
+      const o = opts || {};
+      const dockDoors = typeof cfg.getDockDoors === 'function' ? (cfg.getDockDoors() || []) : [];
+      const allowEastExit = Boolean(o.allowEastExit);
+      const ignoreStatic = Boolean(o.ignoreStatic);
+
+      if (px - r < minWorldX || pz - r < minWorldZ || pz + r > maxWorldZ) {
+        return { hit: true, hitPlayer: false };
+      }
+      if (!allowEastExit && px + r > maxWorldX) {
+        return { hit: true, hitPlayer: false };
+      }
+
+      if (pz < doorZ - 0.10 && dockDoors.length > 0) {
+        let insideAnyBay = false;
+        for (let i = 0; i < dockDoors.length; i++) {
+          const dd = dockDoors[i];
+          if (px - r >= dd.worldX - TILE_SIZE + 0.12 && px + r <= dd.worldX + TILE_SIZE - 0.12) {
+            insideAnyBay = true;
+            break;
+          }
+        }
+        if (!insideAnyBay) return { hit: true, hitPlayer: false };
+      }
+
+      const obs = obstacles || {};
+      const actors = obs.circleActors || [];
+      for (let i = 0; i < actors.length; i++) {
+        const a = actors[i];
+        const sumR = r + a.r;
+        const dx = px - a.x;
+        const dz = pz - a.z;
+        if (dx * dx + dz * dz < sumR * sumR) {
+          return { hit: true, hitPlayer: Boolean(a.isPlayer) };
+        }
+      }
+
+      const obbs = obs.obbObstacles || [];
+      for (let i = 0; i < obbs.length; i++) {
+        const ob = obbs[i];
+        if (circleHitsOBB(px, pz, r, ob.x, ob.z, ob.rotY, ob.hw, ob.hd)) {
+          return { hit: true, hitPlayer: false };
+        }
+      }
+
+      if (!ignoreStatic) {
+        const boxes = obs.staticBoxes || [];
+        for (let i = 0; i < boxes.length; i++) {
+          if (circleHitsAABB(px, pz, r, boxes[i])) {
+            return { hit: true, hitPlayer: false };
+          }
+        }
+      }
+
+      return { hit: false, hitPlayer: false };
+    }
+
+    function rayCheck(curPos, rx, rz, maxSampleDist, rigRadius, frontOffset, frontRadius, obstacles, opts) {
+      const samples = [0.35, 0.80, 1.35, maxSampleDist];
+      let firstHitDist = Infinity;
+      let hitPlayer = false;
+      for (let i = 0; i < samples.length; i++) {
+        const d = Math.min(maxSampleDist, samples[i]);
+        if (d <= 0.01) continue;
+        const tx = curPos.x + rx * d;
+        const tz = curPos.z + rz * d;
+        const bodyRes = pointBlocked(tx, tz, rigRadius, obstacles, opts);
+        if (bodyRes.hit) {
+          firstHitDist = Math.min(firstHitDist, d);
+          if (bodyRes.hitPlayer) hitPlayer = true;
+          break;
+        }
+        if (frontOffset > 0 && frontRadius > 0) {
+          const fDist = d + frontOffset;
+          const fx = curPos.x + rx * fDist;
+          const fz = curPos.z + rz * fDist;
+          const frontRes = pointBlocked(fx, fz, frontRadius, obstacles, opts);
+          if (frontRes.hit) {
+            firstHitDist = Math.min(firstHitDist, d);
+            if (frontRes.hitPlayer) hitPlayer = true;
+            break;
+          }
+        }
+        if (d >= maxSampleDist - 1e-4) break;
+      }
+      return {
+        clear: !Number.isFinite(firstHitDist),
+        firstHitDist,
+        hitPlayer
+      };
+    }
+
+    function computeSteeringStep(opts) {
+      const o = opts || {};
+      const curPos = o.curPos;
+      const targetWp = o.targetWp;
+      const dx = targetWp.x - curPos.x;
+      const dz = targetWp.z - curPos.z;
+      const dist = Math.hypot(dx, dz);
+      if (dist < 1e-4) {
+        return { blocked: false, blockedByPlayer: false, nextDirX: 0, nextDirZ: 0, speedScale: 1, avoidBias: o.avoidBias || 1 };
+      }
+
+      const toX = dx / dist;
+      const toZ = dz / dist;
+      const rigRadius = Number(o.rigRadius) || 0.42;
+      const frontOffset = Number(o.frontOffset) || 0;
+      const frontRadius = Number(o.frontRadius) || 0;
+      const lookAhead = Math.min(dist, Number(o.lookAhead) || 2.1);
+      const bias = (o.avoidBias === -1) ? -1 : 1;
+      const extended = Boolean(o.extendedScan);
+      const obstacles = o.obstacles;
+      const ptOpts = {
+        allowEastExit: Boolean(o.allowEastExit),
+        ignoreStatic: Boolean(o.ignoreStatic)
+      };
+
+      const deg = Math.PI / 180;
+      const angles = [
+        0,
+        bias * 20 * deg, -bias * 20 * deg,
+        bias * 42 * deg, -bias * 42 * deg,
+        bias * 66 * deg, -bias * 66 * deg,
+        bias * 88 * deg, -bias * 88 * deg
+      ];
+      if (extended) {
+        angles.push(
+          bias * 112 * deg, -bias * 112 * deg,
+          bias * 135 * deg, -bias * 135 * deg
+        );
+      }
+
+      let best = null;
+      let straightHitPlayer = false;
+      let anyBlockedByPlayer = false;
+
+      for (let i = 0; i < angles.length; i++) {
+        const ang = angles[i];
+        const ca = Math.cos(ang);
+        const sa = Math.sin(ang);
+        const rx = toX * ca - toZ * sa;
+        const rz = toX * sa + toZ * ca;
+        const check = rayCheck(curPos, rx, rz, lookAhead, rigRadius, frontOffset, frontRadius, obstacles, ptOpts);
+        if (i === 0 && check.hitPlayer) straightHitPlayer = true;
+        if (check.hitPlayer) anyBlockedByPlayer = true;
+
+        if (check.clear) {
+          // Prefer straight path (i === 0), then minimal turn matching bias
+          const penalty = Math.abs(ang) + ((ang !== 0 && Math.sign(ang) !== bias) ? 0.15 : 0);
+          if (!best || penalty < best.penalty) {
+            best = {
+              blocked: false,
+              blockedByPlayer: false,
+              nextDirX: rx,
+              nextDirZ: rz,
+              speedScale: Math.abs(ang) > 0.65 ? 0.72 : (Math.abs(ang) > 0.25 ? 0.88 : 1.0),
+              avoidBias: ang !== 0 ? (Math.sign(ang) || bias) : bias,
+              penalty
+            };
+            if (i === 0) break;
+          }
+        }
+      }
+
+      if (best) return best;
+
+      return {
+        blocked: true,
+        blockedByPlayer: straightHitPlayer || anyBlockedByPlayer,
+        nextDirX: 0,
+        nextDirZ: 0,
+        speedScale: 0,
+        avoidBias: bias
+      };
+    }
+
+    function findClearStagingSpot(opts) {
+      const o = opts || {};
+      const pref = o.preferred || { x: 0, z: 6.0 };
+      const obstacles = o.obstacles;
+      const tileCheckFn = typeof o.isTileClear === 'function' ? o.isTileClear : null;
+      const minX = o.minX !== undefined ? Number(o.minX) : (minWorldX + 0.75);
+      const maxX = o.maxX !== undefined ? Number(o.maxX) : (maxWorldX - 1.35);
+      const minZ = o.minZ !== undefined ? Number(o.minZ) : 2.6;
+      const maxZ = o.maxZ !== undefined ? Number(o.maxZ) : 13.6;
+
+      const offsets = [
+        [0, 0],
+        [1.35, 0], [-1.35, 0],
+        [0, 1.50], [0, -1.50],
+        [1.35, 1.50], [-1.35, 1.50],
+        [1.35, -1.50], [-1.35, -1.50],
+        [2.60, 0], [-2.60, 0],
+        [0, 3.00], [1.35, 3.00], [-1.35, 3.00],
+        [2.60, 1.50], [-2.60, 1.50]
+      ];
+
+      for (let i = 0; i < offsets.length; i++) {
+        const cx = pref.x + offsets[i][0];
+        const cz = pref.z + offsets[i][1];
+        if (cx < minX || cx > maxX || cz < minZ || cz > maxZ) continue;
+        if (tileCheckFn && !tileCheckFn(cx, cz)) continue;
+        // Require generous pallet+walk clearance (r = 0.78m) against grounded pallets, actors & walls
+        const res = pointBlocked(cx, cz, 0.78, obstacles, { ignoreStatic: false });
+        if (!res.hit) {
+          return { x: cx, z: cz };
+        }
+      }
+      return { x: pref.x, z: pref.z };
+    }
+
+    return {
+      collectObstacles,
+      pointBlocked,
+      computeSteeringStep,
+      findClearStagingSpot
+    };
+  }
+
+  global.createNpcAvoidanceHelper = createNpcAvoidanceHelper;
+
   function createController(ctx) {
     const SoundSystem = global.SoundSystem;
-    const { gridToWorld } = global.WarehouseWorld;
+    const { ORIGIN_X, ORIGIN_Z, COLS, ROWS, TILE_SIZE, gridToWorld, worldToGrid, getTileType } = global.WarehouseWorld;
     const { scene, world, models, dom, uiState, hooks } = ctx;
     const { dockDoors, sideRollupDoor, doorZ, doorWidth, SIDE_DOOR_DURATION, interactibles } = world;
     const {
@@ -191,6 +504,66 @@
 
     // Computer desk keepout bounds (desk is x: 11.565..12.915, z: 3.938..6.238) + shoulder clearance
     const DESK_KEEPOUT = { minX: 10.95, maxX: 13.40, minZ: 3.35, maxZ: 6.85, laneX: 10.20, northZ: 3.15, southZ: 7.05 };
+
+    const npcAvoidance = createNpcAvoidanceHelper({
+      ORIGIN_X,
+      ORIGIN_Z,
+      COLS,
+      ROWS,
+      TILE_SIZE,
+      doorZ,
+      getPallets: () => pallets,
+      getOverstockPallets: () => (world && Array.isArray(world.overstockPallets) ? world.overstockPallets : []),
+      getSolidWalls: () => (world && Array.isArray(world.solidWalls) ? world.solidWalls : []),
+      getDockDoors: () => dockDoors,
+      deskKeepout: DESK_KEEPOUT
+    });
+
+    function isStagingTileClearForPallet(x, z) {
+      if (typeof worldToGrid !== 'function' || typeof getTileType !== 'function') return true;
+      const g = worldToGrid(x, z);
+      const t = getTileType(g.col, g.row);
+      return t === 'D' || t === 'F' || t === 'C';
+    }
+
+    function collectSessionObstacles(session, excludeTargetPallet) {
+      const playerObj = (hooks && typeof hooks.getPlayer === 'function') ? hooks.getPlayer() : null;
+      const playerExcluded = (playerObj && playerObj.hitchedPallet) ? playerObj.hitchedPallet : null;
+      const otherDrivers = [];
+      const selfSessions = DeliverySystem && Array.isArray(DeliverySystem.sessions) ? DeliverySystem.sessions : [];
+      for (let i = 0; i < selfSessions.length; i++) {
+        const s = selfSessions[i];
+        if (!s || s === session || !s.driver || !s.driver.mesh) continue;
+        otherDrivers.push({ x: s.driver.mesh.position.x, z: s.driver.mesh.position.z, r: 0.48 });
+      }
+      const obstacles = npcAvoidance.collectObstacles({
+        excludePallet: excludeTargetPallet || session.vendorHitchedPallet || playerExcluded,
+        otherDrivers,
+        playerPos: (playerObj && playerObj.position && playerObj.position.x <= (-ORIGIN_X - 0.1)) ? playerObj.position : null
+      });
+      // If player is hauling a pallet on the jack, include the player-carried pallet as a moving obstacle too
+      if (playerObj && playerObj.hasElectricJack && playerObj.hitchedPallet) {
+        const hp = playerObj.hitchedPallet;
+        const px = hp.position ? hp.position.x : (Number(hp.x) || 0);
+        const pz = hp.position ? hp.position.z : (Number(hp.z) || 0);
+        const ry = hp.mesh ? (Number(hp.mesh.rotation.y) || 0) : (Number(hp.rotY) || 0);
+        obstacles.obbObstacles.push({ x: px, z: pz, rotY: ry, hw: 0.60, hd: 0.50, kind: 'player_hitched', ref: hp });
+      }
+      return obstacles;
+    }
+
+    function findClearBackroomStagingSpot(bayId, dropIdx, session) {
+      const base = getBackroomStagingSpot(bayId, dropIdx);
+      const obstacles = collectSessionObstacles(session, null);
+      return npcAvoidance.findClearStagingSpot({
+        preferred: base,
+        bayId,
+        obstacles,
+        isTileClear: isStagingTileClearForPallet,
+        minZ: 2.8,
+        maxZ: 13.6
+      });
+    }
 
     function segmentHitsRect(a, b, r) {
       let t0 = 0;
@@ -2134,26 +2507,127 @@
             return;
           }
 
-          const targetWp = session.waypoints[session.currentWaypointIdx];
           const curPos = session.driver.mesh.position;
+          const isDriveInTarget = (
+            session.state === 'VENDOR_UNLOADING_DRIVE_IN' &&
+            session.currentWaypointIdx === session.waypoints.length - 1
+          );
+          const remainingBayTarget = isDriveInTarget
+            ? pallets
+              .filter((p) => p.data && p.data.truck === (session.delivery && session.delivery.dockBay) && p.data.status === 'UNLOADED')
+              .sort((a, b) => b.position.z - a.position.z)[0] || null
+            : null;
+
+          const obstacles = collectSessionObstacles(session, remainingBayTarget);
+
+          // If the active staging target for VENDOR_UNLOADING_DRIVE_OUT became occupied mid-haul, re-route cleanly
+          if (session.state === 'VENDOR_UNLOADING_DRIVE_OUT' && session._activeDropPos) {
+            const dp = session._activeDropPos;
+            const dpBlocked = npcAvoidance.pointBlocked(dp.x, dp.z, 0.72, obstacles, { ignoreStatic: false });
+            if (dpBlocked.hit) {
+              const bay = (session.delivery && session.delivery.dockBay) ? session.delivery.dockBay : 3;
+              const fresh = findClearBackroomStagingSpot(bay, session.vendorDroppedCount || 0, session);
+              session._activeDropPos = fresh;
+              const lastIdx = session.waypoints.length - 1;
+              if (lastIdx >= 0) {
+                session.waypoints[lastIdx] = new THREE.Vector3(fresh.x, 0, fresh.z - 1.88);
+              }
+            }
+          }
+
+          // Skip intermediate waypoint if a pallet/actor sits directly on it and driver is close enough to flow past
+          while (session.currentWaypointIdx < session.waypoints.length - 1) {
+            const wp = session.waypoints[session.currentWaypointIdx];
+            const dWp = Math.hypot(wp.x - curPos.x, wp.z - curPos.z);
+            if (dWp < 1.35) {
+              const wpHit = npcAvoidance.pointBlocked(wp.x, wp.z, 0.55, obstacles, { ignoreStatic: true });
+              if (wpHit.hit) {
+                session.currentWaypointIdx++;
+                continue;
+              }
+            }
+            break;
+          }
+
+          const targetWp = session.waypoints[session.currentWaypointIdx];
           const dx = targetWp.x - curPos.x;
           const dz = targetWp.z - curPos.z;
           const dist = Math.hypot(dx, dz);
           const walkSpeed = session.vendorHasJack ? 2.4 : 3.0;
 
           if (dist > 0.08) {
-            const dirX = dx / dist;
-            const dirZ = dz / dist;
-            const targetYaw = Math.atan2(dirX, dirZ);
+            const allowEastExit = (
+              (session.state === 'ENTERING' && curPos.x >= 9.6) ||
+              (session.state === 'LEAVING' && curPos.x >= 9.6)
+            );
+            const rigRadius = session.vendorHitchedPallet ? 0.50 : (session.vendorHasJack || session.cart ? 0.48 : 0.40);
+            const frontOffset = session.vendorHitchedPallet ? 1.88 : (session.vendorHasJack ? 0.92 : (session.cart ? 1.05 : 0));
+            const frontRadius = session.vendorHitchedPallet ? 0.74 : (session.vendorHasJack || session.cart ? 0.44 : 0);
+
+            const steer = npcAvoidance.computeSteeringStep({
+              curPos: curPos,
+              targetWp: targetWp,
+              rigRadius,
+              frontOffset,
+              frontRadius,
+              lookAhead: session.vendorHitchedPallet ? 2.4 : 1.9,
+              avoidBias: session._avoidBias || 1,
+              extendedScan: (session._blockedElapsed || 0) > 1.5,
+              allowEastExit,
+              ignoreStatic: curPos.z < doorZ - 0.1 || allowEastExit,
+              obstacles
+            });
+
+            if (steer.blocked && (steer.blockedByPlayer || (session._blockedElapsed || 0) < 7.5)) {
+              session._blockedElapsed = (session._blockedElapsed || 0) + dt;
+              session.driver.updateAnimation(false, dt);
+              session.driver.trackPlayerGaze(hooks.getPlayer().position, dt);
+
+              const nowMs = Date.now();
+              if (!session._lastYieldWarnMs || (nowMs - session._lastYieldWarnMs) >= 8000) {
+                session._lastYieldWarnMs = nowMs;
+                if (session.vendorHasJack && SoundSystem && typeof SoundSystem.playJackHorn === 'function') {
+                  SoundSystem.playJackHorn();
+                } else if (SoundSystem && typeof SoundSystem.playPalletBump === 'function') {
+                  SoundSystem.playPalletBump();
+                }
+                const dName = (session.delivery && session.delivery.driverName) ? session.delivery.driverName : 'Driver';
+                hooks.showNotification(
+                  steer.blockedByPlayer
+                    ? `🚧 ${dName} paused — step clear of the aisle.`
+                    : `📦 ${dName} waiting for pallets blocking the aisle.`,
+                  'low'
+                );
+              }
+              return;
+            }
+
+            if (steer.blocked) {
+              // Extended wait timeout against static pallet barricade: gently bypass along straight vector
+              const dirX = dx / dist;
+              const dirZ = dz / dist;
+              session._avoidBias = steer.avoidBias || 1;
+              var moveDirX = dirX;
+              var moveDirZ = dirZ;
+              var effectiveSpeed = walkSpeed * 0.45;
+            } else {
+              session._blockedElapsed = 0;
+              session._avoidBias = steer.avoidBias || 1;
+              var moveDirX = steer.nextDirX;
+              var moveDirZ = steer.nextDirZ;
+              var effectiveSpeed = walkSpeed * (steer.speedScale || 1.0);
+            }
+
+            const targetYaw = Math.atan2(moveDirX, moveDirZ);
 
             let angleDiff = targetYaw - session.driver.mesh.rotation.y;
             while (angleDiff > Math.PI) angleDiff -= Math.PI * 2;
             while (angleDiff < -Math.PI) angleDiff += Math.PI * 2;
             session.driver.mesh.rotation.y += angleDiff * Math.min(1.0, 10.0 * dt);
 
-            const step = Math.min(dist, walkSpeed * dt);
-            curPos.x += dirX * step;
-            curPos.z += dirZ * step;
+            const step = Math.min(dist, effectiveSpeed * dt);
+            curPos.x += moveDirX * step;
+            curPos.z += moveDirZ * step;
             session.driver.updateAnimation(true, dt);
 
             if (session.cart && session.state !== 'FINISHED') {
@@ -2193,6 +2667,7 @@
               }
             }
           } else {
+            session._blockedElapsed = 0;
             session.currentWaypointIdx++;
             if (session.currentWaypointIdx >= session.waypoints.length) {
               this.onSessionReachedPathEnd(session);
@@ -2331,7 +2806,8 @@
             SoundSystem.playHydraulicLift();
           }
 
-          const dropPos = this.getBackroomStagingSpot(bay, session.vendorDroppedCount);
+          const dropPos = findClearBackroomStagingSpot(bay, session.vendorDroppedCount, session);
+          session._activeDropPos = dropPos;
 
           session.state = 'VENDOR_UNLOADING_DRIVE_OUT';
           session.waypoints = [
@@ -2347,7 +2823,8 @@
 
           if (session.vendorHitchedPallet) {
             const p = session.vendorHitchedPallet;
-            const dropPos = this.getBackroomStagingSpot(bay, session.vendorDroppedCount);
+            const dropPos = session._activeDropPos || findClearBackroomStagingSpot(bay, session.vendorDroppedCount, session);
+            session._activeDropPos = null;
             p.isHitched = false;
             p.position.set(dropPos.x, 0, dropPos.z);
             p.mesh.position.set(dropPos.x, 0, dropPos.z);

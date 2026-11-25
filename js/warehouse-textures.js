@@ -1303,6 +1303,66 @@
     return new THREE.CanvasTexture(canvas);
   }
 
+  function createThermalCurtainTexture(zoneBehind) {
+    const canvas = document.createElement('canvas');
+    canvas.width = 512;
+    canvas.height = 512;
+    const ctx = canvas.getContext('2d');
+    const isFrozen = zoneBehind === 'F';
+
+    // Semi-translucent heavy-duty insulated vinyl panels with clear frosted vision window
+    ctx.clearRect(0, 0, 512, 512);
+
+    // Top structural header band
+    ctx.fillStyle = isFrozen ? '#0c4a6e' : '#164e63';
+    ctx.fillRect(0, 0, 512, 118);
+
+    // Quilted vertical insulated strips across main body
+    for (let x = 0; x < 512; x += 64) {
+      ctx.fillStyle = (Math.floor(x / 64) % 2 === 0)
+        ? (isFrozen ? 'rgba(224, 242, 254, 0.94)' : 'rgba(207, 250, 254, 0.94)')
+        : (isFrozen ? 'rgba(186, 230, 253, 0.92)' : 'rgba(165, 243, 252, 0.92)');
+      ctx.fillRect(x, 118, 61, 394);
+      ctx.fillStyle = isFrozen ? '#0284c7' : '#0891b2';
+      ctx.fillRect(x + 61, 118, 3, 394);
+    }
+
+    // Translucent frosted PVC vision window band across middle so cargo behind is faintly visible
+    ctx.clearRect(36, 178, 440, 108);
+    ctx.fillStyle = isFrozen ? 'rgba(186, 230, 253, 0.34)' : 'rgba(165, 243, 252, 0.34)';
+    ctx.fillRect(36, 178, 440, 108);
+    ctx.strokeStyle = isFrozen ? '#0369a1' : '#0e7490';
+    ctx.lineWidth = 4;
+    ctx.strokeRect(36, 178, 440, 108);
+
+    // Clear crisp zone signage
+    ctx.fillStyle = '#f8fafc';
+    ctx.font = '900 28px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText(isFrozen ? 'FROZEN ZONE (-10°F)' : 'CHILLED ZONE (34°F)', 256, 52);
+
+    ctx.fillStyle = isFrozen ? '#7dd3fc' : '#67e8f9';
+    ctx.font = 'bold 17px "Courier New", monospace';
+    ctx.fillText('INSULATED THERMAL BULKHEAD', 256, 86);
+
+    ctx.fillStyle = 'rgba(15, 23, 42, 0.84)';
+    ctx.fillRect(92, 314, 328, 42);
+    ctx.strokeStyle = isFrozen ? '#38bdf8' : '#22d3ee';
+    ctx.lineWidth = 2.5;
+    ctx.strokeRect(92, 314, 328, 42);
+    ctx.fillStyle = '#e0f2fe';
+    ctx.font = 'bold 15px "Courier New", monospace';
+    ctx.fillText('CLEAR FRONT PALLETS TO RAISE', 256, 340);
+
+    // Weighted yellow-and-black floor sweep bumper along bottom edge
+    for (let x = 0; x < 512; x += 32) {
+      ctx.fillStyle = (Math.floor(x / 32) % 2 === 0) ? '#facc15' : '#0f172a';
+      ctx.fillRect(x, 480, 32, 32);
+    }
+
+    return new THREE.CanvasTexture(canvas);
+  }
+
   function createHallwayTimeclockDisplay() {
     const canvas = document.createElement('canvas');
     canvas.width = 256; canvas.height = 192;
@@ -2810,6 +2870,7 @@
     createNoPalletZoneTexture: createNoPalletZoneTexture,
     createVendingFrontTexture: createVendingFrontTexture,
     createTrailerDoorTexture: createTrailerDoorTexture,
+    createThermalCurtainTexture: createThermalCurtainTexture,
     createHallwayTimeclockDisplay: createHallwayTimeclockDisplay,
     createTruckFloorTexture: createTruckFloorTexture,
     createTrailerWallTexture: createTrailerWallTexture,

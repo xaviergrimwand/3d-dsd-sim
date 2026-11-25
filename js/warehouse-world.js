@@ -83,6 +83,7 @@
       createNoPalletZoneTexture,
       createVendingFrontTexture,
       createTrailerDoorTexture,
+      createThermalCurtainTexture,
       createHallwayTimeclockDisplay,
       createTruckFloorTexture,
       createTrailerWallTexture,
@@ -659,6 +660,13 @@
       pier.position.set(px, doorHeight / 2, doorZ);
       applyWorldWallUVs(pier);
       scene.add(pier);
+
+      solidWalls.push({
+        minX: px - 1.2,
+        maxX: px + 1.2,
+        minZ: doorZ - 0.20,
+        maxZ: doorZ + 0.20
+      });
     });
 
     // Left and Right outer jamb piers
@@ -666,11 +674,23 @@
     leftJamb.position.set(ORIGIN_X + 0.25, doorHeight / 2, doorZ);
     applyWorldWallUVs(leftJamb);
     scene.add(leftJamb);
+    solidWalls.push({
+      minX: ORIGIN_X,
+      maxX: ORIGIN_X + 0.5,
+      minZ: doorZ - 0.20,
+      maxZ: doorZ + 0.20
+    });
 
     const rightJamb = new THREE.Mesh(new THREE.BoxGeometry(0.5, doorHeight, 0.4), matWallDock);
     rightJamb.position.set(-ORIGIN_X - 0.25, doorHeight / 2, doorZ);
     applyWorldWallUVs(rightJamb);
     scene.add(rightJamb);
+    solidWalls.push({
+      minX: -ORIGIN_X - 0.5,
+      maxX: -ORIGIN_X,
+      minZ: doorZ - 0.20,
+      maxZ: doorZ + 0.20
+    });
 
     // 3. Lower Floor Hazard Kickrail along North dock piers ONLY (breaks cleanly at all 4 dock doorways & steel I-beams)
     addWallKickrailSegments('x', doorZ + 0.22, [
@@ -1445,6 +1465,65 @@
       vendorSemiGroup.visible = dd.trailerType === 'vendor_truck';
       trailerGroup.add(whSemiGroup);
       trailerGroup.add(vendorSemiGroup);
+
+      // Up to 2 dynamic insulated zone curtains inside Warehouse Trailers (F|C and C|D seams)
+      const curtainTexF = createThermalCurtainTexture('F');
+      const curtainTexC = createThermalCurtainTexture('C');
+      const tcFrameMat = new THREE.MeshStandardMaterial({ color: 0x1e293b, roughness: 0.5, metalness: 0.65 });
+      const tcInnerW = tWidth - 0.34;
+      const tcH = tDoorH;
+      dd.tempCurtains = [0, 1].map(() => {
+        const cGrp = new THREE.Group();
+        cGrp.visible = false;
+
+        // Overhead roller header box & side vinyl guide rails
+        const rollerBox = new THREE.Mesh(new THREE.BoxGeometry(tcInnerW + 0.14, 0.22, 0.16), tcFrameMat);
+        rollerBox.position.set(0, tcH + 0.08, 0);
+        cGrp.add(rollerBox);
+
+        [-tcInnerW / 2 - 0.03, tcInnerW / 2 + 0.03].forEach((gx) => {
+          const track = new THREE.Mesh(new THREE.BoxGeometry(0.08, tcH, 0.12), tcFrameMat);
+          track.position.set(gx, tcH / 2, 0);
+          cGrp.add(track);
+        });
+
+        const pilotMat = new THREE.MeshBasicMaterial({ color: 0x38bdf8 });
+        const pilotLight = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.14, 0.15), pilotMat);
+        pilotLight.position.set(-tcInnerW / 2 + 0.08, 2.05, 0);
+        cGrp.add(pilotLight);
+
+        const cMat = new THREE.MeshStandardMaterial({
+          map: curtainTexC,
+          roughness: 0.45,
+          metalness: 0.08,
+          transparent: true,
+          side: THREE.DoubleSide
+        });
+        const cMesh = new THREE.Mesh(new THREE.PlaneGeometry(tcInnerW, tcH), cMat);
+        cMesh.position.set(0, tcH / 2, 0);
+        cGrp.add(cMesh);
+
+        whSemiGroup.add(cGrp);
+        return {
+          active: false,
+          zoneBehind: 'C',
+          zoneFront: 'D',
+          rowAfter: 0,
+          localZ: 0,
+          worldZ: doorZ,
+          frontPallets: [],
+          isOpen: false,
+          progress: 0,
+          _lastProg: -1,
+          curtainH: tcH,
+          group: cGrp,
+          curtainMesh: cMesh,
+          curtainMat: cMat,
+          pilotMat: pilotMat,
+          texF: curtainTexF,
+          texC: curtainTexC
+        };
+      });
 
       trailerGroup.visible = Boolean(dd.hasTrailer);
       dd.trailerGroup = trailerGroup;
@@ -4945,7 +5024,8 @@
         minX: x - worldW / 2,
         maxX: x + worldW / 2,
         minZ: z - worldD / 2,
-        maxZ: z + worldD / 2
+        maxZ: z + worldD / 2,
+        _isOverstockPallet: true
       };
       solidWalls.push(bounds);
 

@@ -395,6 +395,9 @@
         get boxCenter() {
           return new THREE.Vector3(palletObj.position.x, 0.75, palletObj.position.z);
         },
+        get boxQuaternion() {
+          return palletObj.mesh.quaternion;
+        },
         boxSize: new THREE.Vector3(1.36, 1.45, 1.36),
         getPrompt: () => `[Space] Lift & Hitch Pallet (${data.po}: ${data.name})`,
         interact: () => {

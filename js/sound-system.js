@@ -23,6 +23,8 @@
 
     let activeMotorNodes = [];
     let lastErrorBuzzMs = 0;
+    let lastPalletBumpMs = 0;
+    let lastJackHornMs = 0;
 
     // Continuous world audio nodes (started lazily on first active movement/cold-zone update)
     let jackLoopState = null;     // { osc, sub, filter, gain, active, lastPitch, lastModMs }
@@ -953,6 +955,51 @@
         const t = ctx.currentTime;
         const dest = sfxBus || ctx.destination;
         playThud(ctx, dest, { at: t, dur: 0.16, startHz: 280, endHz: 95, amp: 0.22, type: 'triangle', noiseAmp: 0.15, noiseFreq: 2200, noiseDur: 0.07 });
+      },
+
+      // Soft cooldown-gated bump thud when a pallet or electric jack hits an obstacle
+      playPalletBump: function () {
+        const nowMs = Date.now();
+        if (nowMs - lastPalletBumpMs < 360) return;
+        lastPalletBumpMs = nowMs;
+
+        const ctx = getAudioContext();
+        if (!ctx) return;
+        const t = ctx.currentTime;
+        const dest = sfxBus || ctx.destination;
+        playThud(ctx, dest, { at: t, dur: 0.10, startHz: 145, endHz: 48, amp: 0.15, type: 'triangle', noiseAmp: 0.08, noiseFreq: 680, noiseDur: 0.045 });
+      },
+
+      // Polite electric walkie-jack double-beep horn when a vendor NPC waits for an obstacle/player
+      playJackHorn: function () {
+        const nowMs = Date.now();
+        if (nowMs - lastJackHornMs < 2800) return;
+        lastJackHornMs = nowMs;
+
+        const ctx = getAudioContext();
+        if (!ctx) return;
+        const t = ctx.currentTime;
+        const dest = sfxBus || ctx.destination;
+        [0, 0.14].forEach((offset) => {
+          const osc = ctx.createOscillator();
+          const osc2 = ctx.createOscillator();
+          const gain = ctx.createGain();
+          osc.type = 'sawtooth';
+          osc2.type = 'triangle';
+          osc.frequency.setValueAtTime(520, t + offset);
+          osc2.frequency.setValueAtTime(655, t + offset);
+          gain.gain.setValueAtTime(0.001, t + offset);
+          gain.gain.linearRampToValueAtTime(0.095, t + offset + 0.012);
+          gain.gain.setValueAtTime(0.09, t + offset + 0.065);
+          gain.gain.exponentialRampToValueAtTime(0.001, t + offset + 0.09);
+          osc.connect(gain);
+          osc2.connect(gain);
+          gain.connect(dest);
+          osc.start(t + offset);
+          osc2.start(t + offset);
+          osc.stop(t + offset + 0.095);
+          osc2.stop(t + offset + 0.095);
+        });
       },
 
       // Continuous motion/zone updater (footsteps, jack motor drive, cold-room evaporator fan hum)

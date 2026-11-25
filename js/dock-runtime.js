@@ -247,6 +247,462 @@
     return exiters.concat(waiters);
   };
 
+  /**
+   * Unified 2D XZ collision solver covering walking, empty Electric Jack,
+   * Hitched Pallets (Warehouse, Vendor Truck, and Overstock), and Truck Trailers.
+   */
+  global.createDockCollisionSolver = function createDockCollisionSolver(env) {
+    const cfg = env || {};
+    const TILE_SIZE = Number(cfg.TILE_SIZE) || 2.4;
+    const ORIGIN_X = Number(cfg.ORIGIN_X);
+    const ORIGIN_Z = Number(cfg.ORIGIN_Z);
+    const ROWS = Number(cfg.ROWS) || 25;
+    const doorZ = Number(cfg.doorZ) || 0;
+    const doorWidth = Number(cfg.doorWidth) || (TILE_SIZE * 2 - 0.2);
+    const playerRadius = Number(cfg.playerRadius) || 0.45;
+    const jackFloorOffset = Number(cfg.jackFloorOffset) || 0.75;
+    const jackPalletForkOffset = Number(cfg.jackPalletForkOffset) || 0.96;
+    const palletHalfW = Number(cfg.palletHalfW) || 0.60;
+    const palletHalfD = Number(cfg.palletHalfD) || 0.50;
+
+    function clamp(v, lo, hi) {
+      return v < lo ? lo : (v > hi ? hi : v);
+    }
+
+    function normalizeAngle(a) {
+      return Math.atan2(Math.sin(a), Math.cos(a));
+    }
+
+    function circleIntersectsAABB(cx, cz, r, b) {
+      const qx = clamp(cx, b.minX, b.maxX);
+      const qz = clamp(cz, b.minZ, b.maxZ);
+      const dx = cx - qx;
+      const dz = cz - qz;
+      return (dx * dx + dz * dz) < (r * r - 1e-9);
+    }
+
+    function circleIntersectsOBB(cx, cz, r, ox, oz, rotY, hw, hd) {
+      const cosR = Math.cos(rotY);
+      const sinR = Math.sin(rotY);
+      const dx = cx - ox;
+      const dz = cz - oz;
+      const lx = dx * cosR - dz * sinR;
+      const lz = dx * sinR + dz * cosR;
+      const qx = clamp(lx, -hw, hw);
+      const qz = clamp(lz, -hd, hd);
+      const ex = lx - qx;
+      const ez = lz - qz;
+      return (ex * ex + ez * ez) < (r * r - 1e-9);
+    }
+
+    function obbIntersectsAABB(ox, oz, rotY, hw, hd, b) {
+      const bMidX = (b.minX + b.maxX) * 0.5;
+      const bMidZ = (b.minZ + b.maxZ) * 0.5;
+      const bHw = (b.maxX - b.minX) * 0.5;
+      const bHd = (b.maxZ - b.minZ) * 0.5;
+      const cosR = Math.cos(rotY);
+      const sinR = Math.sin(rotY);
+      const absCos = Math.abs(cosR);
+      const absSin = Math.abs(sinR);
+      const dx = ox - bMidX;
+      const dz = oz - bMidZ;
+
+      if (Math.abs(dx) >= (hw * absCos + hd * absSin) + bHw - 1e-5) return false;
+      if (Math.abs(dz) >= (hw * absSin + hd * absCos) + bHd - 1e-5) return false;
+
+      // Local OBB X axis: (cosR, -sinR)
+      const projX = Math.abs(dx * cosR - dz * sinR);
+      if (projX >= hw + bHw * absCos + bHd * absSin - 1e-5) return false;
+
+      // Local OBB Z axis: (sinR, cosR)
+      const projZ = Math.abs(dx * sinR + dz * cosR);
+      if (projZ >= hd + bHw * absSin + bHd * absCos - 1e-5) return false;
+
+      return true;
+    }
+
+    function obbIntersectsOBB(ax, az, aRot, aHw, aHd, bx, bz, bRot, bHw, bHd) {
+      const ca = Math.cos(aRot);
+      const sa = Math.sin(aRot);
+      const cb = Math.cos(bRot);
+      const sb = Math.sin(bRot);
+      const uxA = ca, uzA = -sa;
+      const vxA = sa, vzA = ca;
+      const uxB = cb, uzB = -sb;
+      const vxB = sb, vzB = cb;
+      const dx = bx - ax;
+      const dz = bz - az;
+
+      // Axis uA
+      if (Math.abs(dx * uxA + dz * uzA) >= aHw + bHw * Math.abs(uxA * uxB + uzA * uzB) + bHd * Math.abs(uxA * vxB + uzA * vzB) - 1e-5) return false;
+      // Axis vA
+      if (Math.abs(dx * vxA + dz * vzA) >= aHd + bHw * Math.abs(vxA * uxB + vzA * uzB) + bHd * Math.abs(vxA * vxB + vzA * vzB) - 1e-5) return false;
+      // Axis uB
+      if (Math.abs(dx * uxB + dz * uzB) >= bHw + aHw * Math.abs(uxB * uxA + uzB * uzA) + aHd * Math.abs(uxB * vxA + uzB * vzA) - 1e-5) return false;
+      // Axis vB
+      if (Math.abs(dx * vxB + dz * vzB) >= bHd + aHw * Math.abs(vxB * uxA + vzB * uzA) + aHd * Math.abs(vxB * vxA + vzB * vzA) - 1e-5) return false;
+
+      return true;
+    }
+
+    function pointSetOutsideWorld(minWorldX, maxWorldX, minWorldZ, maxWorldZ, dockDoors, cx, cz, r, obbs) {
+      if (cx + r > maxWorldX || cx - r < minWorldX || cz - r < minWorldZ || cz + r > maxWorldZ) {
+        return { hit: true, eastHit: cx + r > maxWorldX };
+      }
+      const outsideDockBayCheck = (px, pz) => {
+        if (pz >= doorZ - 0.22) return false;
+        for (let i = 0; i < dockDoors.length; i++) {
+          const dd = dockDoors[i];
+          if (px >= dd.worldX - TILE_SIZE + 0.02 && px <= dd.worldX + TILE_SIZE - 0.02) {
+            return false;
+          }
+        }
+        return true;
+      };
+      if (outsideDockBayCheck(cx, cz - r) || outsideDockBayCheck(cx - r, cz) || outsideDockBayCheck(cx + r, cz)) {
+        return { hit: true, eastHit: false };
+      }
+
+      for (let i = 0; i < obbs.length; i++) {
+        const o = obbs[i];
+        const ca = Math.cos(o.rotY);
+        const sa = Math.sin(o.rotY);
+        const ux = ca * o.hw;
+        const uz = -sa * o.hw;
+        const vx = sa * o.hd;
+        const vz = ca * o.hd;
+        const cornersX = [o.x + ux + vx, o.x + ux - vx, o.x - ux + vx, o.x - ux - vx];
+        const cornersZ = [o.z + uz + vz, o.z + uz - vz, o.z - uz + vz, o.z - uz - vz];
+        for (let c = 0; c < 4; c++) {
+          const kx = cornersX[c];
+          const kz = cornersZ[c];
+          if (kx > maxWorldX || kx < minWorldX || kz < minWorldZ || kz > maxWorldZ) {
+            return { hit: true, eastHit: kx > maxWorldX };
+          }
+          if (outsideDockBayCheck(kx, kz)) {
+            return { hit: true, eastHit: false };
+          }
+        }
+      }
+      return { hit: false, eastHit: false };
+    }
+
+    function collectPhysicalPallets(excludePallet) {
+      const list = [];
+      const palletsArr = typeof cfg.getPallets === 'function' ? (cfg.getPallets() || []) : [];
+      for (let i = 0; i < palletsArr.length; i++) {
+        const p = palletsArr[i];
+        if (!p || p === excludePallet) continue;
+        if (p.mesh && p.mesh.visible === false) continue;
+        const px = p.position ? p.position.x : (Number(p.x) || 0);
+        const pz = p.position ? p.position.z : (Number(p.z) || 0);
+        const ry = p.mesh ? (Number(p.mesh.rotation.y) || 0) : (Number(p.rotY) || 0);
+        list.push({ ref: p, x: px, z: pz, rotY: ry, hw: palletHalfW, hd: palletHalfD });
+      }
+      const overstockArr = typeof cfg.getOverstockPallets === 'function' ? (cfg.getOverstockPallets() || []) : [];
+      for (let i = 0; i < overstockArr.length; i++) {
+        const op = overstockArr[i];
+        if (!op || op === excludePallet) continue;
+        if (op.group && op.group.visible === false) continue;
+        const px = op.group ? op.group.position.x : (Number(op.x) || 0);
+        const pz = op.group ? op.group.position.z : (Number(op.z) || 0);
+        const ry = op.group ? (Number(op.group.rotation.y) || 0) : (Number(op.rotY) || 0);
+        const hw = (Number(op.width) || (palletHalfW * 2)) * 0.5;
+        const hd = (Number(op.depth) || (palletHalfD * 2)) * 0.5;
+        list.push({ ref: op, x: px, z: pz, rotY: ry, hw, hd });
+      }
+      return list;
+    }
+
+    function buildRigShapes(px, pz, yaw, hasElectricJack, hitchedPallet) {
+      const solidObbs = [];
+      const forkObbs = [];
+      if (hasElectricJack) {
+        const fwdX = -Math.sin(yaw);
+        const fwdZ = -Math.cos(yaw);
+        const jx = px + fwdX * jackFloorOffset;
+        const jz = pz + fwdZ * jackFloorOffset;
+        solidObbs.push({ x: jx, z: jz, rotY: yaw, hw: 0.36, hd: 0.28, kind: 'jack_head' });
+        if (hitchedPallet) {
+          const hpDist = jackFloorOffset + jackPalletForkOffset;
+          const hw = (hitchedPallet.width ? Number(hitchedPallet.width) * 0.5 : palletHalfW);
+          const hd = (hitchedPallet.depth ? Number(hitchedPallet.depth) * 0.5 : palletHalfD);
+          solidObbs.push({
+            x: px + fwdX * hpDist,
+            z: pz + fwdZ * hpDist,
+            rotY: yaw,
+            hw: hw,
+            hd: hd,
+            kind: 'hitched_pallet'
+          });
+        } else {
+          // Bare forks block walls/doors/trailers/racks/parked-jack, but slide into grounded pallets
+          forkObbs.push({
+            x: jx + fwdX * 0.88,
+            z: jz + fwdZ * 0.88,
+            rotY: yaw,
+            hw: 0.30,
+            hd: 0.58,
+            kind: 'jack_forks'
+          });
+        }
+      }
+      return { solidObbs, forkObbs };
+    }
+
+    function checkPose(opts) {
+      const o = opts || {};
+      const px = Number(o.x) || 0;
+      const pz = Number(o.z) || 0;
+      const yaw = Number(o.yaw) || 0;
+      const hasElectricJack = Boolean(o.hasElectricJack);
+      const hitchedPallet = o.hitchedPallet || null;
+      const excludePallet = o.excludePallet !== undefined ? o.excludePallet : hitchedPallet;
+      const emitWarnings = Boolean(o.emitWarnings);
+      const r = o.radius !== undefined ? Number(o.radius) : playerRadius;
+
+      const dockDoors = typeof cfg.getDockDoors === 'function' ? (cfg.getDockDoors() || []) : [];
+      const sideRollupDoor = typeof cfg.getSideRollupDoor === 'function' ? cfg.getSideRollupDoor() : null;
+      const solidWalls = typeof cfg.getSolidWalls === 'function' ? (cfg.getSolidWalls() || []) : [];
+      const parkedJack = typeof cfg.getParkedJack === 'function' ? cfg.getParkedJack() : null;
+
+      const minWorldX = ORIGIN_X + 0.1;
+      const maxWorldX = -ORIGIN_X - 0.1;
+      const minWorldZ = ORIGIN_Z + 0.1;
+      const maxWorldZ = ORIGIN_Z + ROWS * TILE_SIZE - 0.1;
+
+      const { solidObbs, forkObbs } = buildRigShapes(px, pz, yaw, hasElectricJack, hitchedPallet);
+      const worldObbs = solidObbs.concat(forkObbs);
+
+      // 1. Building perimeter & outside-bay guard
+      const perim = pointSetOutsideWorld(minWorldX, maxWorldX, minWorldZ, maxWorldZ, dockDoors, px, pz, r, worldObbs);
+      if (perim.hit) {
+        if (emitWarnings && perim.eastHit && sideRollupDoor && sideRollupDoor.isOpen) {
+          const atSideDoorZ = Math.abs(pz - sideRollupDoor.worldZ) < (sideRollupDoor.width / 2);
+          if (atSideDoorZ && typeof cfg.onSideDoorBlocked === 'function') {
+            cfg.onSideDoorBlocked();
+          }
+        }
+        return true;
+      }
+
+      const rigHitsBox = (b) => {
+        if (r > 0 && circleIntersectsAABB(px, pz, r, b)) return true;
+        for (let k = 0; k < worldObbs.length; k++) {
+          const ob = worldObbs[k];
+          if (obbIntersectsAABB(ob.x, ob.z, ob.rotY, ob.hw, ob.hd, b)) return true;
+        }
+        return false;
+      };
+
+      // 2. Dock rollup doors, empty dock ledges & docked trailer bulkheads/sidewalls
+      for (let i = 0; i < dockDoors.length; i++) {
+        const dd = dockDoors[i];
+        const doorMinX = dd.worldX - doorWidth / 2;
+        const doorMaxX = dd.worldX + doorWidth / 2;
+
+        if (!dd.isOpen || dd.currentProgress < 0.70) {
+          if (rigHitsBox({ minX: doorMinX, maxX: doorMaxX, minZ: doorZ - 0.14, maxZ: doorZ + 0.14 })) {
+            return true;
+          }
+        } else if (!dd.hasTrailer) {
+          if (rigHitsBox({ minX: doorMinX - 0.1, maxX: doorMaxX + 0.1, minZ: ORIGIN_Z, maxZ: doorZ - 0.04 })) {
+            return true;
+          }
+        } else {
+          const vLen = (dd.trailerType === 'vendor_truck') ? (6 * TILE_SIZE) : (10 * TILE_SIZE);
+          if (dd.trailerDoorProgress < 0.70) {
+            if (rigHitsBox({ minX: dd.worldX - TILE_SIZE, maxX: dd.worldX + TILE_SIZE, minZ: doorZ - vLen, maxZ: doorZ - 0.36 })) {
+              if (emitWarnings && typeof cfg.onSealedTrailerBlocked === 'function') {
+                cfg.onSealedTrailerBlocked(dd);
+              }
+              return true;
+            }
+          }
+          // Trailer sidewalls & front nose bulkhead
+          if (rigHitsBox({ minX: dd.worldX - TILE_SIZE, maxX: dd.worldX - TILE_SIZE + 0.14, minZ: doorZ - vLen - 0.25, maxZ: doorZ })) {
+            return true;
+          }
+          if (rigHitsBox({ minX: dd.worldX + TILE_SIZE - 0.14, maxX: dd.worldX + TILE_SIZE, minZ: doorZ - vLen - 0.25, maxZ: doorZ })) {
+            return true;
+          }
+          if (rigHitsBox({ minX: dd.worldX - TILE_SIZE, maxX: dd.worldX + TILE_SIZE, minZ: doorZ - vLen - 0.25, maxZ: doorZ - vLen + 0.14 })) {
+            return true;
+          }
+          // Active dynamic temperature curtains between warehouse trailer zones
+          if (dd.trailerType === 'warehouse' && Array.isArray(dd.tempCurtains)) {
+            for (let ci = 0; ci < dd.tempCurtains.length; ci++) {
+              const tc = dd.tempCurtains[ci];
+              if (!tc || !tc.active || tc.progress >= 0.70) continue;
+              if (rigHitsBox({
+                minX: dd.worldX - TILE_SIZE,
+                maxX: dd.worldX + TILE_SIZE,
+                minZ: tc.worldZ - 0.12,
+                maxZ: tc.worldZ + 0.12
+              })) {
+                return true;
+              }
+            }
+          }
+        }
+      }
+
+      // 3. Facility walls, concrete piers, I-beams, bollards, racks & furniture
+      for (let i = 0; i < solidWalls.length; i++) {
+        const b = solidWalls[i];
+        if (!b || b._isOverstockPallet) continue;
+        if (rigHitsBox(b)) return true;
+      }
+
+      // 4. Parked Electric Pallet Jack (when player is not holding it)
+      if (!hasElectricJack && parkedJack && parkedJack.visible) {
+        const rot = parkedJack.rotY || 0;
+        const jSin = Math.sin(rot);
+        const jCos = Math.cos(rot);
+        const fCx = parkedJack.x - jSin * 0.91;
+        const fCz = parkedJack.z - jCos * 0.91;
+        if (r > 0) {
+          if (
+            circleIntersectsOBB(px, pz, r, parkedJack.x, parkedJack.z, rot, 0.36, 0.29) ||
+            circleIntersectsOBB(px, pz, r, fCx, fCz, rot, 0.30, 0.61)
+          ) {
+            return true;
+          }
+        }
+        for (let k = 0; k < worldObbs.length; k++) {
+          const ob = worldObbs[k];
+          if (
+            obbIntersectsOBB(ob.x, ob.z, ob.rotY, ob.hw, ob.hd, parkedJack.x, parkedJack.z, rot, 0.36, 0.29) ||
+            obbIntersectsOBB(ob.x, ob.z, ob.rotY, ob.hw, ob.hd, fCx, fCz, rot, 0.30, 0.61)
+          ) {
+            return true;
+          }
+        }
+      }
+
+      // 5. Physical Pallets (Warehouse, Vendor Truck, & Overstock - unified OBB tests)
+      const physPallets = collectPhysicalPallets(excludePallet);
+      for (let i = 0; i < physPallets.length; i++) {
+        const pal = physPallets[i];
+        if (r > 0 && circleIntersectsOBB(px, pz, r, pal.x, pal.z, pal.rotY, pal.hw, pal.hd)) {
+          return true;
+        }
+        for (let k = 0; k < solidObbs.length; k++) {
+          const ob = solidObbs[k];
+          if (obbIntersectsOBB(ob.x, ob.z, ob.rotY, ob.hw, ob.hd, pal.x, pal.z, pal.rotY, pal.hw, pal.hd)) {
+            return true;
+          }
+        }
+      }
+
+      return false;
+    }
+
+    function resolveTurn(opts) {
+      const o = opts || {};
+      const px = Number(o.x) || 0;
+      const pz = Number(o.z) || 0;
+      const curYaw = Number(o.curYaw) || 0;
+      const targetYaw = Number(o.targetYaw) || 0;
+      const hasElectricJack = Boolean(o.hasElectricJack);
+      const hitchedPallet = o.hitchedPallet || null;
+
+      if (!hasElectricJack && !hitchedPallet) {
+        return { yaw: targetYaw, blocked: false };
+      }
+      const delta = normalizeAngle(targetYaw - curYaw);
+      if (Math.abs(delta) < 1e-6) {
+        return { yaw: targetYaw, blocked: false };
+      }
+
+      const baseOpts = { x: px, z: pz, hasElectricJack, hitchedPallet, emitWarnings: Boolean(o.emitWarnings) };
+      const curBlocked = checkPose(Object.assign({ yaw: curYaw }, baseOpts));
+      const steps = Math.max(1, Math.min(16, Math.ceil(Math.abs(delta) / 0.10)));
+
+      if (!curBlocked) {
+        let lastFree = curYaw;
+        for (let s = 1; s <= steps; s++) {
+          const testYaw = curYaw + (delta * s) / steps;
+          if (checkPose(Object.assign({ yaw: testYaw }, baseOpts))) {
+            let lo = lastFree;
+            let hi = testYaw;
+            for (let b = 0; b < 10; b++) {
+              const mid = (lo + hi) * 0.5;
+              if (checkPose(Object.assign({ yaw: mid }, baseOpts))) {
+                hi = mid;
+              } else {
+                lo = mid;
+              }
+            }
+            return { yaw: lo, blocked: true };
+          }
+          lastFree = testYaw;
+        }
+        return { yaw: targetYaw, blocked: false };
+      }
+
+      // Escape fallback: if curYaw already started intersecting (e.g. closing door/save),
+      // permit turning if targetYaw clears or does not deepen overlap.
+      if (!checkPose(Object.assign({ yaw: targetYaw }, baseOpts))) {
+        return { yaw: targetYaw, blocked: false };
+      }
+      return { yaw: curYaw, blocked: true };
+    }
+
+    function canParkJackAt(jx, jz, rotY, radiusCheck) {
+      const r = radiusCheck !== undefined ? Number(radiusCheck) : 0;
+      const fwdX = -Math.sin(rotY);
+      const fwdZ = -Math.cos(rotY);
+      // Park test represents the jack placed at (jx, jz) without player behind it; synthesize virtual rig origin 0.75m back
+      const virtualPx = jx - fwdX * jackFloorOffset;
+      const virtualPz = jz - fwdZ * jackFloorOffset;
+      if (checkPose({
+        x: virtualPx,
+        z: virtualPz,
+        yaw: rotY,
+        radius: 0,
+        hasElectricJack: true,
+        hitchedPallet: null,
+        emitWarnings: false
+      })) {
+        return false;
+      }
+      // Also prevent bare fork tips of parked jack from sticking through grounded pallets
+      const forkTipX = jx + fwdX * 0.90;
+      const forkTipZ = jz + fwdZ * 0.90;
+      const physPallets = collectPhysicalPallets(null);
+      for (let i = 0; i < physPallets.length; i++) {
+        const pal = physPallets[i];
+        if (obbIntersectsOBB(forkTipX, forkTipZ, rotY, 0.30, 0.58, pal.x, pal.z, pal.rotY, pal.hw, pal.hd)) {
+          return false;
+        }
+      }
+      if (r > 0) {
+        return !checkPose({
+          x: jx,
+          z: jz,
+          yaw: rotY,
+          radius: r,
+          hasElectricJack: false,
+          hitchedPallet: null,
+          emitWarnings: false
+        });
+      }
+      return true;
+    }
+
+    return {
+      circleIntersectsAABB,
+      circleIntersectsOBB,
+      obbIntersectsAABB,
+      obbIntersectsOBB,
+      checkPose,
+      resolveTurn,
+      canParkJackAt,
+      collectPhysicalPallets
+    };
+  };
+
   function init3DGame(mode) {
     if (initialized) return;
     initialized = true;
@@ -1396,7 +1852,7 @@
         updatePointerNDC(e.clientX, e.clientY);
       }
       if (isPointerLocked) {
-        player.yaw -= e.movementX * mouseSens;
+        setPlayerYawChecked(player.yaw - e.movementX * mouseSens);
         player.pitch -= e.movementY * mouseSens;
         clampPitch();
       } else if (isMouseDragging) {
@@ -1409,7 +1865,7 @@
         mouseDragMoved = Math.max(mouseDragMoved, Math.hypot(e.clientX - mouseDownPos.x, e.clientY - mouseDownPos.y));
         lastMousePos.x = e.clientX;
         lastMousePos.y = e.clientY;
-        player.yaw -= dx * mouseSens;
+        setPlayerYawChecked(player.yaw - dx * mouseSens);
         player.pitch -= dy * mouseSens;
         clampPitch();
       }
@@ -2100,7 +2556,7 @@
           lastLookPos.x = touch.clientX;
           lastLookPos.y = touch.clientY;
 
-          player.yaw -= dx * touchLookSens;
+          setPlayerYawChecked(player.yaw - dx * touchLookSens);
           player.pitch -= dy * touchLookSens;
           clampPitch();
           if (e.cancelable) e.preventDefault();
@@ -3359,6 +3815,55 @@
           dd.trailerDoorCurtain.scale.y = Math.max(0.05, 1 - easedTD * 0.94);
         }
 
+        // Dynamic warehouse trailer temperature curtains (auto-roll up when both front pallets are moved/removed)
+        if (Array.isArray(dd.tempCurtains)) {
+          for (let ci = 0; ci < dd.tempCurtains.length; ci++) {
+            const tc = dd.tempCurtains[ci];
+            if (!tc) continue;
+            if (!tc.active || !dd.hasTrailer || dd.trailerType !== 'warehouse') {
+              if (tc.group && tc.group.visible) tc.group.visible = false;
+              continue;
+            }
+            if (tc.group && !tc.group.visible) tc.group.visible = true;
+
+            if (!tc.isOpen && Array.isArray(tc.frontPallets) && tc.frontPallets.length > 0) {
+              let occupiedCount = 0;
+              for (let fi = 0; fi < tc.frontPallets.length; fi++) {
+                const fp = tc.frontPallets[fi];
+                const pObj = pallets.find((p) => p && p.data && p.data.id === fp.id);
+                if (!pObj) continue;
+                if (pObj.isHitched || pObj === player.hitchedPallet) continue;
+                if (pObj.data && pObj.data.status !== 'UNLOADED') continue;
+                if (Math.hypot(pObj.position.x - fp.slotX, pObj.position.z - fp.slotZ) > 0.85) continue;
+                occupiedCount += 1;
+              }
+              if (occupiedCount === 0) {
+                tc.isOpen = true;
+                SoundSystem.playDoorMotor(1.0);
+                const zTxt = tc.zoneBehind === 'F' ? 'Frozen (-10°F)' : 'Chilled (34°F)';
+                showNotification(`❄️ ${zTxt} bulkhead curtain rolling up!`, 'status');
+              }
+            }
+
+            const targetTcProg = tc.isOpen ? 1.0 : 0.0;
+            if (tc.progress < targetTcProg) {
+              tc.progress = Math.min(targetTcProg, tc.progress + (dt / 1.1));
+            } else if (tc.progress > targetTcProg) {
+              tc.progress = Math.max(targetTcProg, tc.progress - (dt / 1.1));
+            }
+            if (tc.curtainMesh && tc._lastProg !== tc.progress) {
+              tc._lastProg = tc.progress;
+              const cH = tc.curtainH || (doorHeight - 0.14);
+              const easedTc = 0.5 - 0.5 * Math.cos(tc.progress * Math.PI);
+              tc.curtainMesh.position.y = cH / 2 + easedTc * (cH - 0.22);
+              tc.curtainMesh.scale.y = Math.max(0.05, 1 - easedTc * 0.94);
+              if (tc.pilotMat && tc.pilotMat.color) {
+                tc.pilotMat.color.setHex(tc.progress >= 0.70 ? 0x22c55e : (tc.zoneBehind === 'F' ? 0x38bdf8 : 0x22d3ee));
+              }
+            }
+          }
+        }
+
         // Check if WarehouseTrucks has an active trailer or awaiting pallets on this bay
         if (window.WarehouseTrucks && typeof window.WarehouseTrucks.getBayState === 'function') {
           const whBay = window.WarehouseTrucks.getBayState(dd.id);
@@ -3680,6 +4185,23 @@
       if (typeof electricJackWorld.setOperatingMode === 'function') electricJackWorld.setOperatingMode(false);
       if (typeof electricJackWorld.setLifted === 'function') electricJackWorld.setLifted(false);
       electricJackViewmodel.visible = true;
+      if (checkCollision(player.position.x, player.position.z, player.yaw, null, false)) {
+        const jYaw = electricJackWorld.rotation.y || player.yaw;
+        const candidates = [
+          { x: electricJackWorld.position.x + Math.sin(jYaw) * JACK_FLOOR_OFFSET, z: electricJackWorld.position.z + Math.cos(jYaw) * JACK_FLOOR_OFFSET, yaw: jYaw },
+          { x: player.position.x + Math.sin(player.yaw) * 0.35, z: player.position.z + Math.cos(player.yaw) * 0.35, yaw: player.yaw },
+          { x: player.position.x + Math.sin(player.yaw) * 0.70, z: player.position.z + Math.cos(player.yaw) * 0.70, yaw: player.yaw }
+        ];
+        for (let ci = 0; ci < candidates.length; ci++) {
+          const c = candidates[ci];
+          if (!checkCollision(c.x, c.z, c.yaw, null, false)) {
+            player.position.x = c.x;
+            player.position.z = c.z;
+            player.yaw = c.yaw;
+            break;
+          }
+        }
+      }
       syncActiveFloorJack();
       syncElectricJackBatteryVisuals(undefined, true);
       SoundSystem.playHydraulicLift();
@@ -3690,30 +4212,7 @@
     const JACK_LIFT_HEIGHT = 0.08;
 
     function canParkElectricJackAt(jx, jz, yaw) {
-      const sinY = Math.sin(yaw);
-      const cosY = Math.cos(yaw);
-      // Sample powerhead center (0,0) and fork tips (0,-1.48) in local space
-      const pts = [
-        { x: jx, z: jz, r: 0.36 },
-        { x: jx - sinY * 1.48, z: jz - cosY * 1.48, r: 0.24 }
-      ];
-      const minX = ORIGIN_X + 0.1;
-      const maxX = -ORIGIN_X - 0.1;
-      const maxZ = ORIGIN_Z + ROWS * TILE_SIZE - 0.1;
-      for (let pIdx = 0; pIdx < pts.length; pIdx++) {
-        const pt = pts[pIdx];
-        if (pt.x - pt.r < minX || pt.x + pt.r > maxX || pt.z - pt.r < doorZ + 0.05 || pt.z + pt.r > maxZ) {
-          return false;
-        }
-        for (let i = 0; i < solidWalls.length; i++) {
-          const b = solidWalls[i];
-          if (pt.x + pt.r > b.minX && pt.x - pt.r < b.maxX &&
-            pt.z + pt.r > b.minZ && pt.z - pt.r < b.maxZ) {
-            return false;
-          }
-        }
-      }
-      return true;
+      return collisionSolver.canParkJackAt(jx, jz, yaw);
     }
 
     const JACK_HOME_POS = { x: -7.20, z: 2.08, yaw: 0 };
@@ -3936,6 +4435,93 @@
       }
     }
 
+    function findClearHitchPose(pallet) {
+      const curX = player.position.x;
+      const curZ = player.position.z;
+      const curYaw = player.yaw;
+
+      if (!collisionSolver.checkPose({
+        x: curX,
+        z: curZ,
+        yaw: curYaw,
+        hasElectricJack: true,
+        hitchedPallet: pallet,
+        excludePallet: pallet
+      })) {
+        return { x: curX, z: curZ, yaw: curYaw };
+      }
+
+      const palX = pallet.position ? pallet.position.x : (Number(pallet.x) || 0);
+      const palZ = pallet.position ? pallet.position.z : (Number(pallet.z) || 0);
+      const forkDist = JACK_FLOOR_OFFSET + JACK_PALLET_FORK_OFFSET;
+      const fwdX = -Math.sin(curYaw);
+      const fwdZ = -Math.cos(curYaw);
+
+      // Candidate 1: Pull player slightly back along current facing without stepping through rear walls
+      const pullSteps = [0.15, 0.30, 0.45, 0.65, 0.85];
+      for (let i = 0; i < pullSteps.length; i++) {
+        const step = pullSteps[i];
+        const tryX = curX - fwdX * step;
+        const tryZ = curZ - fwdZ * step;
+        // Player body + empty jack must also be clear of obstructions at pullback spot
+        if (collisionSolver.checkPose({
+          x: tryX,
+          z: tryZ,
+          yaw: curYaw,
+          hasElectricJack: true,
+          hitchedPallet: null,
+          excludePallet: pallet
+        })) {
+          break;
+        }
+        if (!collisionSolver.checkPose({
+          x: tryX,
+          z: tryZ,
+          yaw: curYaw,
+          hasElectricJack: true,
+          hitchedPallet: pallet,
+          excludePallet: pallet
+        })) {
+          return { x: tryX, z: tryZ, yaw: curYaw };
+        }
+      }
+
+      // Candidate 2: Keep pallet near its grounded center & align jack cleanly behind an open face
+      const approachYaw = Math.atan2(curX - palX, curZ - palZ);
+      const yawTrials = [curYaw, approachYaw];
+      const palBaseRot = pallet.mesh ? (Number(pallet.mesh.rotation.y) || 0) : (Number(pallet.rotY) || 0);
+      for (let k = 0; k < 4; k++) {
+        yawTrials.push(palBaseRot + k * (Math.PI * 0.5));
+      }
+      let best = null;
+      let bestCost = Infinity;
+      for (let i = 0; i < yawTrials.length; i++) {
+        const ty = yawTrials[i];
+        const deltaYaw = Math.abs(Math.atan2(Math.sin(ty - curYaw), Math.cos(ty - curYaw)));
+        if (deltaYaw > 0.75) continue;
+        const tx = palX + Math.sin(ty) * forkDist;
+        const tz = palZ + Math.cos(ty) * forkDist;
+        const shiftDist = Math.hypot(tx - curX, tz - curZ);
+        if (shiftDist > 0.95) continue;
+        if (collisionSolver.checkPose({
+          x: tx,
+          z: tz,
+          yaw: ty,
+          hasElectricJack: true,
+          hitchedPallet: pallet,
+          excludePallet: pallet
+        })) {
+          continue;
+        }
+        const cost = shiftDist + deltaYaw * 0.5;
+        if (cost < bestCost) {
+          bestCost = cost;
+          best = { x: tx, z: tz, yaw: ty };
+        }
+      }
+      return best;
+    }
+
     function hitchPallet(pallet) {
       if (!pallet || pallet.isHitched) return;
       if (!player.hasElectricJack) {
@@ -3954,7 +4540,27 @@
           SoundSystem.playErrorBuzzer();
           return;
         }
+        if (bay.trailerType === 'warehouse' && Array.isArray(bay.tempCurtains)) {
+          const blockingCurtain = bay.tempCurtains.find((tc) => tc && tc.active && tc.progress < 0.70 && pallet.position.z < tc.worldZ - 0.05);
+          if (blockingCurtain) {
+            showAlert('❄️ THERMAL CURTAIN SEALED! Move both pallets in front of the curtain to raise it first.');
+            SoundSystem.playErrorBuzzer();
+            return;
+          }
+        }
       }
+
+      const clearPose = findClearHitchPose(pallet);
+      if (!clearPose) {
+        showAlert('🚫 NO CLEARANCE TO LIFT PALLET! Align the electric jack from an open side so the pallet clears nearby walls or racks.');
+        SoundSystem.playErrorBuzzer();
+        return;
+      }
+
+      player.position.x = clearPose.x;
+      player.position.z = clearPose.z;
+      player.yaw = clearPose.yaw;
+
       player.hitchedPallet = pallet;
       pallet.isHitched = true;
       pallet._preHitchStatus = pallet.data ? pallet.data.status : null;
@@ -3972,27 +4578,64 @@
       SoundSystem.playHydraulicLift();
     }
 
+    function getPalletCornerTileTypes(pallet) {
+      const px = pallet.position.x;
+      const pz = pallet.position.z;
+      const ry = pallet.mesh ? (Number(pallet.mesh.rotation.y) || 0) : (Number(pallet.rotY) || 0);
+      const ca = Math.cos(ry);
+      const sa = Math.sin(ry);
+      const hw = 0.50;
+      const hd = 0.42;
+      const offsets = [
+        [0, 0],
+        [hw, hd], [hw, -hd], [-hw, hd], [-hw, -hd]
+      ];
+      const types = [];
+      for (let i = 0; i < offsets.length; i++) {
+        const lx = offsets[i][0];
+        const lz = offsets[i][1];
+        const wx = px + lx * ca + lz * sa;
+        const wz = pz - lx * sa + lz * ca;
+        const g = worldToGrid(wx, wz);
+        types.push({ grid: g, tile: getTileType(g.col, g.row), isCenter: i === 0 });
+      }
+      return types;
+    }
+
     function dropPallet() {
       const pallet = player.hitchedPallet;
       if (!pallet) return;
 
-      const grid = worldToGrid(pallet.position.x, pallet.position.z);
-      const tileType = getTileType(grid.col, grid.row);
+      const samples = getPalletCornerTileTypes(pallet);
+      const centerSample = samples[0];
+      const grid = centerSample.grid;
+      const tileType = centerSample.tile;
       const isWarehousePallet = isWarehouseCargoPallet(pallet);
 
-      const inHallway = tileType === 'H' || (grid.col === 10 && grid.row >= 17 && grid.row <= 22);
+      const inHallway = samples.some((s) => s.tile === 'H' || (s.grid.col === 10 && s.grid.row >= 17 && s.grid.row <= 22));
       if (inHallway) {
         showAlert('🚫 EMPLOYEE HALLWAY: Pallets cannot be dropped in the employee hallway!');
+        SoundSystem.playErrorBuzzer();
         return;
       }
 
       if (tileType === 'Y') {
         showAlert('🚫 BLOCKED TRANSIT LANE! Pallets cannot be dropped on yellow transit tiles.');
+        SoundSystem.playErrorBuzzer();
         return;
       }
 
-      if (tileType === 'W') {
-        showAlert('🚫 NO STAGING ZONE: Pallets cannot be placed inside walls or racking!');
+      const inWall = samples.some((s) => s.tile === 'W');
+      if (inWall || collisionSolver.checkPose({
+        x: player.position.x,
+        z: player.position.z,
+        yaw: player.yaw,
+        hasElectricJack: true,
+        hitchedPallet: pallet,
+        excludePallet: pallet
+      })) {
+        showAlert('🚫 NO STAGING ZONE: Pallets cannot be placed inside walls, racking, or other pallets!');
+        SoundSystem.playErrorBuzzer();
         return;
       }
 
@@ -4011,7 +4654,16 @@
 
       if (!isWarehousePallet) {
         if (pallet.data) {
-          pallet.data.status = pallet._preHitchStatus || 'UNLOADED';
+          if (pallet.data.isOverstockPallet) {
+            pallet.data.status = pallet._preHitchStatus || 'UNLOADED';
+          } else {
+            // Vendor truck pallet moved onto dock floor vs still inside trailer
+            pallet.data.status = (tileType === 'T') ? 'UNLOADED' : 'STAGED_CORRECT';
+            if (pallet.data.status === 'STAGED_CORRECT') {
+              SoundSystem.playSuccessChime();
+              showNotification(`📦 ${pallet.data.name || 'Vendor Pallet'} staged on dock floor.`, 'status');
+            }
+          }
         }
         return;
       }
@@ -4591,93 +5243,72 @@
       }
     }
 
-    function checkCollision(newX, newZ) {
-      const r = player.radius;
+    const collisionSolver = global.createDockCollisionSolver({
+      TILE_SIZE,
+      ORIGIN_X,
+      ORIGIN_Z,
+      ROWS,
+      doorZ,
+      doorWidth,
+      playerRadius: player.radius,
+      jackFloorOffset: JACK_FLOOR_OFFSET,
+      jackPalletForkOffset: JACK_PALLET_FORK_OFFSET,
+      palletHalfW: 0.60,
+      palletHalfD: 0.50,
+      getDockDoors: () => dockDoors,
+      getSideRollupDoor: () => sideRollupDoor,
+      getSolidWalls: () => solidWalls,
+      getPallets: () => pallets,
+      getOverstockPallets: () => overstockPallets,
+      getParkedJack: () => (electricJackWorld ? {
+        visible: Boolean(electricJackWorld.visible),
+        x: electricJackWorld.position.x,
+        z: electricJackWorld.position.z,
+        rotY: electricJackWorld.rotation.y || 0
+      } : null),
+      onSideDoorBlocked: () => triggerBoundaryWarning('side_door_vendors_only', '⚠️ VENDORS ONLY: Receiving staff must remain on the dock.'),
+      onSealedTrailerBlocked: (dd) => triggerBoundaryWarning('bay_trailer_sealed_' + dd.id, `🔒 Bay ${dd.id} trailer door sealed! Let driver inside building to open trailer.`)
+    });
 
-      const minWorldX = ORIGIN_X + 0.1;
-      const maxWorldX = -ORIGIN_X - 0.1;
-      const minWorldZ = ORIGIN_Z + 0.1;
-      const maxWorldZ = ORIGIN_Z + ROWS * TILE_SIZE - 0.1;
+    function triggerPalletBumpSound() {
+      if (SoundSystem && typeof SoundSystem.playPalletBump === 'function') {
+        SoundSystem.playPalletBump();
+      }
+    }
 
-      // RULE: Player CANNOT exit through the side rollup door under any circumstances!
-      // Only vendors may walk in and out of it.
-      if (newX + r > maxWorldX) {
-        const atSideDoorZ = Math.abs(newZ - sideRollupDoor.worldZ) < (sideRollupDoor.width / 2);
-        if (atSideDoorZ && sideRollupDoor.isOpen) {
-          triggerBoundaryWarning('side_door_vendors_only', '⚠️ VENDORS ONLY: Receiving staff must remain on the dock.');
-        }
+    function checkCollision(newX, newZ, testYaw, testHitchedPallet, emitWarnings = true) {
+      return collisionSolver.checkPose({
+        x: newX,
+        z: newZ,
+        yaw: testYaw !== undefined ? testYaw : player.yaw,
+        hasElectricJack: player.hasElectricJack,
+        hitchedPallet: testHitchedPallet !== undefined ? testHitchedPallet : player.hitchedPallet,
+        emitWarnings: emitWarnings
+      });
+    }
+
+    function setPlayerYawChecked(targetYaw) {
+      if (!player.hasElectricJack && !player.hitchedPallet) {
+        player.yaw = targetYaw;
         return true;
       }
-      if (newX - r < minWorldX) return true;
-      if (newZ - r < minWorldZ || newZ + r > maxWorldZ) return true;
-
-      // RULE: Dock rollup doors + Trailer roll-up doors:
-      // Player can enter a trailer ONLY if both the dock door AND the trailer's own roll-up door are open!
-      for (let i = 0; i < dockDoors.length; i++) {
-        const dd = dockDoors[i];
-        const doorMinX = dd.worldX - doorWidth / 2;
-        const doorMaxX = dd.worldX + doorWidth / 2;
-
-        if (!dd.isOpen || dd.currentProgress < 0.7) {
-          if (newX >= doorMinX && newX <= doorMaxX && Math.abs(newZ - doorZ) < 0.35 + r) {
-            return true;
-          }
-        } else if (!dd.hasTrailer) {
-          if (newX >= doorMinX && newX <= doorMaxX && newZ < doorZ + r && newZ > doorZ - 0.5) {
-            return true;
-          }
-        } else if (dd.trailerDoorProgress < 0.70) {
-          if (newX >= doorMinX && newX <= doorMaxX && newZ < (doorZ - 0.45) + r + 0.12 && newZ > doorZ - 1.2) {
-            triggerBoundaryWarning('bay_trailer_sealed_' + dd.id, `🔒 Bay ${dd.id} trailer door sealed! Let driver inside building to open trailer.`);
-            return true;
-          }
-        }
+      const res = collisionSolver.resolveTurn({
+        x: player.position.x,
+        z: player.position.z,
+        curYaw: player.yaw,
+        targetYaw: targetYaw,
+        hasElectricJack: player.hasElectricJack,
+        hitchedPallet: player.hitchedPallet,
+        emitWarnings: false
+      });
+      player.yaw = res.yaw;
+      if (res.blocked) {
+        triggerPalletBumpSound();
+        syncActiveFloorJack();
+        positionHitchedPallet();
+        return false;
       }
-
-      // Inside an active docked trailer (Z < doorZ): enforce open trailer door, sidewalls & nose bulkhead
-      if (newZ < doorZ - 0.45) {
-        const insideBay = dockDoors.find((dd) => dd.hasTrailer && dd.trailerDoorProgress >= 0.70 && player.position.x >= dd.worldX - TILE_SIZE && player.position.x <= dd.worldX + TILE_SIZE);
-        if (insideBay) {
-          const trailerRows = (insideBay.trailerType === 'vendor_truck') ? 6 : 10;
-          const minTrailerZ = doorZ - trailerRows * TILE_SIZE + 0.14;
-          if (
-            newX - r < insideBay.worldX - TILE_SIZE + 0.14 ||
-            newX + r > insideBay.worldX + TILE_SIZE - 0.14 ||
-            newZ - r < minTrailerZ
-          ) {
-            return true;
-          }
-        } else {
-          return true;
-        }
-      }
-
-      // Check solid red walls, dock steel columns, and bollards
-      for (let i = 0; i < solidWalls.length; i++) {
-        const b = solidWalls[i];
-        if (newX + r > b.minX && newX - r < b.maxX &&
-          newZ + r > b.minZ && newZ - r < b.maxZ) {
-          return true;
-        }
-      }
-
-      // Check parked Electric Pallet Jack (battery body + forks in local oriented space)
-      if (!player.hasElectricJack && electricJackWorld.visible) {
-        const rot = electricJackWorld.rotation.y || 0;
-        const cosR = Math.cos(rot);
-        const sinR = Math.sin(rot);
-        const dx = newX - electricJackWorld.position.x;
-        const dz = newZ - electricJackWorld.position.z;
-        const lx = dx * cosR - dz * sinR;
-        const lz = dx * sinR + dz * cosR;
-        const hitBody = (lx + r > -0.36 && lx - r < 0.36 && lz + r > -0.30 && lz - r < 0.28);
-        const hitForks = (lx + r > -0.31 && lx - r < 0.31 && lz + r > -1.52 && lz - r < -0.30);
-        if (hitBody || hitForks) {
-          return true;
-        }
-      }
-
-      return false;
+      return true;
     }
 
     // --- PLAYER & PALLET UPDATE LOOP ---
@@ -4725,7 +5356,7 @@
         forwardInput /= inputLen;
       }
 
-      const currentSpeed = player.hitchedPallet ? (player.speed * 0.75) : player.speed;
+      const currentSpeed = player.speed;
 
       if (inputLen > 0.01) {
         const sinYaw = Math.sin(player.yaw);
@@ -4734,14 +5365,41 @@
         const moveX = (-sinYaw * forwardInput + cosYaw * strafeInput) * currentSpeed * dt;
         const moveZ = (-cosYaw * forwardInput - sinYaw * strafeInput) * currentSpeed * dt;
 
+        const startedBlocked = checkCollision(player.position.x, player.position.z, player.yaw, player.hitchedPallet, false);
         const testX = player.position.x + moveX;
-        if (!checkCollision(testX, player.position.z)) {
-          player.position.x = testX;
+        let blockedMove = false;
+        if (Math.abs(moveX) > 1e-6) {
+          const canEscapeX = startedBlocked && !checkCollision(
+            player.position.x + Math.sign(moveX) * 0.45,
+            player.position.z,
+            player.yaw,
+            player.hitchedPallet,
+            false
+          );
+          if (!checkCollision(testX, player.position.z) || canEscapeX) {
+            player.position.x = testX;
+          } else {
+            blockedMove = true;
+          }
         }
 
         const testZ = player.position.z + moveZ;
-        if (!checkCollision(player.position.x, testZ)) {
-          player.position.z = testZ;
+        if (Math.abs(moveZ) > 1e-6) {
+          const canEscapeZ = startedBlocked && !checkCollision(
+            player.position.x,
+            player.position.z + Math.sign(moveZ) * 0.45,
+            player.yaw,
+            player.hitchedPallet,
+            false
+          );
+          if (!checkCollision(player.position.x, testZ) || canEscapeZ) {
+            player.position.z = testZ;
+          } else {
+            blockedMove = true;
+          }
+        }
+        if (blockedMove && (player.hasElectricJack || player.hitchedPallet)) {
+          triggerPalletBumpSound();
         }
       }
       updateBoundaryWarningReset(player.position.x, player.position.z);
