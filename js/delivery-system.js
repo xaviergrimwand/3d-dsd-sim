@@ -2242,6 +2242,7 @@
       spawnCreditToteIfNeeded: function (session) {
         if (!session || !session.delivery || session.creditTote) return;
         const d = session.delivery;
+        if (d.type === 'vendor_truck' && session.state !== 'WAITING_SIGN') return;
         if (window.DSDReceipts) window.DSDReceipts.enrichDelivery(d);
         if (!Array.isArray(d.creditBoxes) || d.creditBoxes.length === 0) return;
         if (typeof createCreditTote3D !== 'function') return;
@@ -2249,9 +2250,11 @@
         let totePos;
         if (d.type === 'sidedoor' && session.cart && session.cart.mesh) {
           totePos = new THREE.Vector3(session.cart.mesh.position.x, 0, session.cart.mesh.position.z + 0.88);
-        } else if (d.type === 'vendor_truck' && d.dockBay && VENDOR_DRIVER_STANDS[d.dockBay]) {
-          const vendorStand = VENDOR_DRIVER_STANDS[d.dockBay];
-          totePos = new THREE.Vector3(vendorStand.x + 0.72, 0, vendorStand.z + 0.68);
+        } else if (d.type === 'vendor_truck') {
+          const finalStand = (session.driver && session.driver.mesh)
+            ? session.driver.mesh.position
+            : getVendorPostStand(d.dockBay, session);
+          totePos = new THREE.Vector3(Math.min(10.5, finalStand.x + 0.72), 0, Math.max(2.2, finalStand.z - 0.10));
         } else {
           const stand = INSIDE_CHECKIN_POSITIONS[session.slotIdx] || INSIDE_CHECKIN_POSITIONS[0];
           const zOff = (session.slotIdx === 2 || session.slotIdx === 4) ? -0.62 : 0.62;
@@ -2383,6 +2386,18 @@
         }
       },
 
+      syncCartToDriverHands: function (session) {
+        if (!session || !session.cart || !session.cart.mesh || !session.driver || !session.driver.mesh) return;
+        const p = session.driver.mesh.position;
+        const cyaw = session.driver.mesh.rotation.y;
+        session.cart.mesh.position.set(
+          p.x + Math.sin(cyaw) * 1.05,
+          0,
+          p.z + Math.cos(cyaw) * 1.05
+        );
+        session.cart.mesh.rotation.y = cyaw + Math.PI;
+      },
+
       beginPendingExit: function (session) {
         if (!session) return;
         const d = session.delivery;
@@ -2402,9 +2417,6 @@
             new THREE.Vector3(11.15, 0, 8.4 + zSlot)
           ]);
           session.currentWaypointIdx = 0;
-          if (!receiptsReady && d) {
-            hooks.showNotification(`[[ico:claim]] ${d.driverName} is waiting by Side Door — hand over printed receipt(s) [E] before exit!`, 'high');
-          }
         }
         this.updateDeliveryHud();
       },
@@ -2700,13 +2712,7 @@
             session.driver.updateAnimation(true, dt);
 
             if (session.cart && session.state !== 'FINISHED') {
-              const cyaw = session.driver.mesh.rotation.y;
-              session.cart.mesh.position.set(
-                curPos.x + Math.sin(cyaw) * 1.05,
-                0,
-                curPos.z + Math.cos(cyaw) * 1.05
-              );
-              session.cart.mesh.rotation.y = cyaw + Math.PI;
+              this.syncCartToDriverHands(session);
               session.cart.rollWheels(step);
             }
 
@@ -2761,9 +2767,11 @@
             session.driver.mesh.rotation.y = -Math.PI / 2;
           }
           if (session.cart) {
-            session.cart.mesh.rotation.y = -Math.PI / 2 + Math.PI;
+            this.syncCartToDriverHands(session);
           }
-          this.spawnCreditToteIfNeeded(session);
+          if (d.type !== 'vendor_truck') {
+            this.spawnCreditToteIfNeeded(session);
+          }
           hooks.showNotification(
             d.type === 'vendor_truck' && d.dockBay
               ? `[[ico:chat]] ${d.driverName} (${session.doorKey}) is waiting near Bay ${d.dockBay}: [E] to Check In`
@@ -2784,7 +2792,7 @@
             session.state = 'WAITING_EXIT';
             session.driver.mesh.rotation.y = Math.PI / 2;
             if (session.cart) {
-              session.cart.mesh.rotation.y = Math.PI / 2 + Math.PI;
+              this.syncCartToDriverHands(session);
             }
             hooks.showNotification(
               receiptsReady
@@ -2985,6 +2993,7 @@
         } else if (session.state === 'VENDOR_RETURNING_TO_SIDE_DOOR') {
           session.state = 'WAITING_SIGN';
           session.driver.mesh.rotation.y = 0;
+          this.spawnCreditToteIfNeeded(session);
           this.updateDeliveryHud();
           hooks.showNotification(`[[ico:box]] ${d.driverName} unloaded all pallets by Bay ${d.dockBay}! Scan cases [F], then [E] to sign.`, 'low');
         }
@@ -3166,6 +3175,9 @@
               session.cart.boxes.length = 0;
             } else {
               syncDeliveryBoxesVisuals(d);
+            }
+            if (['OUTSIDE_WAITING', 'WAITING_CHECKIN', 'WAITING_SIGN', 'WAITING_EXIT'].includes(session.state)) {
+              this.syncCartToDriverHands(session);
             }
           } else if (d.dockBay) {
             bindDeliveryBoxesToBayPallets(d);

@@ -2487,23 +2487,6 @@ tr.inv-short-pickable:hover {
   cursor: pointer;
 }
 
-#btn-seed-test-receipts {
-  background: rgba(15, 23, 42, 0.85);
-  border: 1px solid rgba(56, 189, 248, 0.4);
-  border-radius: 8px;
-  padding: 6px 11px;
-  color: #bae6fd;
-  font-size: 11px;
-  font-weight: 700;
-  cursor: pointer;
-}
-
-#btn-seed-test-receipts:hover {
-  background: rgba(14, 116, 144, 0.72);
-  border-color: #38bdf8;
-  color: #ffffff;
-}
-
 #game-container.invoice-open #bottom-left-controls {
   bottom: 16px;
   left: 50%;
@@ -8546,8 +8529,7 @@ tr.inv-short-pickable:hover {
 
 #game-container.main-menu-open #hud-infotip,
 #game-container.system-menu-open #hud-infotip,
-#game-container.invoice-open #hud-infotip,
-#game-container:has(#invoice-modal.active, #terminal-modal.active, #bol-modal.active, #door-queue-modal.active, #trash-receipt-modal.active, #hand-receipt-modal.active, #shortage-qty-modal.active, #pause-menu-overlay.active, #shift-summary-modal.active, #save-load-modal.active, #menu-info-modal.active, #game-alert-modal.active) #hud-infotip {
+#game-container:has(#terminal-modal.active, #bol-modal.active, #door-queue-modal.active, #trash-receipt-modal.active, #hand-receipt-modal.active, #shortage-qty-modal.active, #pause-menu-overlay.active, #shift-summary-modal.active, #save-load-modal.active, #menu-info-modal.active, #game-alert-modal.active) #hud-infotip {
   display: none !important;
 }
 

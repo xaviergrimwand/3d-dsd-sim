@@ -84,7 +84,6 @@
     '#minimap-container',
     '#bottom-left-controls',
     '#lock-hint',
-    '#btn-seed-test-receipts',
     '#mobile-btn-dock .touch-btn',
     '#scanner-device',
     '#printed-receipt-hud',
@@ -819,7 +818,6 @@
 
     const container = document.getElementById('game-container');
     const lockHint = document.getElementById('lock-hint');
-    const btnSeedTestReceipts = document.getElementById('btn-seed-test-receipts');
     const alertBanner = document.getElementById('alert-banner');
     const notifyBanner = document.getElementById('notify-banner');
     const minimapCanvas = document.getElementById('minimap-canvas');
@@ -1906,18 +1904,6 @@
       onStateChange: () => updateLockHintDisplay()
     });
     lockHint.addEventListener('click', requestLock);
-    if (btnSeedTestReceipts) {
-      btnSeedTestReceipts.addEventListener('click', (e) => {
-        e.stopPropagation();
-        if (window.DSDReceipts && typeof window.DSDReceipts.seedDummyReceiptsAllDepts === 'function') {
-          const res = window.DSDReceipts.seedDummyReceiptsAllDepts();
-          if (SoundSystem.playButtonClick) SoundSystem.playButtonClick();
-          if (res && res.count > 0) {
-            showNotification(`[[ico:flask]] Populated ${res.count} test receipts across all departments.`, 'low');
-          }
-        }
-      });
-    }
     renderer.domElement.addEventListener('click', (e) => {
       if (mouseDragMoved >= 6) return;
       if (Date.now() - lastTouchTapMs < 450) return;
