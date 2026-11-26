@@ -1,0 +1,517 @@
+/* ============================================================================
+   3D DSD Receiving Simulator — Interactive Tutorial Overlay Stylesheet
+   (Phase 3 local sandbox asset; merged into css/styles.css in Phase 5)
+   ============================================================================ */
+
+#tutorial-overlay-root {
+  position: fixed;
+  inset: 0;
+  z-index: 2600;
+  pointer-events: none;
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+}
+
+/* Spotlight & Dual-Callout SVG Highlight Layer */
+#tutorial-spotlight-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 2610;
+  pointer-events: none;
+  display: none;
+}
+
+#tutorial-spotlight-layer.active {
+  display: block;
+}
+
+#tutorial-spotlight-svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+.tut-pulse-stroke {
+  fill: none;
+  stroke: #4ade80;
+  stroke-width: 2.5;
+  stroke-dasharray: 8 4;
+  animation: tutPulseStroke 1.3s linear infinite;
+}
+
+.tut-callout-pair-stroke {
+  fill: none;
+  stroke: #facc15;
+  stroke-width: 2.5;
+  animation: tutGlowAmber 1.2s ease-in-out infinite;
+}
+
+@keyframes tutPulseStroke {
+  to {
+    stroke-dashoffset: -24;
+  }
+}
+
+@keyframes tutGlowAmber {
+  0%, 100% {
+    stroke-opacity: 0.65;
+  }
+  50% {
+    stroke-opacity: 1;
+  }
+}
+
+/* Floating Field Callout Badges (positioned near spotlighted elements) */
+#tutorial-callout-badges {
+  position: fixed;
+  inset: 0;
+  z-index: 2625;
+  pointer-events: none;
+}
+
+.tut-callout-tag {
+  position: fixed;
+  background: rgba(6, 15, 11, 0.96);
+  border: 1.5px solid #4ade80;
+  color: #bbf7d0;
+  padding: 3px 8px;
+  border-radius: 5px;
+  font-size: 10.5px;
+  font-weight: 800;
+  letter-spacing: 0.35px;
+  white-space: nowrap;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.65);
+}
+
+.tut-callout-tag.is-source {
+  border-color: #facc15;
+  color: #fef08a;
+}
+
+.tut-callout-tag .svg-ico {
+  vertical-align: -2px;
+  margin-right: 4px;
+}
+
+/* Off-Screen 3D Directional Edge Pill */
+#tutorial-dir-edge {
+  position: fixed;
+  top: 96px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 2630;
+  display: none;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 14px;
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.92);
+  border: 2px solid #38bdf8;
+  color: #e0f2fe;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.4px;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.55);
+  pointer-events: none;
+}
+
+#tutorial-dir-edge.active {
+  display: flex;
+}
+
+#tutorial-dir-edge.is-left,
+#tutorial-dir-edge.is-right {
+  border-color: #facc15;
+  color: #fef08a;
+}
+
+#tutorial-dir-edge.is-ahead {
+  border-color: #22c55e;
+  color: #bbf7d0;
+}
+
+#tutorial-dir-edge .svg-ico {
+  flex-shrink: 0;
+}
+
+/* Centered Tutorial Instruction Card (docks cleanly at bottom when an in-game modal is open) */
+#tutorial-hud-card {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 470px;
+  max-width: 92vw;
+  z-index: 2640;
+  pointer-events: auto;
+  background: linear-gradient(180deg, rgba(6, 15, 11, 0.97), rgba(10, 22, 16, 0.97));
+  border: 2px solid #22c55e;
+  border-radius: 10px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.72), 0 0 18px rgba(34, 197, 94, 0.16);
+  color: #dcfce7;
+  display: none;
+  flex-direction: column;
+  overflow: hidden;
+  transition: top 0.18s ease, transform 0.18s ease;
+}
+
+#tutorial-hud-card.active {
+  display: flex;
+}
+
+#tutorial-hud-card.dock-bottom {
+  top: auto;
+  bottom: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  max-height: 44vh;
+  overflow-y: auto;
+}
+
+#tutorial-hud-card.is-collapsed .tut-card-body {
+  display: none;
+}
+
+.tut-card-hdr {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 12px;
+  background: rgba(20, 83, 45, 0.45);
+  border-bottom: 1px solid rgba(34, 197, 94, 0.4);
+}
+
+.tut-hdr-right {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.tut-ch-pill {
+  font-size: 11px;
+  font-weight: 800;
+  color: #86efac;
+  letter-spacing: 0.6px;
+}
+
+.tut-training-tag {
+  font-size: 10px;
+  font-weight: 800;
+  color: #facc15;
+  border: 1px solid rgba(250, 204, 21, 0.55);
+  background: rgba(66, 32, 6, 0.7);
+  padding: 1px 6px;
+  border-radius: 4px;
+}
+
+.tut-dock-toggle {
+  font-family: inherit;
+  font-size: 10px;
+  font-weight: 800;
+  padding: 2px 7px;
+  border-radius: 4px;
+  border: 1px solid rgba(134, 239, 172, 0.45);
+  background: rgba(15, 23, 42, 0.75);
+  color: #bbf7d0;
+  cursor: pointer;
+}
+
+.tut-dock-toggle:hover {
+  background: rgba(20, 83, 45, 0.75);
+}
+
+.tut-card-body {
+  padding: 11px 13px;
+  font-size: 12.5px;
+  line-height: 1.45;
+}
+
+.tut-step-title {
+  font-size: 14px;
+  font-weight: 800;
+  color: #4ade80;
+  margin-bottom: 5px;
+}
+
+.tut-step-desc {
+  color: #e2e8f0;
+  margin-bottom: 9px;
+}
+
+.tut-step-desc code {
+  background: rgba(15, 23, 42, 0.85);
+  border: 1px solid rgba(74, 222, 128, 0.45);
+  color: #86efac;
+  padding: 0 5px;
+  border-radius: 4px;
+  font-family: 'Courier New', monospace;
+  font-weight: 800;
+  font-size: 11.5px;
+}
+
+.tut-step-desc .tut-hl {
+  color: #fef08a;
+  font-weight: 800;
+  background: rgba(250, 204, 21, 0.14);
+  border-bottom: 1.5px solid rgba(250, 204, 21, 0.6);
+  padding: 0 4px;
+  border-radius: 3px;
+}
+
+.tut-checklist {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 6px;
+  padding: 7px 9px;
+  border-radius: 6px;
+  background: rgba(2, 6, 23, 0.55);
+  border: 1px dashed rgba(34, 197, 94, 0.35);
+  font-size: 11.5px;
+}
+
+.tut-chk-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.tut-chk-item .svg-ico {
+  flex-shrink: 0;
+}
+
+.tut-chk-item.done {
+  color: #4ade80;
+  text-decoration: line-through;
+  opacity: 0.85;
+}
+
+.tut-chk-item.todo {
+  color: #fde047;
+  font-weight: 700;
+}
+
+.tut-card-ftr {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 6px;
+  padding: 8px 10px;
+  background: rgba(2, 6, 23, 0.68);
+  border-top: 1px solid rgba(34, 197, 94, 0.28);
+}
+
+.tut-card-ftr .tut-btn {
+  width: 100%;
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tut-btn {
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 800;
+  padding: 6px 10px;
+  border-radius: 5px;
+  border: 1px solid #475569;
+  background: #1e293b;
+  color: #e2e8f0;
+  cursor: pointer;
+}
+
+.tut-btn .svg-ico {
+  vertical-align: -2px;
+  margin-right: 4px;
+  pointer-events: none;
+}
+
+.tut-btn:hover:not(:disabled) {
+  filter: brightness(1.14);
+}
+
+.tut-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.tut-btn-primary {
+  background: #15803d;
+  border-color: #22c55e;
+  color: #ffffff;
+}
+
+.tut-btn-warn {
+  background: #b45309;
+  border-color: #f59e0b;
+  color: #ffffff;
+}
+
+.tut-btn-info {
+  background: #1d4ed8;
+  border-color: #60a5fa;
+  color: #ffffff;
+}
+
+.tut-btn-danger {
+  background: #b91c1c;
+  border-color: #ef4444;
+  color: #ffffff;
+}
+
+/* Welcome Hub & Chapters Switcher Modal */
+.tut-modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 2660;
+  pointer-events: auto;
+  background: rgba(2, 6, 23, 0.84);
+  display: none;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+}
+
+.tut-modal-overlay.active {
+  display: flex;
+}
+
+.tut-hub-box {
+  width: 680px;
+  max-width: 96vw;
+  max-height: 90vh;
+  overflow-y: auto;
+  background: linear-gradient(180deg, #07130d, #0b1a12);
+  border: 3px solid #22c55e;
+  border-radius: 12px;
+  padding: 18px 20px;
+  box-shadow: 0 0 42px rgba(34, 197, 94, 0.25);
+  color: #dcfce7;
+}
+
+.tut-hub-hdr {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  border-bottom: 1px dashed rgba(34, 197, 94, 0.45);
+  padding-bottom: 10px;
+  margin-bottom: 12px;
+}
+
+.tut-hub-title {
+  font-size: 18px;
+  font-weight: 900;
+  color: #4ade80;
+}
+
+.tut-hub-title .svg-ico {
+  vertical-align: -2px;
+  margin-right: 6px;
+  color: #4ade80;
+}
+
+.tut-hub-sub {
+  font-size: 12px;
+  color: #cbd5e1;
+  margin-top: 3px;
+}
+
+.tut-chapters-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin: 12px 0;
+}
+
+.tut-chap-btn {
+  text-align: left;
+  padding: 9px 11px;
+  border-radius: 7px;
+  border: 1.5px solid rgba(34, 197, 94, 0.5);
+  background: rgba(20, 83, 45, 0.2);
+  color: #dcfce7;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.tut-chap-btn:hover {
+  background: rgba(34, 197, 94, 0.22);
+  border-color: #4ade80;
+}
+
+.tut-chap-title {
+  font-size: 12.5px;
+  font-weight: 800;
+  color: #86efac;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.tut-chap-title .svg-ico {
+  color: #86efac;
+  flex-shrink: 0;
+}
+
+.tut-chap-sub {
+  font-size: 11px;
+  color: #94a3b8;
+  margin-top: 2px;
+}
+
+.tut-hub-ftr {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 8px;
+}
+
+.tut-hub-tip {
+  font-size: 11.5px;
+  color: #94a3b8;
+}
+
+@media (max-height: 520px) {
+  #tutorial-dir-edge {
+    top: 76px;
+    font-size: 11px;
+    padding: 4px 10px;
+  }
+  #tutorial-hud-card {
+    width: 440px;
+    max-width: 92vw;
+    max-height: calc(100vh - 120px);
+    overflow-y: auto;
+  }
+  .tut-card-hdr { padding: 5px 9px; }
+  .tut-card-body { padding: 7px 10px; font-size: 11.5px; line-height: 1.35; }
+  .tut-step-title { font-size: 12.5px; margin-bottom: 3px; }
+  .tut-step-desc { margin-bottom: 6px; }
+  .tut-checklist { padding: 5px 7px; margin-bottom: 4px; font-size: 11px; }
+  .tut-card-ftr { padding: 5px 8px; }
+  .tut-btn { padding: 4px 8px; font-size: 10.5px; }
+}
+
+@media (max-width: 720px) {
+  .tut-chapters-grid {
+    grid-template-columns: 1fr;
+  }
+  #tutorial-hud-card {
+    width: calc(100vw - 16px);
+    max-width: 470px;
+  }
+}
+
+@media (max-width: 400px) {
+  .tut-card-ftr {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+/* Suppress 3D/world infotips immediately while cursor hovers Tutorial card or Welcome Hub */
+body:has(#tutorial-hud-card.active:hover, #tutorial-hub-modal.active) #hud-infotip {
+  display: none !important;
+}

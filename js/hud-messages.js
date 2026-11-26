@@ -235,7 +235,7 @@
     }, LIVE_TOAST_MS);
   }
 
-  function push(rawMsg, explicitPriority) {
+  function push(rawMsg, explicitPriority, opts) {
     const text = normalizeText(rawMsg);
     if (!text) return null;
     if (!dom.wrap) cacheDom();
@@ -252,7 +252,9 @@
 
     if (!isOpen) unreadCount++;
     render();
-    spawnLiveToast(entry);
+    if (!(opts && opts.silent)) {
+      spawnLiveToast(entry);
+    }
     return entry;
   }
 

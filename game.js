@@ -12,7 +12,7 @@
    * - .XX     : minor milestone (2 digits)
    * - -XXXX   : incremental patches / bug fixes (4 digits)
    */
-  const GAME_VERSION = 'v0.1.01-0001';
+  const GAME_VERSION = 'v0.1.02-0001';
   global.DSD_GAME_VERSION = GAME_VERSION;
 
   const state = {
@@ -734,6 +734,9 @@
     }
     syncClockPauseFlag();
     updateHud(true);
+    if (global.DSDMenuUI && typeof global.DSDMenuUI.syncOverlaysFromGame === 'function') {
+      global.DSDMenuUI.syncOverlaysFromGame();
+    }
   }
 
   function registerResetHandler(fn) {
@@ -818,6 +821,9 @@
     }
     syncClockPauseFlag();
     updateHud(true);
+    if (global.DSDMenuUI && typeof global.DSDMenuUI.syncOverlaysFromGame === 'function') {
+      global.DSDMenuUI.syncOverlaysFromGame();
+    }
   }
 
   function startTutorialShift(opts) {
@@ -854,6 +860,9 @@
     }
     syncClockPauseFlag();
     updateHud(true);
+    if (global.DSDMenuUI && typeof global.DSDMenuUI.syncOverlaysFromGame === 'function') {
+      global.DSDMenuUI.syncOverlaysFromGame();
+    }
     if (global.DSDTutorial && typeof global.DSDTutorial.start === 'function' && o.autoStartController !== false) {
       global.DSDTutorial.start({
         chapter: o.startChapter !== undefined ? o.startChapter : 0,
@@ -903,6 +912,9 @@
     }
     syncClockPauseFlag();
     updateHud(true);
+    if (global.DSDMenuUI && typeof global.DSDMenuUI.syncOverlaysFromGame === 'function') {
+      global.DSDMenuUI.syncOverlaysFromGame();
+    }
   }
 
   function punchOutAtTimeclock() {

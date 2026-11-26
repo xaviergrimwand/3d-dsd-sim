@@ -41,6 +41,7 @@
     shelfSlots: [],
     shelfHitMeshes: [],
     palletHitMeshes: [],
+    spawnHitMeshes: [],
     fallingCases: [],
     slidingCases: [],
     heldCase: null,
@@ -50,6 +51,9 @@
     ghostWireMesh: null,
     ghostMat: null,
     ghostWireMat: null,
+    palletGhostGroup: null,
+    palletGhostMat: null,
+    palletGhostWireMat: null,
     currentGhostPlacement: null,
     texCache: {},
     nextCaseSeq: 1,
@@ -352,6 +356,10 @@
     }
     if (pallet.group) {
       pallet.group.visible = hasCases || Boolean(pallet.isHitched);
+      if (!hasCases && !pallet.isHitched && Number.isFinite(Number(pallet.homeX)) && Number.isFinite(Number(pallet.homeZ))) {
+        pallet.group.position.set(Number(pallet.homeX), 0, Number(pallet.homeZ));
+        pallet.group.rotation.y = Number(pallet.homeRotY) || 0;
+      }
     }
     if (typeof pallet.syncPlacement === 'function') {
       pallet.syncPlacement(hasCases && !pallet.isHitched);
@@ -494,12 +502,51 @@
     state.ghostGroup.add(state.ghostWireMesh);
 
     state.scene.add(state.ghostGroup);
+
+    if (!state.palletGhostGroup) {
+      state.palletGhostGroup = new THREE.Group();
+      state.palletGhostGroup.visible = false;
+      state.palletGhostMat = new THREE.MeshBasicMaterial({
+        color: 0x22c55e,
+        transparent: true,
+        opacity: 0.32,
+        depthWrite: false
+      });
+      state.palletGhostWireMat = new THREE.MeshBasicMaterial({
+        color: 0x86efac,
+        wireframe: true,
+        transparent: true,
+        opacity: 0.78,
+        depthWrite: false
+      });
+      const pw = 1.20;
+      const pd = 1.00;
+      const topPlankZ = [-0.44, -0.28, -0.14, 0, 0.14, 0.28, 0.44];
+      topPlankZ.forEach((pz, idx) => {
+        const zW = (idx === 0 || idx === 6) ? 0.14 : 0.09;
+        const slat = new THREE.Mesh(new THREE.BoxGeometry(pw, 0.022, zW), state.palletGhostMat);
+        slat.position.set(0, 0.125, pz);
+        state.palletGhostGroup.add(slat);
+      });
+      [-0.50, 0, 0.50].forEach((sx) => {
+        const runner = new THREE.Mesh(new THREE.BoxGeometry(0.045, 0.095, pd), state.palletGhostMat);
+        runner.position.set(sx, 0.065, 0);
+        state.palletGhostGroup.add(runner);
+      });
+      const wireOutline = new THREE.Mesh(new THREE.BoxGeometry(pw + 0.01, 0.14, pd + 0.01), state.palletGhostWireMat);
+      wireOutline.position.set(0, 0.07, 0);
+      state.palletGhostGroup.add(wireOutline);
+      state.scene.add(state.palletGhostGroup);
+    }
   }
 
   function hideGhostPreview() {
     state.currentGhostPlacement = null;
     if (state.ghostGroup) {
       state.ghostGroup.visible = false;
+    }
+    if (state.palletGhostGroup) {
+      state.palletGhostGroup.visible = false;
     }
   }
 
@@ -756,6 +803,94 @@
     return buildShelfGhostValidation(slot, existing, dims, frame, spanCoord, resolvedBaseY, 0, dims.d, caseRec, null);
   }
 
+  function getExpectedRackIdForCase(caseRec) {
+    if (!caseRec) return 'dry_steel';
+    if (isSupplyCase(caseRec)) return 'claims_steel';
+    if (caseRec.targetRackId) return caseRec.targetRackId;
+    const tp = String(caseRec.type || '').toLowerCase();
+    if (tp === 'frozen') return 'freezer_steel';
+    if (tp === 'refrigerated') return 'cooler_steel';
+    return 'dry_steel';
+  }
+
+  function isSpawnPointBlockedByActivePallet(spawnPallet) {
+    if (!spawnPallet) return true;
+    const sx = Number(spawnPallet.homeX);
+    const sz = Number(spawnPallet.homeZ);
+    const overstockPallets = (state.world && Array.isArray(state.world.overstockPallets))
+      ? state.world.overstockPallets
+      : [];
+    for (let i = 0; i < overstockPallets.length; i++) {
+      const other = overstockPallets[i];
+      if (!other || other === spawnPallet) continue;
+      if (other.group && other.group.visible && Math.hypot((Number(other.x) || 0) - sx, (Number(other.z) || 0) - sz) < 1.15) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  function getMatchingEmptySpawnPallets(caseRec) {
+    const expectedRackId = getExpectedRackIdForCase(caseRec);
+    const overstockPallets = (state.world && Array.isArray(state.world.overstockPallets))
+      ? state.world.overstockPallets
+      : [];
+    return overstockPallets.filter((p) => {
+      if (!p || p.rackId !== expectedRackId) return false;
+      if (p.isHitched || (p.group && p.group.visible)) return false;
+      if (isSpawnPointBlockedByActivePallet(p)) return false;
+      return true;
+    });
+  }
+
+  function buildSpawnPalletPlacement(spawnPallet, dims) {
+    const rotY = Number(spawnPallet.homeRotY) || 0;
+    const topY = Number(spawnPallet.topY) || 0.136;
+    const qOff = PALLET_QUADRANT_OFFSETS[0];
+    const cosR = Math.cos(rotY);
+    const sinR = Math.sin(rotY);
+    const wx = Number(spawnPallet.homeX) + qOff[0] * cosR + qOff[1] * sinR;
+    const wz = Number(spawnPallet.homeZ) - qOff[0] * sinR + qOff[1] * cosR;
+    return {
+      type: 'spawn_pallet',
+      pallet: spawnPallet,
+      palletX: Number(spawnPallet.homeX),
+      palletZ: Number(spawnPallet.homeZ),
+      palletRotY: rotY,
+      x: wx,
+      y: topY + dims.h / 2,
+      z: wz,
+      rotY: rotY,
+      dims: dims,
+      valid: true,
+      reason: ''
+    };
+  }
+
+  function findNearbySpawnPalletOnRay(raycaster, caseRec) {
+    if (!raycaster || !raycaster.ray || !raycaster.ray.origin || !raycaster.ray.direction) return null;
+    const dirY = Number(raycaster.ray.direction.y);
+    if (dirY >= -0.02) return null;
+    const t = -Number(raycaster.ray.origin.y) / dirY;
+    const maxDist = Number(raycaster.far) || 5.2;
+    if (!Number.isFinite(t) || t <= 0 || t > maxDist) return null;
+    const fx = Number(raycaster.ray.origin.x) + Number(raycaster.ray.direction.x) * t;
+    const fz = Number(raycaster.ray.origin.z) + Number(raycaster.ray.direction.z) * t;
+
+    const candidates = getMatchingEmptySpawnPallets(caseRec);
+    let best = null;
+    let bestDist = 1.35;
+    for (let i = 0; i < candidates.length; i++) {
+      const p = candidates[i];
+      const d = Math.hypot(fx - Number(p.homeX), fz - Number(p.homeZ));
+      if (d < bestDist) {
+        bestDist = d;
+        best = p;
+      }
+    }
+    return best;
+  }
+
   function updateGhostPreview(raycaster) {
     if (!state.heldCase || !raycaster) {
       hideGhostPreview();
@@ -764,42 +899,50 @@
 
     ensureGhostMeshes();
     const dims = state.heldCase.dims || CASE_SIZE_SPECS.medium;
-    const targets = getPlaceableRaycastMeshes();
-    if (targets.length === 0) {
-      hideGhostPreview();
-      return null;
-    }
+    const emptySpawnSet = new Set(getMatchingEmptySpawnPallets(state.heldCase));
+    const spawnTargets = state.spawnHitMeshes.filter((m) => {
+      const p = m && m.userData ? m.userData.backstockSpawnPalletRef : null;
+      return Boolean(p && emptySpawnSet.has(p));
+    });
+    const targets = getPlaceableRaycastMeshes().concat(spawnTargets);
 
-    const hits = raycaster.intersectObjects(targets, false);
-    if (hits.length === 0) {
-      hideGhostPreview();
-      return null;
-    }
-
-    const hit = hits[0];
-    const ud = hit.object && hit.object.userData ? hit.object.userData : {};
+    const hits = targets.length > 0 ? raycaster.intersectObjects(targets, false) : [];
     let placement = null;
 
-    if (ud.backstockPalletRef) {
-      const prev = getNextPalletDropPreview(ud.backstockPalletRef, dims);
-      if (prev) {
-        const palletZoneMatches = (!state.heldCase.targetRackId || state.heldCase.targetRackId === ud.backstockPalletRef.rackId);
-        placement = {
-          type: 'pallet',
-          pallet: ud.backstockPalletRef,
-          x: prev.x,
-          y: prev.y,
-          z: prev.z,
-          rotY: prev.rotY,
-          dims: dims,
-          valid: palletZoneMatches,
-          reason: palletZoneMatches ? '' : `Wrong pallet — must go on ${getRackDisplayName(state.heldCase.targetRackId)} pallet`
-        };
+    if (hits.length > 0) {
+      const hit = hits[0];
+      const ud = hit.object && hit.object.userData ? hit.object.userData : {};
+
+      if (ud.backstockPalletRef) {
+        const prev = getNextPalletDropPreview(ud.backstockPalletRef, dims);
+        if (prev) {
+          const palletZoneMatches = (!state.heldCase.targetRackId || state.heldCase.targetRackId === ud.backstockPalletRef.rackId);
+          placement = {
+            type: 'pallet',
+            pallet: ud.backstockPalletRef,
+            x: prev.x,
+            y: prev.y,
+            z: prev.z,
+            rotY: prev.rotY,
+            dims: dims,
+            valid: palletZoneMatches,
+            reason: palletZoneMatches ? '' : `Wrong pallet — must go on ${getRackDisplayName(state.heldCase.targetRackId)} pallet`
+          };
+        }
+      } else if (ud.backstockSpawnPalletRef) {
+        placement = buildSpawnPalletPlacement(ud.backstockSpawnPalletRef, dims);
+      } else if (ud.backstockSlotRef) {
+        placement = computeShelfGhostPlacement(ud.backstockSlotRef, hit.point, hit.object, state.heldCase);
+      } else if (ud.backstockCaseRef && ud.backstockCaseRef.placedOnRack && ud.backstockCaseRef.rackSlot) {
+        placement = computeShelfGhostPlacement(ud.backstockCaseRef.rackSlot, hit.point, hit.object, state.heldCase);
       }
-    } else if (ud.backstockSlotRef) {
-      placement = computeShelfGhostPlacement(ud.backstockSlotRef, hit.point, hit.object, state.heldCase);
-    } else if (ud.backstockCaseRef && ud.backstockCaseRef.placedOnRack && ud.backstockCaseRef.rackSlot) {
-      placement = computeShelfGhostPlacement(ud.backstockCaseRef.rackSlot, hit.point, hit.object, state.heldCase);
+    }
+
+    if (!placement) {
+      const nearbySpawn = findNearbySpawnPalletOnRay(raycaster, state.heldCase);
+      if (nearbySpawn) {
+        placement = buildSpawnPalletPlacement(nearbySpawn, dims);
+      }
     }
 
     if (!placement) {
@@ -815,6 +958,15 @@
       state.ghostGroup.scale.set(dims.w, dims.h, dims.d);
       state.ghostMat.color.setHex(placement.valid ? 0x22c55e : 0xef4444);
       state.ghostWireMat.color.setHex(placement.valid ? 0x86efac : 0xfca5a5);
+    }
+    if (state.palletGhostGroup) {
+      if (placement.type === 'spawn_pallet') {
+        state.palletGhostGroup.visible = true;
+        state.palletGhostGroup.position.set(placement.palletX, 0, placement.palletZ);
+        state.palletGhostGroup.rotation.set(0, placement.palletRotY || 0, 0);
+      } else {
+        state.palletGhostGroup.visible = false;
+      }
     }
 
     return placement;
@@ -1021,7 +1173,7 @@
     const p = preview || state.currentGhostPlacement;
     if (!caseRec || !p || !p.valid) return null;
 
-    if (p.type === 'pallet' && p.pallet) {
+    if ((p.type === 'pallet' || p.type === 'spawn_pallet') && p.pallet) {
       return placeHeldCaseOnPallet(p.pallet);
     }
 
@@ -1064,9 +1216,16 @@
   function placeHeldCaseOnPallet(pallet) {
     const caseRec = state.heldCase;
     if (!caseRec || !pallet || !pallet.rackId) return null;
-    if (caseRec.targetRackId && pallet.rackId !== caseRec.targetRackId) return null;
+    const expectedRackId = getExpectedRackIdForCase(caseRec);
+    if (expectedRackId && pallet.rackId !== expectedRackId) return null;
     const palletRec = getPalletRecord(pallet.palletId || pallet.rackId);
     if (!palletRec) return null;
+
+    const wasDespawned = !pallet.group || !pallet.group.visible || !Array.isArray(palletRec.cases) || palletRec.cases.length === 0;
+    if (wasDespawned && !pallet.isHitched && pallet.group && Number.isFinite(Number(pallet.homeX)) && Number.isFinite(Number(pallet.homeZ))) {
+      pallet.group.position.set(Number(pallet.homeX), 0, Number(pallet.homeZ));
+      pallet.group.rotation.y = Number(pallet.homeRotY) || 0;
+    }
 
     clearHeldCaseView();
     caseRec.placedOnRack = false;
@@ -1079,7 +1238,8 @@
     relayoutPalletCargo(palletRec.palletId);
     return {
       caseRec: caseRec,
-      pallet: pallet
+      pallet: pallet,
+      spawnedNewPallet: wasDespawned
     };
   }
 
@@ -1409,8 +1569,12 @@
     state.palletHitMeshes.forEach((m) => {
       if (m && m.parent) m.parent.remove(m);
     });
+    state.spawnHitMeshes.forEach((m) => {
+      if (m && m.parent) m.parent.remove(m);
+    });
     state.shelfHitMeshes = [];
     state.palletHitMeshes = [];
+    state.spawnHitMeshes = [];
   }
 
   function buildPlacementTargets() {
@@ -1472,6 +1636,15 @@
         state.scene.add(hitMesh);
       }
       state.palletHitMeshes.push(hitMesh);
+
+      const spawnHitMesh = new THREE.Mesh(new THREE.BoxGeometry(sx + 0.45, 0.55, sz + 0.45), hitMat);
+      spawnHitMesh.userData.backstockSpawnPalletRef = pallet;
+      const sxPos = Number.isFinite(Number(pallet.homeX)) ? Number(pallet.homeX) : Number(pallet.x) || 0;
+      const szPos = Number.isFinite(Number(pallet.homeZ)) ? Number(pallet.homeZ) : Number(pallet.z) || 0;
+      spawnHitMesh.position.set(sxPos, 0.25, szPos);
+      if (spawnHitMesh.rotation) spawnHitMesh.rotation.y = Number(pallet.homeRotY) || 0;
+      state.scene.add(spawnHitMesh);
+      state.spawnHitMeshes.push(spawnHitMesh);
     });
   }
 

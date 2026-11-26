@@ -8,7 +8,8 @@
   const state = {
     initialized: false,
     slotModalMode: 'load', // 'load' | 'save'
-    returnToOverlay: 'main' // 'main' | 'pause'
+    returnToOverlay: 'main', // 'main' | 'pause'
+    pauseSubmenu: 'main' // 'main' | 'settings'
   };
 
   const dom = {};
@@ -37,6 +38,10 @@
     dom.btnResume = document.getElementById('btn-pause-resume');
     dom.btnPauseSave = document.getElementById('btn-pause-save');
     dom.btnPauseLoad = document.getElementById('btn-pause-load');
+    dom.btnPauseSettings = document.getElementById('btn-pause-settings');
+    dom.btnPauseSettingsBack = document.getElementById('btn-pause-settings-back');
+    dom.pauseMainView = document.getElementById('pause-main-view');
+    dom.pauseSettingsView = document.getElementById('pause-settings-view');
     dom.btnReturnMain = document.getElementById('btn-pause-main-menu');
     dom.btnPauseMute = document.getElementById('btn-pause-mute');
     dom.pauseVolSlider = document.getElementById('pause-vol-slider');
@@ -252,7 +257,11 @@
         (g && typeof g.isTutorialMode === 'function' && g.isTutorialMode()) ||
         (global.DSDTutorial && typeof global.DSDTutorial.isActive === 'function' && global.DSDTutorial.isActive())
       );
+      if (!pauseOpen || mainOpen) {
+        state.pauseSubmenu = 'main';
+      }
       dom.pauseOverlay.classList.toggle('active', pauseOpen && !mainOpen);
+      dom.pauseOverlay.classList.toggle('settings-open', pauseOpen && !mainOpen && state.pauseSubmenu === 'settings');
       if (pauseOpen && dom.pauseMetaText && global.ShiftClock && global.ShiftStats) {
         const snap = global.ShiftClock.getTimeSnapshot();
         const score = global.ShiftStats.getLiveScore();
@@ -387,7 +396,7 @@
     if (global.DSDGame && typeof global.DSDGame.getVersion === 'function') {
       return global.DSDGame.getVersion();
     }
-    return global.DSD_GAME_VERSION || 'v0.1.01-0001';
+    return global.DSD_GAME_VERSION || 'v0.1.02-0001';
   }
 
   function openInfoModal(kind) {
@@ -451,6 +460,7 @@
     if (!global.DSDGame) return;
     if (global.DSDGame.isMainMenuOpen() || global.DSDGame.isShiftSummaryOpen()) return;
     if (document.exitPointerLock) document.exitPointerLock();
+    state.pauseSubmenu = 'main';
     global.DSDGame.setPauseMenuOpen(true);
     syncOverlaysFromGame();
     playClick();
@@ -458,9 +468,28 @@
 
   function closePauseMenu(silent) {
     if (!global.DSDGame) return;
+    state.pauseSubmenu = 'main';
     global.DSDGame.setSaveLoadModalOpen(false);
     global.DSDGame.setInfoModalOpen(false);
     global.DSDGame.setPauseMenuOpen(false);
+    syncOverlaysFromGame();
+    if (!silent) playClick();
+  }
+
+  function openPauseSettings(silent) {
+    if (!global.DSDGame) return;
+    if (global.DSDGame.isMainMenuOpen() || global.DSDGame.isShiftSummaryOpen()) return;
+    if (!global.DSDGame.isPauseMenuOpen()) {
+      global.DSDGame.setPauseMenuOpen(true);
+    }
+    state.pauseSubmenu = 'settings';
+    syncOverlaysFromGame();
+    if (!silent) playClick();
+  }
+
+  function closePauseSettings(silent) {
+    if (!global.DSDGame) return;
+    state.pauseSubmenu = 'main';
     syncOverlaysFromGame();
     if (!silent) playClick();
   }
@@ -477,7 +506,11 @@
     }
     if (global.DSDGame.isMainMenuOpen() || global.DSDGame.isShiftSummaryOpen()) return;
     if (global.DSDGame.isPauseMenuOpen()) {
-      closePauseMenu();
+      if (state.pauseSubmenu === 'settings') {
+        closePauseSettings();
+      } else {
+        closePauseMenu();
+      }
     } else {
       openPauseMenu();
     }
@@ -546,8 +579,21 @@
       });
     }
 
+    if (dom.btnPauseSettings) {
+      dom.btnPauseSettings.addEventListener('click', () => {
+        openPauseSettings();
+      });
+    }
+
+    if (dom.btnPauseSettingsBack) {
+      dom.btnPauseSettingsBack.addEventListener('click', () => {
+        closePauseSettings();
+      });
+    }
+
     if (dom.btnReturnMain) {
       dom.btnReturnMain.addEventListener('click', () => {
+        state.pauseSubmenu = 'main';
         playClick();
         if (global.DSDGame && typeof global.DSDGame.returnToMainMenu === 'function') {
           global.DSDGame.returnToMainMenu();
@@ -746,6 +792,9 @@
     syncOverlaysFromGame: syncOverlaysFromGame,
     openPauseMenu: openPauseMenu,
     closePauseMenu: closePauseMenu,
+    openPauseSettings: openPauseSettings,
+    closePauseSettings: closePauseSettings,
+    getPauseSubmenu: () => state.pauseSubmenu,
     togglePauseMenu: togglePauseMenu,
     openSaveLoadModal: openSaveLoadModal,
     closeSaveLoadModal: closeSaveLoadModal,

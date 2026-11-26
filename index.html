@@ -11,28 +11,28 @@
   <script src="./js/dsd-catalog.js?v=20261123c"></script>
   <script src="./js/shift-clock.js?v=20261126c"></script>
   <script src="./js/shift-stats.js?v=20261123a"></script>
-  <script src="./js/hud-messages.js?v=20261125c"></script>
+  <script src="./js/hud-messages.js?v=20261126l"></script>
   <script src="./js/dsd-receipts.js?v=20261126e"></script>
   <script src="./js/dsd-scanner.js?v=20261126d"></script>
   <script src="./js/dsd-terminal.js?v=20261126d"></script>
-  <script src="./js/warehouse-trucks.js?v=20261126b"></script>
-  <script src="./js/backstock-racks.js?v=20261126b"></script>
+  <script src="./js/warehouse-trucks.js?v=20261126c"></script>
+  <script src="./js/backstock-racks.js?v=20261126c"></script>
   <script src="./js/claims-totes.js?v=20261126b"></script>
   <script src="./js/sound-system.js?v=20261126h"></script>
   <script src="./js/music-system.js?v=20261126m"></script>
   <script src="./js/warehouse-textures.js?v=20261125i"></script>
-  <script src="./js/warehouse-world.js?v=20261125d"></script>
+  <script src="./js/warehouse-world.js?v=20261125g"></script>
   <script src="./js/warehouse-models.js?v=20261125g"></script>
-  <script src="./js/delivery-system.js?v=20261126d"></script>
+  <script src="./js/delivery-system.js?v=20261126g"></script>
   <script src="./js/save-system.js?v=20261126b"></script>
-  <script src="./js/menu-ui.js?v=20261126e"></script>
-  <script src="./game.js?v=20261126e"></script>
+  <script src="./js/menu-ui.js?v=20261126g"></script>
+  <script src="./game.js?v=20261126g"></script>
   <script src="./js/infotip-renderer.js?v=20261125c"></script>
-  <script src="./js/infotip-adapters.js?v=20261125d"></script>
-  <script src="./js/dock-runtime.js?v=20261126e"></script>
-  <script src="./js/tutorial-system.js?v=20261126e"></script>
-  <link rel="stylesheet" href="./css/styles.css?v=20261126a">
-  <link rel="stylesheet" href="./css/tutorial-overlay.css?v=20261126d">
+  <script src="./js/infotip-adapters.js?v=20261126b"></script>
+  <script src="./js/dock-runtime.js?v=20261126k"></script>
+  <script src="./js/tutorial-system.js?v=20261126n"></script>
+  <link rel="stylesheet" href="./css/styles.css?v=20261126c">
+  <link rel="stylesheet" href="./css/tutorial-overlay.css?v=20261126l">
 </head>
 
 <body>
@@ -105,7 +105,7 @@
               <span class="dlp-key-item"><span class="dlp-key-dot is-crit"></span>Open Empty</span>
               <span class="dlp-key-item"><span class="dlp-key-dot is-crit-flash"></span>5m+ Alarm</span>
               <span class="dlp-key-item"><span class="dlp-key-wh">WH</span>Whse Priority</span>
-              <span class="dlp-key-item"><span class="dlp-key-qbox">#</span>Outside Queue</span>
+              <span class="dlp-key-item"><span class="dlp-key-qbox">#</span>Door Queue</span>
             </div>
           </div>
         </div>
@@ -752,8 +752,8 @@
         <button type="button" class="dq-btn dq-btn-close" id="dq-close-btn">WAIT</button>
       </div>
       <div class="dq-subbar">
-        <span id="dq-slot-summary">WAITING OUTSIDE: 0 / 5 (D1-D4 + SD)</span>
-        <span>1 PER DOOR QUEUE MAX</span>
+        <span id="dq-slot-summary">WAITING OUTSIDE: 0 / 9 (3 WH · 3 VT · 3 SD)</span>
+        <span>MAX 3 PER TYPE</span>
       </div>
       <div class="dq-priority-warn" id="dq-priority-warn"></div>
       <div class="dq-list" id="dq-list"></div>
@@ -940,7 +940,7 @@
           </button>
         </nav>
 
-        <div class="menu-footer-note" id="menu-version-footer" aria-label="Game Version">v0.1.01-0001</div>
+        <div class="menu-footer-note" id="menu-version-footer" aria-label="Game Version">v0.1.02-0001</div>
       </div>
     </div>
 
@@ -959,7 +959,7 @@
           </div>
           <div id="pause-shift-summary" class="pause-shift-meta">THU FEB 01, 1996 · 6:00 AM</div>
         </div>
-        <div class="menu-card pause-actions">
+        <div id="pause-main-view" class="menu-card pause-actions">
           <button id="btn-pause-resume" class="menu-btn primary" type="button">
             <span>Resume Game</span>
             <span class="menu-badge">ESC</span>
@@ -972,33 +972,49 @@
             <span>Load Game</span>
             <span class="menu-badge">RESTORE</span>
           </button>
+          <button id="btn-pause-settings" class="menu-btn" type="button">
+            <span>Settings</span>
+            <span class="menu-badge">CONFIG</span>
+          </button>
           <button id="btn-pause-main-menu" class="menu-btn danger" type="button">
             <span>Return to Main Menu</span>
             <span class="menu-badge">EXIT</span>
           </button>
         </div>
-        <div class="pause-audio-row" aria-label="Audio Settings">
-          <button id="btn-pause-mute" class="pause-audio-btn" type="button"><span data-svg-ico="volumeOn"></span> SOUND: ON</button>
-          <label class="pause-vol-wrap">
-            <span>VOL</span>
-            <input id="pause-vol-slider" type="range" min="0" max="100" value="85">
-            <span id="pause-vol-val">85%</span>
-          </label>
-        </div>
-        <div class="pause-audio-row" aria-label="Music Settings">
-          <button id="btn-pause-music-mute" class="pause-audio-btn" type="button"><span data-svg-ico="volumeOn"></span> MUSIC: ON</button>
-          <label class="pause-vol-wrap">
-            <span>BGM</span>
-            <input id="pause-music-slider" type="range" min="0" max="100" value="55">
-            <span id="pause-music-val">55%</span>
-          </label>
-        </div>
-        <div class="pause-audio-row pause-gfx-row" aria-label="Graphics & Performance">
-          <button id="btn-pause-gfx" class="pause-audio-btn" type="button"><span data-svg-ico="terminal"></span> GFX: BALANCED</button>
-          <div class="pause-gfx-right">
-            <span id="pause-fps-val" class="pause-fps-pill">-- FPS</span>
-            <button id="btn-pause-fps-hud" class="pause-mini-btn" type="button">FPS HUD: OFF</button>
+        <div id="pause-settings-view" class="menu-card pause-settings-card" aria-label="Pause Settings Submenu">
+          <div class="pause-settings-title-row">
+            <span class="pause-settings-title">SETTINGS</span>
+            <span class="pause-settings-sub">AUDIO &amp; GRAPHICS</span>
           </div>
+          <div class="pause-settings-rows">
+            <div class="pause-audio-row" aria-label="Audio Settings">
+              <button id="btn-pause-mute" class="pause-audio-btn" type="button"><span data-svg-ico="volumeOn"></span> SOUND: ON</button>
+              <label class="pause-vol-wrap">
+                <span>VOL</span>
+                <input id="pause-vol-slider" type="range" min="0" max="100" value="85">
+                <span id="pause-vol-val">85%</span>
+              </label>
+            </div>
+            <div class="pause-audio-row" aria-label="Music Settings">
+              <button id="btn-pause-music-mute" class="pause-audio-btn" type="button"><span data-svg-ico="volumeOn"></span> MUSIC: ON</button>
+              <label class="pause-vol-wrap">
+                <span>BGM</span>
+                <input id="pause-music-slider" type="range" min="0" max="100" value="55">
+                <span id="pause-music-val">55%</span>
+              </label>
+            </div>
+            <div class="pause-audio-row pause-gfx-row" aria-label="Graphics & Performance">
+              <button id="btn-pause-gfx" class="pause-audio-btn" type="button"><span data-svg-ico="terminal"></span> GFX: BALANCED</button>
+              <div class="pause-gfx-right">
+                <span id="pause-fps-val" class="pause-fps-pill">-- FPS</span>
+                <button id="btn-pause-fps-hud" class="pause-mini-btn" type="button">FPS HUD: OFF</button>
+              </div>
+            </div>
+          </div>
+          <button id="btn-pause-settings-back" class="menu-btn pause-settings-back-btn" type="button">
+            <span>Back</span>
+            <span class="menu-badge">ESC</span>
+          </button>
         </div>
       </div>
     </div>

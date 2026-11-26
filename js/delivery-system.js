@@ -1,6 +1,17 @@
 (function (global) {
   'use strict';
 
+  function getDeliveryTypeSvg(modeType) {
+    if (modeType === 'sidedoor') {
+      return '<svg width="18" height="18" viewBox="0 0 28 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="9" y1="19" x2="7" y2="3"/><path d="M7 3 Q7 0.5 10 0.5"/><line x1="8" y1="11" x2="17" y2="15"/><line x1="9" y1="19" x2="19" y2="19"/><rect x="12" y="13" width="7" height="6" fill="currentColor" stroke="none"/><rect x="13" y="8" width="6" height="5" fill="currentColor" stroke="none"/><circle cx="9" cy="21" r="2.2" fill="currentColor" stroke="none"/><circle cx="18" cy="21" r="2.2" fill="currentColor" stroke="none"/></svg>';
+    }
+    if (modeType === 'warehouse') {
+      return '<svg width="22" height="15" viewBox="0 0 32 20" fill="currentColor" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><rect x="10" y="3" width="20" height="11"/><rect x="2" y="6" width="8" height="8"/><circle cx="5" cy="16" r="2.6" stroke="none"/><circle cx="25" cy="16" r="2.6" stroke="none"/></svg>';
+    }
+    return '<svg width="22" height="15" viewBox="0 0 32 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="11" y="3" width="16" height="11"/><rect x="3" y="6" width="8" height="8" fill="currentColor" stroke="none"/><circle cx="6" cy="16" r="2.6" fill="currentColor" stroke="none"/><circle cx="23" cy="16" r="2.6" fill="currentColor" stroke="none"/></svg>';
+  }
+  global.getDeliveryTypeSvg = getDeliveryTypeSvg;
+
   function createNpcAvoidanceHelper(env) {
     const cfg = env || {};
     const ORIGIN_X = Number(cfg.ORIGIN_X);
@@ -1429,16 +1440,7 @@
     // ==========================================
     // AUTONOMOUS VENDOR DELIVERY SYSTEM & STATE MACHINE
     // ==========================================
-    // Matches the 2D simulator's Pending Deliveries icons (drawCartSymbol / drawFilledTruckSymbol / drawOpenTruckSymbol)
-    function getDeliveryTypeSvg(modeType) {
-      if (modeType === 'sidedoor') {
-        return '<svg width="18" height="18" viewBox="0 0 28 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="9" y1="19" x2="7" y2="3"/><path d="M7 3 Q7 0.5 10 0.5"/><line x1="8" y1="11" x2="17" y2="15"/><line x1="9" y1="19" x2="19" y2="19"/><rect x="12" y="13" width="7" height="6" fill="currentColor" stroke="none"/><rect x="13" y="8" width="6" height="5" fill="currentColor" stroke="none"/><circle cx="9" cy="21" r="2.2" fill="currentColor" stroke="none"/><circle cx="18" cy="21" r="2.2" fill="currentColor" stroke="none"/></svg>';
-      }
-      if (modeType === 'warehouse') {
-        return '<svg width="22" height="15" viewBox="0 0 32 20" fill="currentColor" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><rect x="10" y="3" width="20" height="11"/><rect x="2" y="6" width="8" height="8"/><circle cx="5" cy="16" r="2.6" stroke="none"/><circle cx="25" cy="16" r="2.6" stroke="none"/></svg>';
-      }
-      return '<svg width="22" height="15" viewBox="0 0 32 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="11" y="3" width="16" height="11"/><rect x="3" y="6" width="8" height="8" fill="currentColor" stroke="none"/><circle cx="6" cy="16" r="2.6" fill="currentColor" stroke="none"/><circle cx="23" cy="16" r="2.6" fill="currentColor" stroke="none"/></svg>';
-    }
+    // Uses global.getDeliveryTypeSvg (drawCartSymbol / drawFilledTruckSymbol / drawOpenTruckSymbol)
 
     const pendingDeliveriesPanel = document.getElementById('pending-deliveries-panel');
     const pendingDeliveriesList = document.getElementById('pending-deliveries-list');
@@ -1708,21 +1710,38 @@
     const dqLetAllBtn = document.getElementById('dq-let-all-btn');
     const dqLetSelectedBtn = document.getElementById('dq-let-selected-btn');
 
-    const DOOR_SLOT_INDEX = { SD: 0, D1: 1, D2: 2, D3: 3, D4: 4 };
+    const MAX_OUTSIDE_WAIT_PER_TYPE = 3;
+    const INSIDE_SLOTS_BY_TYPE = {
+      sidedoor: [0, 1, 2],
+      warehouse: [3, 4, 5],
+      vendor_truck: [6, 7, 8]
+    };
+    // Center-aligned rows extending backward (+X) inside the 2.4m Side Door sightline (z = 7.20..9.60)
+    // Positioned at x >= 15.65 so hand carts (-1.05m -> x >= 14.60) stay well clear of the 13.20m door frame
     const OUTSIDE_WAIT_POSITIONS = [
-      { x: 15.65, z: 8.40 }, // Slot 0 (SD + cart)
-      { x: 14.35, z: 7.65 }, // Slot 1 (D1)
-      { x: 14.35, z: 9.15 }, // Slot 2 (D2)
-      { x: 15.55, z: 7.35 }, // Slot 3 (D3)
-      { x: 15.55, z: 9.45 }  // Slot 4 (D4)
+      { x: 15.65, z: 8.40 }, // Spot 0: Row 1 Center (front-most click target; cart at x = 14.60)
+      { x: 15.80, z: 7.45 }, // Spot 1: Row 1 North
+      { x: 15.80, z: 9.35 }, // Spot 2: Row 1 South
+      { x: 17.75, z: 8.40 }, // Spot 3: Row 2 Center
+      { x: 17.90, z: 7.45 }, // Spot 4: Row 2 North
+      { x: 17.90, z: 9.35 }, // Spot 5: Row 2 South
+      { x: 19.85, z: 8.40 }, // Spot 6: Row 3 Center
+      { x: 20.00, z: 7.45 }, // Spot 7: Row 3 North
+      { x: 20.00, z: 9.35 }  // Spot 8: Row 3 South
     ];
     const INSIDE_CHECKIN_POSITIONS = [
-      { x: 10.60, z: 8.40 }, // Slot 0 (SD + cart)
-      { x: 11.00, z: 7.10 }, // Slot 1 (D1)
-      { x: 11.00, z: 9.50 }, // Slot 2 (D2)
-      { x: 9.50, z: 7.00 }, // Slot 3 (D3)
-      { x: 9.50, z: 9.60 }  // Slot 4 (D4)
+      { x: 10.65, z: 8.40 },  // Spot 0 (SD #1 + cart)
+      { x: 10.85, z: 10.45 }, // Spot 1 (SD #2 + cart)
+      { x: 9.15, z: 10.45 },  // Spot 2 (SD #3 + cart)
+      { x: 11.00, z: 7.15 },  // Spot 3 (WH #1)
+      { x: 9.80, z: 7.15 },   // Spot 4 (WH #2)
+      { x: 8.60, z: 7.15 },   // Spot 5 (WH #3)
+      { x: 9.35, z: 8.40 },   // Spot 6 (VT #1)
+      { x: 8.25, z: 8.40 },   // Spot 7 (VT #2)
+      { x: 8.25, z: 9.75 }    // Spot 8 (VT #3)
     ];
+
+    let _queueSeqCounter = 1;
 
     const DeliverySystem = {
       sessions: [],
@@ -1765,6 +1784,68 @@
 
       getWaitingOutsideSessions: function () {
         return this.sessions.filter((s) => s.state === 'OUTSIDE_WAITING');
+      },
+
+      getWaitingOutsideSessionsByType: function (deliveryType) {
+        return this.sessions.filter((s) =>
+          s.state === 'OUTSIDE_WAITING' && s.delivery && s.delivery.type === deliveryType
+        );
+      },
+
+      canAcceptOutsideWaiting: function (deliveryType) {
+        const typeKey = deliveryType || 'sidedoor';
+        return this.getWaitingOutsideSessionsByType(typeKey).length < MAX_OUTSIDE_WAIT_PER_TYPE;
+      },
+
+      allocateOutsideSlot: function () {
+        const waitingUsed = new Set(
+          this.sessions
+            .filter((s) => s.state === 'OUTSIDE_WAITING')
+            .map((s) => Number(s.slotIdx))
+        );
+        for (let i = 0; i < OUTSIDE_WAIT_POSITIONS.length; i++) {
+          if (!waitingUsed.has(i)) return i;
+        }
+        return 0;
+      },
+
+      allocateInsideSlot: function (deliveryType) {
+        const typeKey = INSIDE_SLOTS_BY_TYPE[deliveryType] ? deliveryType : 'sidedoor';
+        const pool = INSIDE_SLOTS_BY_TYPE[typeKey];
+        const insideUsed = new Set(
+          this.sessions
+            .filter((s) => s.state !== 'OUTSIDE_WAITING' && s.state !== 'LEAVING')
+            .map((s) => Number(s.insideSlotIdx !== undefined ? s.insideSlotIdx : s.slotIdx))
+        );
+        for (let i = 0; i < pool.length; i++) {
+          if (!insideUsed.has(pool[i])) return pool[i];
+        }
+        return pool[0];
+      },
+
+      reflowOutsideWaitingQueue: function () {
+        const waiting = this.getWaitingOutsideSessions()
+          .slice()
+          .sort((a, b) => ((Number(a.slotIdx) || 0) - (Number(b.slotIdx) || 0)) || ((Number(a.queueSeq) || 0) - (Number(b.queueSeq) || 0)));
+        for (let idx = 0; idx < waiting.length; idx++) {
+          const s = waiting[idx];
+          const targetSlot = Math.min(OUTSIDE_WAIT_POSITIONS.length - 1, idx);
+          if (Number(s.slotIdx) !== targetSlot) {
+            s.slotIdx = targetSlot;
+            const dest = OUTSIDE_WAIT_POSITIONS[targetSlot];
+            if (dest) {
+              s._waitTargetPos = { x: dest.x, z: dest.z };
+            }
+          } else {
+            const dest = OUTSIDE_WAIT_POSITIONS[targetSlot];
+            if (dest && s.driver && s.driver.mesh) {
+              const dist = Math.hypot(dest.x - s.driver.mesh.position.x, dest.z - s.driver.mesh.position.z);
+              if (dist > 0.12) {
+                s._waitTargetPos = { x: dest.x, z: dest.z };
+              }
+            }
+          }
+        }
       },
 
       isSessionInSideDoorFrame: function (s) {
@@ -1948,14 +2029,14 @@
         if (this.getSessionForDelivery(d.id)) return false;
 
         if (d.type === 'sidedoor') {
-          if (this.getSessionForDoor('SD') || this.getWaitingOutsideSessions().length >= 5) {
+          if (!this.canAcceptOutsideWaiting('sidedoor')) {
             d.queuedAtGate = true;
             return false;
           }
           return Boolean(this.enqueueArrivedDelivery(d, 'SD'));
         }
         if (d.type === 'vendor_truck') {
-          if (this.getWaitingOutsideSessions().length >= 5) {
+          if (!this.canAcceptOutsideWaiting('vendor_truck')) {
             d.queuedAtGate = true;
             return false;
           }
@@ -1999,7 +2080,8 @@
 
       enqueueArrivedDelivery: function (d, doorKey) {
         if (!d || !doorKey || this.getSessionForDelivery(d.id)) return null;
-        if (this.getSessionForDoor(doorKey)) return null;
+        if (doorKey !== 'SD' && this.getSessionForDoor(doorKey)) return null;
+        if (!this.canAcceptOutsideWaiting(d.type)) return null;
 
         d.arrived = true;
         d.queuedAtGate = false;
@@ -2010,8 +2092,8 @@
           d.dialogueGreeting = `${d.driverName} from Apex Logistics (#${(d.invoiceNo || '400').slice(-3)}) docked at Bay ${d.dockBay} (${d.totalPallets} pallets). May I come in to check in?`;
         }
 
-        const slotIdx = (DOOR_SLOT_INDEX[doorKey] !== undefined) ? DOOR_SLOT_INDEX[doorKey] : 1;
-        const spawnCoord = OUTSIDE_WAIT_POSITIONS[slotIdx] || OUTSIDE_WAIT_POSITIONS[1];
+        const slotIdx = this.allocateOutsideSlot();
+        const spawnCoord = OUTSIDE_WAIT_POSITIONS[slotIdx] || OUTSIDE_WAIT_POSITIONS[0];
         const spawnPos = new THREE.Vector3(spawnCoord.x, 0, spawnCoord.z);
         const spawnYaw = -Math.PI / 2;
 
@@ -2027,6 +2109,9 @@
           delivery: d,
           doorKey: doorKey,
           slotIdx: slotIdx,
+          insideSlotIdx: undefined,
+          queueSeq: _queueSeqCounter++,
+          _waitTargetPos: null,
           driver: driverObj,
           cart: null,
           creditTote: null,
@@ -2168,21 +2253,30 @@
         renderPendingDeliveriesPanel();
       },
 
-      startWalkingIn: function (session) {
+      startWalkingIn: function (session, skipReflow) {
         if (!session || session.state !== 'OUTSIDE_WAITING') return;
         const d = session.delivery;
+        const insideSlot = this.allocateInsideSlot(d ? d.type : 'sidedoor');
+        session.insideSlotIdx = insideSlot;
+        session._waitTargetPos = null;
         const targetSpot = (d && d.type === 'vendor_truck' && d.dockBay && VENDOR_DRIVER_STANDS[d.dockBay])
           ? VENDOR_DRIVER_STANDS[d.dockBay]
-          : (INSIDE_CHECKIN_POSITIONS[session.slotIdx] || INSIDE_CHECKIN_POSITIONS[0]);
+          : (INSIDE_CHECKIN_POSITIONS[insideSlot] || INSIDE_CHECKIN_POSITIONS[0]);
         session.state = 'ENTERING';
-        session.waypoints = buildDeskSafeWaypoints(
-          session.driver && session.driver.mesh ? session.driver.mesh.position : { x: 12.2, z: 8.4 },
-          [
-            new THREE.Vector3(12.2, 0, 8.4),
-            new THREE.Vector3(targetSpot.x, 0, targetSpot.z)
-          ]
+        const curPos = (session.driver && session.driver.mesh) ? session.driver.mesh.position : { x: 14.95, z: 8.4 };
+        const rawPts = [];
+        if (Number(curPos.x) > 13.4) {
+          rawPts.push(new THREE.Vector3(14.3, 0, 8.4));
+        }
+        rawPts.push(
+          new THREE.Vector3(12.2, 0, 8.4),
+          new THREE.Vector3(targetSpot.x, 0, targetSpot.z)
         );
+        session.waypoints = buildDeskSafeWaypoints(curPos, rawPts);
         session.currentWaypointIdx = 0;
+        if (!skipReflow) {
+          this.reflowOutsideWaitingQueue();
+        }
         this.focusDelivery(d.id);
         this.updateDeliveryHud();
       },
@@ -2192,7 +2286,8 @@
         const targets = this.getWaitingOutsideSessions().filter((s) => ids.indexOf(s.delivery.id) !== -1);
         if (!targets.length) return;
         openSideDoor();
-        targets.forEach((s) => this.startWalkingIn(s));
+        targets.forEach((s) => this.startWalkingIn(s, true));
+        this.reflowOutsideWaitingQueue();
       },
 
       interactWithSession: function (session) {
@@ -2292,8 +2387,9 @@
             : getVendorPostStand(d.dockBay, session);
           totePos = new THREE.Vector3(Math.min(10.5, finalStand.x + 0.72), 0, Math.max(2.2, finalStand.z - 0.10));
         } else {
-          const stand = INSIDE_CHECKIN_POSITIONS[session.slotIdx] || INSIDE_CHECKIN_POSITIONS[0];
-          const zOff = (session.slotIdx === 2 || session.slotIdx === 4) ? -0.62 : 0.62;
+          const iSlot = (session.insideSlotIdx !== undefined) ? session.insideSlotIdx : (session.slotIdx || 0);
+          const stand = INSIDE_CHECKIN_POSITIONS[iSlot] || INSIDE_CHECKIN_POSITIONS[0];
+          const zOff = (iSlot === 2 || iSlot === 4) ? -0.62 : 0.62;
           totePos = new THREE.Vector3(stand.x - 0.55, 0, stand.z + zOff);
         }
         session.creditTote = createCreditTote3D(totePos, d);
@@ -2401,7 +2497,8 @@
         if (!truck) return;
         const session = this.getSessionForDelivery(truck.id);
         if (!session || session.state === 'LEAVING' || session.state === 'WAITING_SIGN') return;
-        const standSpot = INSIDE_CHECKIN_POSITIONS[session.slotIdx] || INSIDE_CHECKIN_POSITIONS[1];
+        const iSlot = (session.insideSlotIdx !== undefined) ? session.insideSlotIdx : (session.slotIdx || 3);
+        const standSpot = INSIDE_CHECKIN_POSITIONS[iSlot] || INSIDE_CHECKIN_POSITIONS[3];
         session.state = 'WAREHOUSE_RETURNING_FOR_SIGN';
         session.waypoints = buildDeskSafeWaypoints(
           session.driver && session.driver.mesh ? session.driver.mesh.position : null,
@@ -2447,10 +2544,10 @@
           ]);
           session.currentWaypointIdx = 0;
         } else {
-          const zSlot = ((session.slotIdx || 0) % 3 - 1) * 0.50;
+          const zSlot = (((session.insideSlotIdx !== undefined ? session.insideSlotIdx : session.slotIdx) || 0) % 3 - 1) * 0.50;
           session.state = 'WALKING_TO_EXIT';
           session.waypoints = buildDeskSafeWaypoints(curPos, [
-            new THREE.Vector3(11.15, 0, 8.4 + zSlot)
+            new THREE.Vector3(10.95, 0, 8.4 + zSlot)
           ]);
           session.currentWaypointIdx = 0;
         }
@@ -2557,6 +2654,30 @@
         if (!session || !session.driver) return;
 
         if (session.state === 'OUTSIDE_WAITING') {
+          if (session._waitTargetPos && session.driver && session.driver.mesh) {
+            const p = session.driver.mesh.position;
+            const dx = session._waitTargetPos.x - p.x;
+            const dz = session._waitTargetPos.z - p.z;
+            const dist = Math.hypot(dx, dz);
+            if (dist <= 0.08) {
+              p.x = session._waitTargetPos.x;
+              p.z = session._waitTargetPos.z;
+              session._waitTargetPos = null;
+              session.driver.mesh.rotation.y = -Math.PI / 2;
+              this.syncCartToDriverHands(session);
+              session.driver.updateAnimation(false, dt);
+              session.driver.trackPlayerGaze(hooks.getPlayer().position, dt);
+            } else {
+              const step = Math.min(dist, 2.5 * Math.max(0, dt || 0));
+              p.x += (dx / dist) * step;
+              p.z += (dz / dist) * step;
+              const walkYaw = Math.atan2(dx, dz);
+              session.driver.mesh.rotation.y = walkYaw;
+              this.syncCartToDriverHands(session);
+              session.driver.updateAnimation(true, dt);
+            }
+            return;
+          }
           session.driver.updateAnimation(false, dt);
           session.driver.trackPlayerGaze(hooks.getPlayer().position, dt);
           return;
@@ -3048,6 +3169,8 @@
             deliveryId: s.delivery ? s.delivery.id : null,
             doorKey: s.doorKey,
             slotIdx: Number(s.slotIdx) || 0,
+            insideSlotIdx: s.insideSlotIdx !== undefined ? Number(s.insideSlotIdx) : undefined,
+            queueSeq: Number(s.queueSeq) || 0,
             state: s.state,
             waypoints: (s.waypoints || []).map((wp) => ({
               x: Number(wp.x) || 0,
@@ -3126,6 +3249,9 @@
             delivery: d,
             doorKey: doorKey,
             slotIdx: Number(ss.slotIdx) || 0,
+            insideSlotIdx: ss.insideSlotIdx !== undefined ? Number(ss.insideSlotIdx) : undefined,
+            queueSeq: Number(ss.queueSeq) || (_queueSeqCounter++),
+            _waitTargetPos: null,
             driver: driverObj,
             cart: null,
             creditTote: null,
@@ -3256,7 +3382,10 @@
       if (!dqListEl) return;
       const waiting = DeliverySystem.getWaitingOutsideSessions();
       if (dqSlotSummaryEl) {
-        dqSlotSummaryEl.textContent = `WAITING OUTSIDE: ${waiting.length} / 5 (D1-D4 + SD)`;
+        const whWait = DeliverySystem.getWaitingOutsideSessionsByType('warehouse').length;
+        const vtWait = DeliverySystem.getWaitingOutsideSessionsByType('vendor_truck').length;
+        const sdWait = DeliverySystem.getWaitingOutsideSessionsByType('sidedoor').length;
+        dqSlotSummaryEl.textContent = `WAITING OUTSIDE: ${waiting.length} / 9 (WH ${whWait}/3 · VT ${vtWait}/3 · SD ${sdWait}/3)`;
       }
       const hasWh = waiting.some((s) => s.delivery && s.delivery.type === 'warehouse');
       if (dqPriorityWarnEl) {

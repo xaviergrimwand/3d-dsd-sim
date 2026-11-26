@@ -100,7 +100,9 @@
     '#shortage-qty-modal',
     '#game-alert-modal',
     '#main-menu-overlay',
-    '#pause-menu-overlay'
+    '#pause-menu-overlay',
+    '#tutorial-hud-card.active',
+    '#tutorial-hub-modal.active'
   ].join(', ');
 
   const HUD_RECT_SELECTOR = [
@@ -124,7 +126,9 @@
     '#mobile-btn-dock .touch-btn',
     '#scanner-device',
     '#printed-receipt-hud',
-    '#overage-mode-pill'
+    '#overage-mode-pill',
+    '#tutorial-hud-card.active',
+    '#tutorial-hub-modal.active'
   ].join(', ');
 
   global.createHudOverlayPriorityChecker = function createHudOverlayPriorityChecker(opts) {
@@ -140,6 +144,7 @@
         if (el.closest('#retro-digital-clock:not(.calendar-open) #hud-clock-calendar')) return false;
         if (el.closest('#hud-remaining-tracker:not(.legend-open) #hud-remaining-legend')) return false;
         if (el.closest('#hud-msg-center:not(.open) #hud-msg-drawer')) return false;
+        if (el.closest('#tutorial-hud-card:not(.active), #tutorial-hub-modal:not(.active)')) return false;
       }
       if (win && typeof win.getComputedStyle === 'function') {
         const st = win.getComputedStyle(el);
@@ -165,6 +170,7 @@
         if (el.closest('#retro-digital-clock:not(.calendar-open) #hud-clock-calendar')) return false;
         if (el.closest('#hud-remaining-tracker:not(.legend-open) #hud-remaining-legend')) return false;
         if (el.closest('#hud-msg-center:not(.open) #hud-msg-drawer')) return false;
+        if (el.closest('#tutorial-hud-card:not(.active), #tutorial-hub-modal:not(.active)')) return false;
       }
       if (scannerEl && (el === scannerEl || (scannerEl.contains && scannerEl.contains(el)))) {
         return true;
@@ -208,29 +214,28 @@
       if (!s || !s.delivery) return;
       const d = s.delivery;
       const carrier = String(d.carrier || d.vendorName || 'Driver');
-      const deptCode = d.deptNo ? ('D' + String(d.deptNo).padStart(2, '0')) : '';
-      const isWh = d.type === 'warehouse';
+      const deliveryType = String(d.type || 'sidedoor');
+      const isWh = deliveryType === 'warehouse';
 
       if (s.state === 'WAITING_EXIT' || s.state === 'WALKING_TO_EXIT') {
         exiters.push({
           direction: 'exit',
           badgeText: 'EXIT',
           carrier: carrier,
-          detailText: s.state === 'WAITING_EXIT' ? 'AT DOOR' : 'EXITING',
+          deliveryType: deliveryType,
+          detailText: s.state === 'WAITING_EXIT' ? '' : 'EXITING',
           isWh: isWh,
           isLate: false
         });
       } else if (s.state === 'OUTSIDE_WAITING') {
         const etaMins = (Number(d.etaHour) || 6) * 60 + (Number(d.etaMinute) || 0);
         const isLate = nowMinutes > etaMins + 15;
-        const typeTag = isWh
-          ? (d.dockBay ? ('Dock ' + d.dockBay) : 'D01')
-          : (d.type === 'vendor_truck' ? ('VT' + (d.dockBay ? ' Dock ' + d.dockBay : '')) : deptCode || 'SD');
         waiters.push({
           direction: 'enter',
-          badgeText: isWh ? 'WH' : 'ENTER',
+          badgeText: 'ENTER',
           carrier: carrier,
-          detailText: typeTag,
+          deliveryType: deliveryType,
+          detailText: '',
           isWh: isWh,
           isLate: isLate,
           etaMins: etaMins
@@ -244,6 +249,19 @@
     });
 
     return exiters.concat(waiters);
+  };
+
+  global.countDoorQueueSessions = function countDoorQueueSessions(sessions) {
+    if (!Array.isArray(sessions) || sessions.length === 0) return 0;
+    let total = 0;
+    for (let i = 0; i < sessions.length; i++) {
+      const s = sessions[i];
+      if (!s || !s.delivery) continue;
+      if (s.state === 'OUTSIDE_WAITING' || s.state === 'WAITING_EXIT' || s.state === 'WALKING_TO_EXIT') {
+        total++;
+      }
+    }
+    return total;
   };
 
   /**
@@ -1304,7 +1322,8 @@
     }
 
     function isBlockingModalOpen() {
-      return Boolean(uiState.alertModalOpen || uiState.terminalModalOpen || uiState.doorQueueModalOpen || uiState.bolModalOpen || isPhase2ModalOpen() || (window.DSDGame && window.DSDGame.isModalOpen()));
+      const tutHubOpen = Boolean(window.DSDTutorial && typeof window.DSDTutorial.isHubOpen === 'function' && window.DSDTutorial.isHubOpen());
+      return Boolean(uiState.alertModalOpen || uiState.terminalModalOpen || uiState.doorQueueModalOpen || uiState.bolModalOpen || tutHubOpen || isPhase2ModalOpen() || (window.DSDGame && window.DSDGame.isModalOpen()));
     }
 
     function syncNightDropToolButtons() {
@@ -5709,14 +5728,7 @@
       syncActiveFloorJack();
       positionHitchedPallet();
 
-      camera.position.copy(player.position);
-      if (playerEuler) {
-        playerEuler.set(player.pitch, player.yaw, 0, 'YXZ');
-        camera.quaternion.setFromEuler(playerEuler);
-      } else {
-        const euler = new THREE.Euler(player.pitch, player.yaw, 0, 'YXZ');
-        camera.quaternion.setFromEuler(euler);
-      }
+      syncCameraToPlayer();
     }
 
     // --- MINIMAP RENDERING ---
@@ -5729,6 +5741,18 @@
     let lastHudSyncMs = -1;
     let lastCanvasCursor = '';
     const playerEuler = (typeof THREE.Euler === 'function') ? new THREE.Euler(0, 0, 0, 'YXZ') : null;
+
+    function syncCameraToPlayer() {
+      camera.position.copy(player.position);
+      if (playerEuler) {
+        playerEuler.set(player.pitch, player.yaw, 0, 'YXZ');
+        camera.quaternion.setFromEuler(playerEuler);
+      } else if (typeof THREE.Euler === 'function') {
+        const euler = new THREE.Euler(player.pitch, player.yaw, 0, 'YXZ');
+        camera.quaternion.setFromEuler(euler);
+      }
+    }
+    syncCameraToPlayer();
 
     function buildMinimapStaticBg(cw, ch) {
       if (!minimapBgCanvas) {
@@ -6202,7 +6226,7 @@
         sessions: sessions,
         nowMinutes: snap.totalMinutes
       });
-      const key = rows.map((r) => r.direction + '|' + r.badgeText + '|' + r.carrier + '|' + r.detailText + '|' + (r.isLate ? 1 : 0)).join(';');
+      const key = rows.map((r) => r.direction + '|' + r.badgeText + '|' + r.carrier + '|' + (r.deliveryType || '') + '|' + r.detailText + '|' + (r.isLate ? 1 : 0)).join(';');
       if (!force && key === lastBeaconsPopupKey) return;
       lastBeaconsPopupKey = key;
 
@@ -6218,15 +6242,19 @@
 
       doorLightsRowsEl.innerHTML = rows.map((r) => {
         const rowCls = r.direction === 'exit' ? 'is-exit' : (r.isWh ? 'is-wh' : '');
-        const dirCls = r.direction === 'exit' ? 'exit' : (r.isWh ? 'wh' : 'enter');
+        const dirCls = r.direction === 'exit' ? 'exit' : 'enter';
         const lateHtml = r.isLate ? '<span class="dlp-pop-late">LATE</span>' : '';
+        const typeIconHtml = (typeof global.getDeliveryTypeSvg === 'function' && r.deliveryType)
+          ? '<span class="dlp-pop-type-ico" aria-hidden="true">' + global.getDeliveryTypeSvg(r.deliveryType) + '</span>'
+          : '';
+        const detailHtml = r.detailText ? '<span>' + escPopupHtml(r.detailText) + '</span>' : '';
         return (
           '<div class="dlp-pop-row ' + rowCls + '">' +
             '<span class="dlp-pop-left">' +
               '<span class="dlp-pop-dir ' + dirCls + '">' + escPopupHtml(r.badgeText) + '</span>' +
               '<span class="dlp-pop-name">' + escPopupHtml(r.carrier) + '</span>' +
             '</span>' +
-            '<span class="dlp-pop-meta">' + lateHtml + '<span>' + escPopupHtml(r.detailText) + '</span></span>' +
+            '<span class="dlp-pop-meta">' + lateHtml + typeIconHtml + detailHtml + '</span>' +
           '</div>'
         );
       }).join('');
@@ -6275,11 +6303,13 @@
       }
 
       if (sdQueueTxtEl || whDriverTagEl) {
-        const waiting = (typeof DeliverySystem !== 'undefined' && DeliverySystem && typeof DeliverySystem.getWaitingOutsideSessions === 'function')
-          ? DeliverySystem.getWaitingOutsideSessions()
+        const sessions = (typeof DeliverySystem !== 'undefined' && DeliverySystem && Array.isArray(DeliverySystem.sessions))
+          ? DeliverySystem.sessions
           : [];
-        const count = waiting.length;
-        const hasWh = waiting.some((s) => s && s.delivery && s.delivery.type === 'warehouse');
+        const count = global.countDoorQueueSessions(sessions);
+        const hasWh = sessions.some((s) =>
+          s && s.state === 'OUTSIDE_WAITING' && s.delivery && s.delivery.type === 'warehouse'
+        );
         if (sdQueueTxtEl && lastSdQueueCount !== count) {
           lastSdQueueCount = count;
           sdQueueTxtEl.textContent = String(count);
@@ -6410,6 +6440,7 @@
         updateStagedCounter: updateStagedCounter,
         getActiveVendorDelivery: () => DeliverySystem.activeDelivery,
         getActiveVendorDeliveries: () => DeliverySystem.sessions.map((s) => s.delivery),
+        canAcceptWaitingDriver: (deliveryType) => DeliverySystem.canAcceptOutsideWaiting(deliveryType),
         onTruckArrived: (truck) => {
           if (truck && truck.dockBay) {
             DeliverySystem.enqueueArrivedDelivery(truck, 'D' + truck.dockBay);
@@ -6534,6 +6565,7 @@
       player.position.set(PLAYER_SPAWN.x, PLAYER_SPAWN.y, PLAYER_SPAWN.z);
       player.yaw = PLAYER_SPAWN.yaw;
       player.pitch = 0;
+      syncCameraToPlayer();
       player.hitchedPallet = null;
       player.hasElectricJack = false;
       if (hitchStatusCard) hitchStatusCard.style.display = 'none';
@@ -6827,7 +6859,7 @@
           player.position.set(PLAYER_SPAWN.x, PLAYER_SPAWN.y, PLAYER_SPAWN.z);
           player.yaw = PLAYER_SPAWN.yaw;
           player.pitch = 0;
-          camera.position.copy(player.position);
+          syncCameraToPlayer();
           player.hitchedPallet = null;
           player.hasElectricJack = false;
           jackBattery = 100;

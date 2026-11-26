@@ -6174,6 +6174,8 @@ tr.inv-short-pickable:hover {
 .pause-card {
   width: 100%;
   max-width: 380px;
+  max-height: calc(100dvh - 32px);
+  overflow-y: auto;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -6263,6 +6265,56 @@ tr.inv-short-pickable:hover {
   max-width: 100%;
 }
 
+.pause-settings-card {
+  display: none;
+  max-width: 100%;
+  gap: 10px;
+}
+
+#pause-menu-overlay.settings-open .pause-actions {
+  display: none;
+}
+
+#pause-menu-overlay.settings-open .pause-settings-card {
+  display: flex;
+}
+
+.pause-settings-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 2px 2px 6px;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.22);
+}
+
+.pause-settings-title {
+  font-family: "Courier New", Courier, monospace;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 1.4px;
+  color: #38bdf8;
+}
+
+.pause-settings-sub {
+  font-family: "Courier New", Courier, monospace;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.8px;
+  color: #94a3b8;
+}
+
+.pause-settings-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+}
+
+.pause-settings-back-btn {
+  margin-top: 2px;
+}
+
 .pause-audio-row {
   width: 100%;
   display: flex;
@@ -6311,7 +6363,8 @@ tr.inv-short-pickable:hover {
   cursor: pointer;
 }
 
-#pause-vol-val {
+#pause-vol-val,
+#pause-music-val {
   min-width: 34px;
   text-align: right;
   font-variant-numeric: tabular-nums;
@@ -7794,7 +7847,7 @@ tr.inv-short-pickable:hover {
   display: flex;
   flex-direction: column;
   gap: 4px;
-  max-height: 148px;
+  max-height: 196px;
   overflow-y: auto;
 }
 .dlp-pop-empty {
@@ -7865,12 +7918,30 @@ tr.inv-short-pickable:hover {
 .dlp-pop-meta {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: 5px;
   font-size: 9px;
   font-weight: 800;
   color: #94a3b8;
   flex-shrink: 0;
   white-space: nowrap;
+}
+.dlp-pop-type-ico {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #cbd5e1;
+  line-height: 1;
+}
+.dlp-pop-type-ico svg {
+  width: 18px;
+  height: 13px;
+  display: block;
+}
+.dlp-pop-row.is-wh .dlp-pop-type-ico {
+  color: #fca5a5;
+}
+.dlp-pop-row.is-exit .dlp-pop-type-ico {
+  color: #86efac;
 }
 .dlp-pop-late {
   padding: 0 4px;

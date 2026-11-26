@@ -513,7 +513,7 @@
       const actions = [{ key: 'E / Click', touch: 'PICK UP', touchCls: 'use', verb: isPlaced ? `Pull Supply Case from ${binLabel || '060'}` : 'Pick Up & Slot on 060 Steel' }];
       if (!orderLocked) actions.push({ key: 'F', touch: 'SCAN SKU', touchCls: 'scan', verb: 'Order SKU in Supply Mode' });
       return {
-        tone: isPlaced ? 'info' : 'warn',
+        tone: isPlaced ? 'info' : 'ok',
         icon: isPlaced ? 'shelf' : 'box',
         title: bc.name || 'Store Supply Case',
         subtitle: isPlaced ? 'Claims & Supplies Steel' : 'Supply Delivery Floor Pallet',
@@ -613,6 +613,24 @@
     }
 
     const palletLabel = (tgt.pallet && tgt.pallet.label) || 'Pallet';
+    if (tgt.type === 'spawn_pallet') {
+      return {
+        tone: 'ok',
+        icon: 'box',
+        title: palletLabel,
+        subtitle: held ? `Carrying: ${held.name}` : 'Backstock Pallet Spawn Point',
+        catChip: 'NEW PALLET',
+        catChipCls: 'hdr-ok',
+        chips: [{ cls: 'status-ok', text: 'SPAWN EMPTY PALLET' }],
+        actions: [{
+          key: 'E / Click',
+          touch: 'SPAWN PALLET',
+          touchCls: 'use',
+          verb: `Place Case & Create ${palletLabel}`
+        }]
+      };
+    }
+
     return {
       tone: tgt.valid === false ? 'crit' : 'info',
       icon: 'box',

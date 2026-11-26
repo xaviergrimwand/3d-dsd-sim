@@ -2058,14 +2058,14 @@
     sideRollupDoor.greenLens = sideBeacon.greenLens;
     sideRollupDoor.beaconCtrl = sideBeacon;
 
-    // Outside Delivery Pad visible through open door
-    const outdoorPad = new THREE.Mesh(new THREE.PlaneGeometry(6.0, 4.0), new THREE.MeshStandardMaterial({ color: 0x334155, roughness: 0.9 }));
+    // Outside Delivery Pad visible through open door (depth for 3 center-aligned rows backward)
+    const outdoorPad = new THREE.Mesh(new THREE.PlaneGeometry(8.6, 4.4), new THREE.MeshStandardMaterial({ color: 0x334155, roughness: 0.9 }));
     outdoorPad.rotation.x = -Math.PI / 2;
-    outdoorPad.position.set(3.0, 0, 0);
+    outdoorPad.position.set(4.3, 0, 0);
     sideRollupGroup.add(outdoorPad);
 
-    // Outside rounded bollards
-    [-1.4, 1.4].forEach(bz => {
+    // Outside rounded bollards framing Side Door waiting corridor
+    [-1.65, 1.65].forEach(bz => {
       const obollard = createRoundedBollard(0.14, 1.1);
       obollard.position.set(1.5, 0, bz);
       sideRollupGroup.add(obollard);

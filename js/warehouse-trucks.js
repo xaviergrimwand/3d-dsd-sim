@@ -1237,6 +1237,9 @@
 
   function arriveWarehouseTruck(truck) {
     if (!truck || truck.status !== 'SCHEDULED') return false;
+    if (typeof state.hooks.canAcceptWaitingDriver === 'function' && !state.hooks.canAcceptWaitingDriver('warehouse')) {
+      return false;
+    }
     const bay = findAvailableBay(truck.preferredBay || truck.dockBay, BAY_PREFERENCE_WAREHOUSE);
     if (!bay) return false;
 
