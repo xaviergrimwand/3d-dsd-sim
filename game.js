@@ -12,7 +12,7 @@
    * - .XX     : minor milestone (2 digits)
    * - -XXXX   : incremental patches / bug fixes (4 digits)
    */
-  const GAME_VERSION = 'v0.1.02-0002';
+  const GAME_VERSION = 'v0.1.03-0001';
   global.DSD_GAME_VERSION = GAME_VERSION;
 
   const state = {
@@ -414,6 +414,9 @@
       {
         outstandingNightDrops: (global.DSDReceipts && typeof global.DSDReceipts.getOutstandingNightDropCount === 'function')
           ? global.DSDReceipts.getOutstandingNightDropCount()
+          : 0,
+        openInitialReceipts: (global.DSDReceipts && typeof global.DSDReceipts.getInitialReceipts === 'function')
+          ? global.DSDReceipts.getInitialReceipts().length
           : 0
       },
       typeof state.hooks.getUnfinishedWork === 'function' ? state.hooks.getUnfinishedWork() : {}

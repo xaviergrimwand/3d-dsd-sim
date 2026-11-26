@@ -1924,6 +1924,7 @@
     });
     lockHint.addEventListener('click', requestLock);
     renderer.domElement.addEventListener('click', (e) => {
+      if (!isPointerLocked && hudOverlayPriority.isPointOverHud(e.clientX, e.clientY)) return;
       if (mouseDragMoved >= 6) return;
       if (Date.now() - lastTouchTapMs < 450) return;
       if (handleDirectBoxClick(e.clientX, e.clientY)) {
@@ -1998,7 +1999,7 @@
     });
 
     renderer.domElement.addEventListener('mousedown', (e) => {
-      if (isBlockingModalOpen()) return;
+      if (isBlockingModalOpen() || (!isPointerLocked && hudOverlayPriority.isPointOverHud(e.clientX, e.clientY))) return;
       updatePointerNDC(e.clientX, e.clientY);
       mouseDownPos.x = e.clientX;
       mouseDownPos.y = e.clientY;

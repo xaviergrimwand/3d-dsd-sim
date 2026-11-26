@@ -330,8 +330,8 @@
       id: 'gui_intro',
       chapter: 1,
       title: '1.1 Command Bar Overview',
-      desc: 'Welcome to your **Command Bar** — your live dispatch ribbon across the top of the screen. Next, we will step through every panel from **left to right** so you know each panel works and its shortcut key.',
-      hudSpotlights: () => [{ selector: '#command-ribbon-bg', label: 'COMMAND BAR', role: 'target' }],
+      desc: 'Welcome to your **Command Bar** — your live dispatch ribbon across the top of the screen. Next, we will step through every panel from **left to right** so you know how each panel works and its shortcut key.',
+      hudSpotlights: () => [{ selector: '#command-ribbon-bg', label: 'COMMAND BAR', role: 'target', padding: 0 }],
       worldTarget: () => null,
       checklist: () => [
         { label: 'Click Next to tour the Shift Clock [C] on the far left', done: false }
@@ -341,7 +341,7 @@
       id: 'gui_clock',
       chapter: 1,
       title: '1.2 Shift Clock & Calendar [C]',
-      desc: 'On the far left is your **Shift Clock**. Shifts run `6:00 AM` to `12:00 PM` (turning amber in overtime). During training, the date reads `TUTORIAL`; hover or press `[C]` to open the **February 1996 Calendar**.',
+      desc: 'On the far left is your **Shift Clock**. Shifts run `6:00 AM` to `2:00 PM`, and you can punch out with no penalty starting at `12:00 PM` once all work is finished. Overtime accrues from `2:00 PM` to `3:00 PM` (pulsing red), ending in a forced clock-out at `3:00 PM`. During training, the date reads `TUTORIAL`; hover or press `[C]` to open the **February 1996 Calendar**.',
       hudSpotlights: () => resolveCommandBarSpotlight(
         { selector: '#retro-digital-clock', label: 'SHIFT CLOCK [C]', role: 'target' },
         '#retro-digital-clock.calendar-open',
@@ -371,9 +371,9 @@
       id: 'gui_message_log',
       chapter: 1,
       title: '1.4 Message Log [M] / [L]',
-      desc: 'In the center sits the **Message Log**. All dock alerts, truck arrivals, door alarms, and compliance updates appear here. Click the bar or press `[M]` (or `[L]`) anytime to filter past messages.',
+      desc: 'In the center sits the **Message Log**. All dock alerts, truck arrivals, door alarms, and compliance updates appear here. Click the bar or press `[M]` (or `[L]`) anytime to review and filter past messages.',
       hudSpotlights: () => resolveCommandBarSpotlight(
-        { selector: '#hud-msg-center', label: 'MESSAGE LOG [M]', role: 'target' },
+        { selector: '#hud-msg-bar', label: 'MESSAGE LOG [M]', role: 'target' },
         '#hud-msg-center.open',
         { selector: '#hud-msg-drawer', label: 'MESSAGE LOG HISTORY', role: 'target' }
       ),
@@ -385,7 +385,7 @@
     {
       id: 'gui_pending_deliveries',
       chapter: 1,
-      title: '1.5 Pending Deliveries Dispatch [P]',
+      title: '1.5 Pending Deliveries [P]',
       desc: '**Pending Deliveries** lists scheduled Warehouse Trucks and DSD Vendors with ETAs, carrier names, assigned bay/door, priority warnings, and countdown timers. Click the panel or press `[P]` to expand the full schedule.',
       hudSpotlights: () => resolveCommandBarSpotlight(
         { selector: '#pending-deliveries-panel', label: 'PENDING DELIVERIES [P]', role: 'target' },
@@ -1128,8 +1128,7 @@
         <div class="tut-card-hdr">
           <span class="tut-ch-pill" id="tut-ch-label">CHAPTER 1 OF 8</span>
           <div class="tut-hdr-right">
-            <span class="tut-training-tag">TUTORIAL · NO SAVE</span>
-            <button type="button" class="tut-dock-toggle" id="tut-btn-collapse" title="Collapse or expand card">_</button>
+            <button type="button" class="tut-dock-toggle" id="tut-btn-collapse" title="Minimize tutorial window to bottom" aria-label="Minimize tutorial window">&#9660;</button>
           </div>
         </div>
         <div class="tut-card-body">
@@ -1207,12 +1206,14 @@
       state.dom.btnNext.addEventListener('click', () => nextStep());
     }
     if (state.dom.btnCollapse) {
+      syncCollapseButton();
       state.dom.btnCollapse.addEventListener('click', () => {
         state.collapsed = !state.collapsed;
         if (state.dom.hudCard) {
           state.dom.hudCard.classList.toggle('is-collapsed', state.collapsed);
         }
-        state.dom.btnCollapse.textContent = state.collapsed ? '+' : '_';
+        syncCollapseButton();
+        syncBottomDockLayout();
       });
     }
     if (state.dom.hubPlay) {
@@ -1265,10 +1266,13 @@
       const el = document.querySelector(sp.selector);
       if (!isElementVisible(el)) return;
       const r = el.getBoundingClientRect();
-      const x = Math.max(3, Math.round(r.left - 4));
-      const y = Math.max(3, Math.round(r.top - 4));
-      const w = Math.max(12, Math.min(vw - x - 3, Math.round(r.width + 8)));
-      const h = Math.max(12, Math.min(vh - y - 3, Math.round(r.height + 8)));
+      const pad = Number.isFinite(sp.padding) ? sp.padding : 4;
+      const x = Math.max(3, Math.round(r.left - pad));
+      const y = Math.max(3, Math.round(r.top - pad));
+      const right = Math.min(vw - 3, Math.round(r.right + pad));
+      const bottom = Math.min(vh - 3, Math.round(r.bottom + pad));
+      const w = Math.max(12, right - x);
+      const h = Math.max(12, bottom - y);
       rects.push({
         x: x,
         y: y,
@@ -1303,8 +1307,8 @@
       if (box.label) {
         const badgeTop = box.y > 28 ? (box.y - 24) : (box.y + box.h + 6);
         const badgeLeft = Math.max(6, Math.min((global.innerWidth || 1000) - 210, box.x));
-        const icoName = box.role === 'source' ? 'receipt' : 'checkCircle';
-        badgesHtml += `<div class="tut-callout-tag ${box.role === 'source' ? 'is-source' : ''}" style="left:${badgeLeft}px;top:${badgeTop}px;">${fmtIco(icoName)}${escapeHtml(box.label)}</div>`;
+        const icoHtml = box.role === 'source' ? fmtIco('receipt') : '';
+        badgesHtml += `<div class="tut-callout-tag ${box.role === 'source' ? 'is-source' : ''}" style="left:${badgeLeft}px;top:${badgeTop}px;">${icoHtml}${escapeHtml(box.label)}</div>`;
       }
     });
 
@@ -1387,6 +1391,75 @@
     );
   }
 
+  function syncCollapseButton() {
+    const btn = state.dom && state.dom.btnCollapse;
+    if (!btn) return;
+    btn.textContent = state.collapsed ? '\u25B2' : '\u25BC';
+    const label = state.collapsed ? 'Restore tutorial window' : 'Minimize tutorial window to bottom';
+    btn.title = label;
+    btn.setAttribute('aria-label', label);
+  }
+
+  function syncBottomDockLayout() {
+    if (typeof document === 'undefined') return;
+    const tutEl = state.dom && state.dom.hudCard ? state.dom.hudCard : document.getElementById('tutorial-hud-card');
+    const prhEl = document.getElementById('printed-receipt-hud');
+    if (tutEl) {
+      tutEl.style.left = '';
+      tutEl.style.right = '';
+      tutEl.style.transform = '';
+      tutEl.style.maxWidth = '';
+    }
+    if (prhEl) {
+      prhEl.style.left = '';
+      prhEl.style.right = '';
+      prhEl.style.transform = '';
+      prhEl.style.maxWidth = '';
+    }
+
+    const tutAtBottom = Boolean(
+      state.active &&
+      !state.hubOpen &&
+      !isSystemOverlayBlockingTutorial() &&
+      tutEl &&
+      tutEl.classList.contains('active') &&
+      (tutEl.classList.contains('is-collapsed') || tutEl.classList.contains('dock-bottom'))
+    );
+    const prhVisible = Boolean(prhEl && prhEl.style.display !== 'none' && isElementVisible(prhEl));
+    if (!tutAtBottom || !prhVisible) return;
+
+    const vw = global.innerWidth || 1280;
+    const gap = 14;
+    const containerEl = document.getElementById('game-container');
+    const scannerReserve = (containerEl && containerEl.classList.contains('scanner-open') && vw >= 820 && vw <= 1220) ? 352 : 12;
+    const safeLeft = 12;
+    const safeRight = Math.max(safeLeft + 260, vw - scannerReserve);
+    const avail = safeRight - safeLeft;
+
+    const prhRawW = Math.ceil(prhEl.getBoundingClientRect().width) || 318;
+    const tutRawW = Math.ceil(tutEl.getBoundingClientRect().width) || (tutEl.classList.contains('is-collapsed') ? 340 : 470);
+    let tutW = tutRawW;
+    let prhW = prhRawW;
+
+    if (tutW + gap + prhW > avail) {
+      prhW = Math.min(prhRawW, Math.max(150, Math.floor((avail - gap) * 0.42)));
+      tutW = Math.max(180, avail - gap - prhW);
+      tutEl.style.maxWidth = tutW + 'px';
+      prhEl.style.maxWidth = prhW + 'px';
+      tutW = Math.min(tutW, Math.ceil(tutEl.getBoundingClientRect().width) || tutW);
+      prhW = Math.min(prhW, Math.ceil(prhEl.getBoundingClientRect().width) || prhW);
+    }
+
+    const totalW = tutW + gap + prhW;
+    const groupLeft = Math.max(safeLeft, Math.round(safeLeft + (avail - totalW) / 2));
+    tutEl.style.left = groupLeft + 'px';
+    tutEl.style.right = 'auto';
+    tutEl.style.transform = 'none';
+    prhEl.style.left = (groupLeft + tutW + gap) + 'px';
+    prhEl.style.right = 'auto';
+    prhEl.style.transform = 'none';
+  }
+
   function render() {
     const d = state.dom;
     if (!d.hudCard || !d.hubModal) return;
@@ -1394,6 +1467,7 @@
     if (!state.active) {
       d.hubModal.classList.remove('active');
       d.hudCard.classList.remove('active');
+      syncBottomDockLayout();
       if (d.spotlightLayer) d.spotlightLayer.classList.remove('active');
       if (d.dirEdge) d.dirEdge.classList.remove('active');
       return;
@@ -1402,6 +1476,7 @@
     if (isSystemOverlayBlockingTutorial()) {
       d.hubModal.classList.remove('active');
       d.hudCard.classList.remove('active');
+      syncBottomDockLayout();
       if (d.spotlightLayer) d.spotlightLayer.classList.remove('active');
       if (d.dirEdge) d.dirEdge.classList.remove('active');
       return;
@@ -1410,6 +1485,7 @@
     if (state.hubOpen) {
       d.hubModal.classList.add('active');
       d.hudCard.classList.remove('active');
+      syncBottomDockLayout();
       if (d.spotlightLayer) d.spotlightLayer.classList.remove('active');
       if (d.dirEdge) d.dirEdge.classList.remove('active');
       return;
@@ -1425,6 +1501,9 @@
       : { player: {}, modals: {}, doors: [], sideDoor: {}, jack: {}, pallets: [], sessions: [], stations: {} };
 
     d.hudCard.classList.toggle('dock-bottom', hasBlockingGameplayModalOpen(rt));
+    d.hudCard.classList.toggle('is-collapsed', Boolean(state.collapsed));
+    syncCollapseButton();
+    syncBottomDockLayout();
     const chText = 'CHAPTER ' + ch.num + ' OF ' + CHAPTERS.length + ' · ' + ch.label;
     if (state.renderCache.chLabel !== chText) {
       state.renderCache.chLabel = chText;
@@ -1658,6 +1737,9 @@
       markCurrentStepInteracted(null, e && e.key ? String(e.key).toLowerCase() : '', false);
       scheduleFastCommandBarRender();
     }, true);
+    global.addEventListener('resize', () => {
+      if (state.active) syncBottomDockLayout();
+    });
   }
 
   function start(opts) {
@@ -1667,7 +1749,7 @@
     state.active = true;
     state.collapsed = false;
     if (state.dom.hudCard) state.dom.hudCard.classList.remove('is-collapsed');
-    if (state.dom.btnCollapse) state.dom.btnCollapse.textContent = '_';
+    syncCollapseButton();
 
     if (state.tickTimerId !== null) {
       clearInterval(state.tickTimerId);
@@ -1735,6 +1817,7 @@
       currentStepIdx: state.currentStepIdx,
       currentStepId: getStep(state.currentStepIdx).id
     }),
+    syncBottomDockLayout: syncBottomDockLayout,
     render: render
   };
 })(window);

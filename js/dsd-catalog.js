@@ -70,7 +70,8 @@
       wrongClaimDisposition: -50,
       wrongHazwasteDisposition: -150,
       wrongTaskAction: -100,
-      overtimePenalty: -100
+      overtimePenalty: -100,
+      openInitialReceipt: -100
     })
   });
 

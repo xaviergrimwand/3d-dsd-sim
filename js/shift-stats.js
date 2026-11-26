@@ -75,7 +75,8 @@
         wrongClaimDisposition: -50,
         wrongHazwasteDisposition: -150,
         wrongTaskAction: -100,
-        overtimePenalty: -100
+        overtimePenalty: -100,
+        openInitialReceipt: -100
       }
     };
   }
@@ -259,6 +260,16 @@
     for (let i = 0; i < pendingTaskCount; i++) {
       endOfDayPenalty += Math.abs(scn.taskNotDone);
       endOfDayDetails.push('Receiving task not completed');
+    }
+    const openInitialCount = Math.max(0, Number(u.openInitialReceipts) || 0);
+    if (openInitialCount > 0) {
+      const perInitialPenalty = Math.abs(scn.openInitialReceipt !== undefined ? scn.openInitialReceipt : 100);
+      const openInitialPenalty = openInitialCount * perInitialPenalty;
+      endOfDayPenalty += openInitialPenalty;
+      endOfDayDetails.push(
+        'Open INITIAL receipt' + (openInitialCount === 1 ? '' : 's') +
+        ' left unfinalized (' + openInitialCount + ' · -' + openInitialPenalty + ' pts)'
+      );
     }
 
     const operationalErrorsPenalty = refuseGoodPenalty + acceptTempPenalty + missedTempPenalty + inaccuratePenalty + wrongClaimPenalty + wrongTaskPenalty;

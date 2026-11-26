@@ -151,7 +151,7 @@
   display: none;
   flex-direction: column;
   overflow: hidden;
-  transition: top 0.18s ease, transform 0.18s ease;
+  transition: top 0.18s ease;
 }
 
 #tutorial-hud-card.active {
@@ -165,6 +165,20 @@
   transform: translateX(-50%);
   max-height: 44vh;
   overflow-y: auto;
+}
+
+#tutorial-hud-card.is-collapsed {
+  top: auto;
+  bottom: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: auto;
+  min-width: 260px;
+  max-width: min(440px, calc(100vw - 24px));
+  max-height: none;
+  overflow: hidden;
+  border-bottom: none;
+  border-radius: 8px 8px 0 0;
 }
 
 #tutorial-hud-card.is-collapsed .tut-card-body {
@@ -194,21 +208,17 @@
   letter-spacing: 0.6px;
 }
 
-.tut-training-tag {
-  font-size: 10px;
-  font-weight: 800;
-  color: #facc15;
-  border: 1px solid rgba(250, 204, 21, 0.55);
-  background: rgba(66, 32, 6, 0.7);
-  padding: 1px 6px;
-  border-radius: 4px;
-}
-
 .tut-dock-toggle {
   font-family: inherit;
   font-size: 10px;
   font-weight: 800;
-  padding: 2px 7px;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 22px;
+  height: 20px;
+  padding: 0 5px;
   border-radius: 4px;
   border: 1px solid rgba(134, 239, 172, 0.45);
   background: rgba(15, 23, 42, 0.75);

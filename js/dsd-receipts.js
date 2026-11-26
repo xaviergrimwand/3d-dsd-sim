@@ -1414,6 +1414,12 @@
   // DOT-MATRIX RECEIPT PRINTING, HUD STRIP & TRASH / DRIVER HANDOFF
   // =========================================================================
 
+  function syncTutorialBottomDock() {
+    if (global.DSDTutorial && typeof global.DSDTutorial.syncBottomDockLayout === 'function') {
+      global.DSDTutorial.syncBottomDockLayout();
+    }
+  }
+
   function renderPrintedReceiptHud() {
     const hud = document.getElementById('printed-receipt-hud');
     if (!hud) return;
@@ -1423,6 +1429,7 @@
       state.activeSlipIndex = -1;
       hud.style.display = 'none';
       hud.innerHTML = '';
+      syncTutorialBottomDock();
       return;
     }
 
@@ -1452,6 +1459,7 @@
           renderPrintedReceiptHud();
         });
       }
+      syncTutorialBottomDock();
       return;
     }
 
@@ -1524,6 +1532,7 @@
         renderPrintedReceiptHud();
       });
     }
+    syncTutorialBottomDock();
   }
 
   function stepPrintedReceiptSlip(delta) {
