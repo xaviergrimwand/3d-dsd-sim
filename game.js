@@ -12,7 +12,7 @@
    * - .XX     : minor milestone (2 digits)
    * - -XXXX   : incremental patches / bug fixes (4 digits)
    */
-  const GAME_VERSION = 'v0.1.02-0001';
+  const GAME_VERSION = 'v0.1.02-0002';
   global.DSD_GAME_VERSION = GAME_VERSION;
 
   const state = {

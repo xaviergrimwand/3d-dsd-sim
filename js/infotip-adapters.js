@@ -1545,7 +1545,7 @@
       };
     }
 
-    if (st === 'MOVING_TO_DOCK_STAND' || st === 'AWAITING_PLAYER_UNLOAD' || st === 'WAREHOUSE_RETURNING_FOR_SIGN') {
+    if (st === 'MOVING_TO_DOCK_STAND' || st === 'AWAITING_PLAYER_UNLOAD') {
       const totalP = Number(d.totalPallets) || 6;
       const stagedP = Number(d.stagedCount) || 0;
       return {
@@ -1581,7 +1581,7 @@
       };
     }
 
-    if (st === 'WAITING_SIGN') {
+    if (st === 'WAITING_SIGN' || st === 'WAREHOUSE_RETURNING_FOR_SIGN') {
       if (isWh) {
         return {
           tone: 'ok',

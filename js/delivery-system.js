@@ -520,8 +520,8 @@
       return VENDOR_DRIVER_STANDS[bayId] || VENDOR_DRIVER_STANDS[3];
     }
 
-    // Computer desk keepout bounds (desk is x: 11.565..12.915, z: 3.938..6.238) + shoulder clearance
-    const DESK_KEEPOUT = { minX: 10.95, maxX: 13.40, minZ: 3.35, maxZ: 6.85, laneX: 10.20, northZ: 3.15, southZ: 7.05 };
+    // Computer desk keepout bounds (desk is x: 11.565..12.915, z: 3.938..6.238) + shoulder & 0.40m NPC radius clearance
+    const DESK_KEEPOUT = { minX: 10.95, maxX: 13.40, minZ: 3.35, maxZ: 6.85, laneX: 10.20, northZ: 2.85, southZ: 7.40 };
 
     const npcAvoidance = createNpcAvoidanceHelper({
       ORIGIN_X,
@@ -552,6 +552,7 @@
       for (let i = 0; i < selfSessions.length; i++) {
         const s = selfSessions[i];
         if (!s || s === session || !s.driver || !s.driver.mesh) continue;
+        if (session.state === 'LEAVING' && s.state === 'OUTSIDE_WAITING') continue;
         otherDrivers.push({ x: s.driver.mesh.position.x, z: s.driver.mesh.position.z, r: 0.48 });
       }
       const obstacles = npcAvoidance.collectObstacles({
@@ -1730,15 +1731,15 @@
       { x: 20.00, z: 9.35 }  // Spot 8: Row 3 South
     ];
     const INSIDE_CHECKIN_POSITIONS = [
-      { x: 10.65, z: 8.40 },  // Spot 0 (SD #1 + cart)
+      { x: 10.65, z: 8.55 },  // Spot 0 (SD #1 + cart)
       { x: 10.85, z: 10.45 }, // Spot 1 (SD #2 + cart)
       { x: 9.15, z: 10.45 },  // Spot 2 (SD #3 + cart)
-      { x: 11.00, z: 7.15 },  // Spot 3 (WH #1)
-      { x: 9.80, z: 7.15 },   // Spot 4 (WH #2)
-      { x: 8.60, z: 7.15 },   // Spot 5 (WH #3)
-      { x: 9.35, z: 8.40 },   // Spot 6 (VT #1)
-      { x: 8.25, z: 8.40 },   // Spot 7 (VT #2)
-      { x: 8.25, z: 9.75 }    // Spot 8 (VT #3)
+      { x: 10.75, z: 7.45 },  // Spot 3 (WH #1 — clear of DESK_KEEPOUT maxZ 6.85 + 0.40m radius)
+      { x: 9.65, z: 7.45 },   // Spot 4 (WH #2)
+      { x: 8.55, z: 7.45 },   // Spot 5 (WH #3)
+      { x: 9.45, z: 8.55 },   // Spot 6 (VT #1)
+      { x: 8.25, z: 8.55 },   // Spot 7 (VT #2)
+      { x: 8.25, z: 9.85 }    // Spot 8 (VT #3)
     ];
 
     let _queueSeqCounter = 1;
@@ -2157,10 +2158,7 @@
             if (session.state === 'VENDOR_WAIT_DOOR_OPEN') {
               return `${d.driverName} waiting for Dock ${d.dockBay} door to open`;
             }
-            if (session.state === 'WAREHOUSE_RETURNING_FOR_SIGN') {
-              return `${d.driverName} walking to receiving area for BOL signature`;
-            }
-            if (session.state === 'WAITING_SIGN') {
+            if (session.state === 'WAREHOUSE_RETURNING_FOR_SIGN' || session.state === 'WAITING_SIGN') {
               return d.type === 'warehouse'
                 ? `[E] Sign Bill of Lading (${d.driverName} · Bay ${d.dockBay})`
                 : `[E] Review & Sign Receipt (${d.carrier})`;
@@ -2335,7 +2333,7 @@
           } else {
             hooks.showNotification(`[[ico:claim]] Bay ${bay} warehouse unload incomplete: ${correctStaged}/${bayPallets.length} pallets staged into zones.`, 'high');
           }
-        } else if (session.state === 'WAITING_SIGN') {
+        } else if (session.state === 'WAITING_SIGN' || session.state === 'WAREHOUSE_RETURNING_FOR_SIGN') {
           if (d.type === 'warehouse') {
             openWarehouseBol(d);
           } else {
@@ -2540,14 +2538,15 @@
           session.state = 'LEAVING';
           session.waypoints = buildDeskSafeWaypoints(curPos, [
             new THREE.Vector3(12.2, 0, 8.4),
-            new THREE.Vector3(15.2, 0, 8.4)
+            new THREE.Vector3(14.3, 0, 8.4)
           ]);
           session.currentWaypointIdx = 0;
         } else {
           const zSlot = (((session.insideSlotIdx !== undefined ? session.insideSlotIdx : session.slotIdx) || 0) % 3 - 1) * 0.50;
+          const exitWaitX = session.cart ? 10.95 : 11.65;
           session.state = 'WALKING_TO_EXIT';
           session.waypoints = buildDeskSafeWaypoints(curPos, [
-            new THREE.Vector3(10.95, 0, 8.4 + zSlot)
+            new THREE.Vector3(exitWaitX, 0, 8.4 + zSlot)
           ]);
           session.currentWaypointIdx = 0;
         }
@@ -2705,7 +2704,7 @@
             session.state = 'LEAVING';
             session.waypoints = [
               new THREE.Vector3(12.2, 0, 8.4),
-              new THREE.Vector3(15.2, 0, 8.4)
+              new THREE.Vector3(14.3, 0, 8.4)
             ];
             session.currentWaypointIdx = 0;
             this.updateDeliveryHud();
@@ -2793,6 +2792,40 @@
           const dist = Math.hypot(dx, dz);
           const walkSpeed = session.vendorHasJack ? 2.4 : 3.0;
 
+          const wpKey = session.state + ':' + session.currentWaypointIdx + ':' + targetWp.x.toFixed(2) + ',' + targetWp.z.toFixed(2);
+          if (session._wpTrackKey !== wpKey) {
+            session._wpTrackKey = wpKey;
+            session._bestWpDist = dist;
+            session._noProgressElapsed = 0;
+            session._stallFlipped = false;
+          } else if (dist < (session._bestWpDist !== undefined ? session._bestWpDist : dist) - 0.04) {
+            session._bestWpDist = dist;
+            session._noProgressElapsed = 0;
+          } else if (dist > 0.08) {
+            session._noProgressElapsed = (session._noProgressElapsed || 0) + dt;
+          }
+
+          const isFinalWp = session.currentWaypointIdx >= session.waypoints.length - 1;
+          const isSettleNearTargetState = (
+            session.state === 'WAREHOUSE_RETURNING_FOR_SIGN' ||
+            session.state === 'WALKING_TO_EXIT' ||
+            session.state === 'ENTERING' ||
+            session.state === 'MOVING_TO_DOCK_STAND' ||
+            session.state === 'VENDOR_RETURNING_TO_SIDE_DOOR'
+          );
+          if (isFinalWp && isSettleNearTargetState && dist <= 1.25 && (session._noProgressElapsed || 0) >= 1.6) {
+            session._blockedElapsed = 0;
+            session._noProgressElapsed = 0;
+            session.currentWaypointIdx = session.waypoints.length;
+            this.onSessionReachedPathEnd(session);
+            return;
+          }
+          if (!session.vendorHitchedPallet && (session._noProgressElapsed || 0) >= 2.0 && !session._stallFlipped) {
+            session._stallFlipped = true;
+            session._noProgressElapsed = 0;
+            session._avoidBias = -(session._avoidBias || 1);
+          }
+
           if (dist > 0.08) {
             const allowEastExit = (
               (session.state === 'ENTERING' && curPos.x >= 9.6) ||
@@ -2810,7 +2843,7 @@
               frontRadius,
               lookAhead: session.vendorHitchedPallet ? 2.4 : 1.9,
               avoidBias: session._avoidBias || 1,
-              extendedScan: (session._blockedElapsed || 0) > 1.5,
+              extendedScan: (session._blockedElapsed || 0) > 1.5 || (session._noProgressElapsed || 0) > 1.0,
               allowEastExit,
               ignoreStatic: curPos.z < doorZ - 0.1 || allowEastExit,
               obstacles
@@ -2840,14 +2873,15 @@
               return;
             }
 
-            if (steer.blocked) {
-              // Extended wait timeout against static pallet barricade: gently bypass along straight vector
+            const forceDirectBypass = !session.vendorHitchedPallet && session._stallFlipped && (session._noProgressElapsed || 0) >= 2.2;
+            if (steer.blocked || forceDirectBypass) {
+              // Extended wait timeout or persistent tangent stall: move smoothly straight toward waypoint
               const dirX = dx / dist;
               const dirZ = dz / dist;
               session._avoidBias = steer.avoidBias || 1;
               var moveDirX = dirX;
               var moveDirZ = dirZ;
-              var effectiveSpeed = walkSpeed * 0.45;
+              var effectiveSpeed = walkSpeed * 0.55;
             } else {
               session._blockedElapsed = 0;
               session._avoidBias = steer.avoidBias || 1;
@@ -2942,7 +2976,7 @@
             session.state = 'LEAVING';
             session.waypoints = [
               new THREE.Vector3(12.2, 0, 8.4),
-              new THREE.Vector3(15.2, 0, 8.4)
+              new THREE.Vector3(14.3, 0, 8.4)
             ];
             session.currentWaypointIdx = 0;
           } else {
