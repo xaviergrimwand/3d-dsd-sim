@@ -15,20 +15,20 @@
   <script src="./js/dsd-scanner.js?v=20261125c"></script>
   <script src="./js/dsd-terminal.js?v=20261125d"></script>
   <script src="./js/warehouse-trucks.js?v=20261125c"></script>
-  <script src="./js/backstock-racks.js?v=20261125c"></script>
-  <script src="./js/claims-totes.js?v=20261122i"></script>
+  <script src="./js/backstock-racks.js?v=20261125d"></script>
+  <script src="./js/claims-totes.js?v=20261125a"></script>
   <script src="./js/sound-system.js?v=20261122q"></script>
-  <script src="./js/warehouse-textures.js?v=20261125c"></script>
-  <script src="./js/warehouse-world.js?v=20261125c"></script>
-  <script src="./js/warehouse-models.js?v=20261125e"></script>
-  <script src="./js/delivery-system.js?v=20261125d"></script>
+  <script src="./js/warehouse-textures.js?v=20261125i"></script>
+  <script src="./js/warehouse-world.js?v=20261125d"></script>
+  <script src="./js/warehouse-models.js?v=20261125g"></script>
+  <script src="./js/delivery-system.js?v=20261125h"></script>
   <script src="./js/save-system.js?v=20261122w"></script>
-  <script src="./js/menu-ui.js?v=20261125d"></script>
-  <script src="./game.js?v=20261125c"></script>
+  <script src="./js/menu-ui.js?v=20261125g"></script>
+  <script src="./game.js?v=20261125d"></script>
   <script src="./js/infotip-renderer.js?v=20261125c"></script>
-  <script src="./js/infotip-adapters.js?v=20261125c"></script>
-  <script src="./js/dock-runtime.js?v=20261125d"></script>
-  <link rel="stylesheet" href="./css/styles.css?v=20261125d">
+  <script src="./js/infotip-adapters.js?v=20261125d"></script>
+  <script src="./js/dock-runtime.js?v=20261125k"></script>
+  <link rel="stylesheet" href="./css/styles.css?v=20261125i">
 </head>
 
 <body>
@@ -900,7 +900,7 @@
     <!-- Classic Game Main Menu & Splash Overlay -->
     <div id="main-menu-overlay" class="menu-stage active" role="dialog" aria-modal="true" aria-label="Main Menu">
       <div class="splash-backdrop-blur" aria-hidden="true"></div>
-      <img class="splash-art" src="./assets/splash-dock.jpg" alt="1996 DSD Receiving Dock Splash">
+      <img class="splash-art" src="./assets/splash-dock.jpg?v=20261125f" alt="1996 DSD Receiving Dock Splash">
       <div class="splash-vignette" aria-hidden="true"></div>
       <div class="splash-scanlines" aria-hidden="true"></div>
 
@@ -915,7 +915,7 @@
             <span class="logo-dsd-word">DSD</span>
           </div>
           <div class="logo-hazard-divider" aria-hidden="true"></div>
-          <h1 class="logo-subtitle">RECEIVING SIMULATOR</h1>
+          <h1 id="menu-logo-subtitle" class="logo-subtitle" aria-label="RECEIVING SIMULATOR"><span id="menu-logo-type-text" class="crt-type-text" aria-hidden="true">RECEIVING SIMULATOR</span><span id="menu-logo-cursor" class="crt-block-cursor" aria-hidden="true"></span></h1>
           <p class="logo-tagline">Backroom Logistics · Invoices · Claims · Compliance</p>
         </header>
 

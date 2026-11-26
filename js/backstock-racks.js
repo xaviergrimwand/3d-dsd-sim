@@ -1506,10 +1506,44 @@
     return state.cases.filter((c) => c && !c.placedOnRack && isInventoryEligibleRack(c.targetRackId));
   }
 
+  const _inventoryCaseMeshesBuf = [];
+  const _labelableCaseMeshesBuf = [];
+  const _pickableCaseMeshesBuf = [];
+
   function getInventoryRaycastMeshes() {
-    return state.cases
-      .filter((c) => c && c.mesh && c.mesh.visible && c !== state.heldCase)
-      .map((c) => c.mesh);
+    _inventoryCaseMeshesBuf.length = 0;
+    const arr = state.cases;
+    for (let i = 0; i < arr.length; i++) {
+      const c = arr[i];
+      if (c && c.mesh && c.mesh.visible && c !== state.heldCase) {
+        _inventoryCaseMeshesBuf.push(c.mesh);
+      }
+    }
+    return _inventoryCaseMeshesBuf;
+  }
+
+  function getLabelableRaycastMeshes() {
+    _labelableCaseMeshesBuf.length = 0;
+    const arr = state.cases;
+    for (let i = 0; i < arr.length; i++) {
+      const c = arr[i];
+      if (c && c.mesh && c.mesh.visible && c !== state.heldCase) {
+        _labelableCaseMeshesBuf.push(c.mesh);
+      }
+    }
+    return _labelableCaseMeshesBuf;
+  }
+
+  function getPickableCaseMeshes() {
+    _pickableCaseMeshesBuf.length = 0;
+    const arr = state.cases;
+    for (let i = 0; i < arr.length; i++) {
+      const c = arr[i];
+      if (c && c.mesh && c !== state.heldCase) {
+        _pickableCaseMeshesBuf.push(c.mesh);
+      }
+    }
+    return _pickableCaseMeshesBuf;
   }
 
   function findInventoryCaseForInput(rawCode, preferredCaseId, preferInventoried) {
@@ -2258,9 +2292,7 @@
     canSlotCaseOnSteel: canSlotCaseOnSteel,
     labelCase: labelCase,
     findBackstockCaseForLabelInput: findBackstockCaseForLabelInput,
-    getLabelableRaycastMeshes: () => state.cases
-      .filter((c) => c && c.mesh && c.mesh.visible && c !== state.heldCase)
-      .map((c) => c.mesh),
+    getLabelableRaycastMeshes: getLabelableRaycastMeshes,
     getUnlabeledBackstockCount: () => state.cases.filter((c) => c && !c.labeled && !isSupplyCase(c)).length,
     getUnslottedOverstockCount: () => state.cases.filter((c) => c && !c.placedOnRack && !isSupplyCase(c)).length,
     getSupplyStockMap: getSupplyStockMap,
@@ -2275,9 +2307,7 @@
     getCurrentGhostPlacement: () => state.currentGhostPlacement,
     placeHeldCaseAtPreview: placeHeldCaseAtPreview,
     placeHeldCaseOnPallet: placeHeldCaseOnPallet,
-    getPickableCaseMeshes: () => state.cases
-      .filter((c) => c && c.mesh && c !== state.heldCase)
-      .map((c) => c.mesh),
+    getPickableCaseMeshes: getPickableCaseMeshes,
     getPlaceableTargetMeshes: getPlaceableRaycastMeshes,
     getInventoryRaycastMeshes: getInventoryRaycastMeshes,
     getInventoryRackCases: getInventoryRackCases,

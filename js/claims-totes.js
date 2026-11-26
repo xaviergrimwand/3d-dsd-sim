@@ -1585,15 +1585,21 @@
     };
   }
 
+  const _recallTopItemMeshesBuf = [];
+
   function getRecallTopItemMeshes() {
+    _recallTopItemMeshesBuf.length = 0;
     const rec = state.recall;
-    if (!rec || !rec.active || rec.sorted || rec.movingItem) return [];
-    const out = [];
-    (rec.items || []).forEach((item) => {
-      if (!item || item.collected || item === rec.movingItem || !Array.isArray(item.hitMeshes)) return;
-      item.hitMeshes.forEach((m) => out.push(m));
-    });
-    return out;
+    if (!rec || !rec.active || rec.sorted || rec.movingItem) return _recallTopItemMeshesBuf;
+    const items = rec.items || [];
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i];
+      if (!item || item.collected || item === rec.movingItem || !Array.isArray(item.hitMeshes)) continue;
+      for (let j = 0; j < item.hitMeshes.length; j++) {
+        _recallTopItemMeshesBuf.push(item.hitMeshes[j]);
+      }
+    }
+    return _recallTopItemMeshesBuf;
   }
 
   function getRecallToteHitMeshes() {
@@ -1925,29 +1931,41 @@
     });
   }
 
+  const _interactableToteMeshesBuf = [];
+  const _openToteItemMeshesBuf = [];
+
   function getInteractableToteMeshes() {
-    const out = [];
-    state.totes.forEach((t) => {
-      if (!t) return;
-      t.hitMeshes.forEach((m) => out.push(m));
-    });
-    return out;
+    _interactableToteMeshesBuf.length = 0;
+    const totes = state.totes;
+    for (let i = 0; i < totes.length; i++) {
+      const t = totes[i];
+      if (!t || !Array.isArray(t.hitMeshes)) continue;
+      for (let j = 0; j < t.hitMeshes.length; j++) {
+        _interactableToteMeshesBuf.push(t.hitMeshes[j]);
+      }
+    }
+    return _interactableToteMeshesBuf;
   }
 
   function getOpenToteItemMeshes() {
-    const out = [];
-    state.totes.forEach((t) => {
-      if (!t || t.isRed || !t.isOpen || !Array.isArray(t.items)) return;
-      t.items.forEach((item) => {
-        if (!item || item.claimed || item === state.heldItem || !Array.isArray(item.hitMeshes)) return;
-        item.hitMeshes.forEach((m) => out.push(m));
-      });
-    });
-    return out;
+    _openToteItemMeshesBuf.length = 0;
+    const totes = state.totes;
+    for (let i = 0; i < totes.length; i++) {
+      const t = totes[i];
+      if (!t || t.isRed || !t.isOpen || !Array.isArray(t.items)) continue;
+      for (let j = 0; j < t.items.length; j++) {
+        const item = t.items[j];
+        if (!item || item.claimed || item === state.heldItem || !Array.isArray(item.hitMeshes)) continue;
+        for (let k = 0; k < item.hitMeshes.length; k++) {
+          _openToteItemMeshesBuf.push(item.hitMeshes[k]);
+        }
+      }
+    }
+    return _openToteItemMeshesBuf;
   }
 
   function getReceptacleHitMeshes() {
-    return state.receptacleHitMeshes.slice();
+    return state.receptacleHitMeshes;
   }
 
   function getRemainingClaimsCount() {

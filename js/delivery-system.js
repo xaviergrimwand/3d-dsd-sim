@@ -1438,6 +1438,15 @@
     const pendingDeliveriesList = document.getElementById('pending-deliveries-list');
     const pendingToggleBtn = document.getElementById('pending-toggle-btn');
 
+    const pdRenderCache = {
+      titleText: null,
+      summaryText: null,
+      summaryTone: null,
+      summaryType: null,
+      alertActive: null,
+      listHtml: null
+    };
+
     function togglePendingDeliveriesPanel(forceCollapsed) {
       if (!pendingDeliveriesPanel || !pendingToggleBtn) return;
       const collapsed = (typeof forceCollapsed === 'boolean')
@@ -1445,6 +1454,9 @@
         : !pendingDeliveriesPanel.classList.contains('collapsed');
       pendingDeliveriesPanel.classList.toggle('collapsed', collapsed);
       pendingToggleBtn.textContent = collapsed ? '▼' : '▲';
+      if (!collapsed) {
+        renderPendingDeliveriesPanel();
+      }
       if (typeof forceCollapsed !== 'boolean') {
         SoundSystem.playButtonClick();
       }
@@ -1502,7 +1514,11 @@
 
       const allOpen = sourceRows.filter((d) => !d.completed && !d.refused);
       if (titleTxtEl) {
-        titleTxtEl.textContent = `PENDING DELIVERIES (${allOpen.length})`;
+        const nextTitle = `PENDING DELIVERIES (${allOpen.length})`;
+        if (pdRenderCache.titleText !== nextTitle) {
+          pdRenderCache.titleText = nextTitle;
+          titleTxtEl.textContent = nextTitle;
+        }
       }
 
       const visible = allOpen
@@ -1555,58 +1571,73 @@
           firstAtDoor;
 
         if (barSummaryEl) {
-          barSummaryEl.classList.remove('is-urgent', 'is-arrived', 'is-due-soon');
           let summaryText = 'No pending deliveries';
           let summaryDelivery = null;
+          let summaryTone = '';
           if (lateCount > 0 && firstLate) {
             summaryText = `${lateCount} LATE · ${firstLate.carrier || 'TRUCK'}`;
             summaryDelivery = firstLate;
-            barSummaryEl.classList.add('is-urgent');
+            summaryTone = 'is-urgent';
           } else if (activeTop && activeTop.d) {
             const stageLabel = getDeliveryStageLabel(activeTop.d, activeTop.session);
             summaryText = `${stageLabel} · ${activeTop.d.carrier || 'DELIVERY'}`;
             summaryDelivery = activeTop.d;
-            barSummaryEl.classList.add('is-arrived');
+            summaryTone = 'is-arrived';
           } else if (visible.length > 0) {
             const nxt = visible[0];
             const nxtEtaMins = ((nxt.etaHour || 6) * 60) + (nxt.etaMinute || 0);
             summaryText = `NEXT ${nxt.etaText || '6:00 AM'} · ${nxt.carrier || 'DELIVERY'}`;
             summaryDelivery = nxt;
             if ((nxtEtaMins - nowMins) <= 10) {
-              barSummaryEl.classList.add('is-due-soon');
+              summaryTone = 'is-due-soon';
             }
+          }
+          if (pdRenderCache.summaryTone !== summaryTone) {
+            pdRenderCache.summaryTone = summaryTone;
+            barSummaryEl.classList.remove('is-urgent', 'is-arrived', 'is-due-soon');
+            if (summaryTone) barSummaryEl.classList.add(summaryTone);
           }
           const barIcoEl = barSummaryEl.querySelector('.pd-bar-ico');
           const barTxtEl = barSummaryEl.querySelector('.pd-bar-txt');
+          const nextType = (summaryDelivery && summaryDelivery.type) ? String(summaryDelivery.type) : '';
           if (barIcoEl && barTxtEl) {
-            if (summaryDelivery && summaryDelivery.type) {
-              const svgMarkup = getDeliveryTypeSvg(summaryDelivery.type);
-              if (barIcoEl.dataset.delivType !== summaryDelivery.type) {
-                barIcoEl.dataset.delivType = summaryDelivery.type;
-                barIcoEl.innerHTML = svgMarkup;
+            if (pdRenderCache.summaryType !== nextType) {
+              pdRenderCache.summaryType = nextType;
+              if (nextType) {
+                barIcoEl.dataset.delivType = nextType;
+                barIcoEl.innerHTML = getDeliveryTypeSvg(nextType);
+                barIcoEl.classList.add('active');
+              } else {
+                barIcoEl.dataset.delivType = '';
+                barIcoEl.innerHTML = '';
+                barIcoEl.classList.remove('active');
               }
-              barIcoEl.classList.add('active');
-            } else {
-              barIcoEl.dataset.delivType = '';
-              barIcoEl.innerHTML = '';
-              barIcoEl.classList.remove('active');
             }
-            barTxtEl.textContent = summaryText;
-          } else {
+            if (pdRenderCache.summaryText !== summaryText) {
+              pdRenderCache.summaryText = summaryText;
+              barTxtEl.textContent = summaryText;
+            }
+          } else if (pdRenderCache.summaryText !== summaryText) {
+            pdRenderCache.summaryText = summaryText;
             barSummaryEl.textContent = summaryText;
           }
         }
         if (alertDotEl) {
-          alertDotEl.classList.toggle('active', lateCount > 0);
+          const nextAlert = lateCount > 0;
+          if (pdRenderCache.alertActive !== nextAlert) {
+            pdRenderCache.alertActive = nextAlert;
+            alertDotEl.classList.toggle('active', nextAlert);
+          }
         }
       }
 
-      if (!visible.length) {
-        pendingDeliveriesList.innerHTML = '<div class="pd-row" style="justify-content:center; color:#86efac;">No pending deliveries</div>';
+      if (pendingDeliveriesPanel && pendingDeliveriesPanel.classList.contains('collapsed')) {
         return;
       }
 
-      pendingDeliveriesList.innerHTML = visible.map((d) => {
+      const nextListHtml = !visible.length
+        ? '<div class="pd-row" style="justify-content:center; color:#86efac;">No pending deliveries</div>'
+        : visible.map((d) => {
         const etaMins = (d.etaHour || 6) * 60 + (d.etaMinute || 0);
         const session = (typeof DeliverySystem !== 'undefined' && DeliverySystem && typeof DeliverySystem.getSessionForDelivery === 'function')
           ? DeliverySystem.getSessionForDelivery(d.id)
@@ -1655,6 +1686,10 @@
           `<span class="pd-door">${doorTag}</span>` +
           `</div>`;
       }).join('');
+      if (pdRenderCache.listHtml !== nextListHtml) {
+        pdRenderCache.listHtml = nextListHtml;
+        pendingDeliveriesList.innerHTML = nextListHtml;
+      }
     }
 
     uiState.doorQueueModalOpen = false;

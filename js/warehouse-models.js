@@ -947,27 +947,36 @@
       syncDeliveryBoxesVisuals(delivery);
     }
 
+    const _activeDeliveryBoxMeshesBuf = [];
+    const _seenDeliveryBoxMeshes = new Set();
+
     function getActiveDeliveryBoxMeshes() {
-      const meshes = [];
+      _activeDeliveryBoxMeshesBuf.length = 0;
       const ds = hooks.getDeliverySystem ? hooks.getDeliverySystem() : null;
       const activeDels = (ds && typeof ds.getInsideDeliveries === 'function')
         ? ds.getInsideDeliveries()
-        : (ds && ds.activeDelivery ? [ds.activeDelivery] : []);
-      activeDels.forEach((d) => {
-        if (!d) return;
+        : (ds && ds.activeDelivery ? [ds.activeDelivery] : null);
+      if (!activeDels || activeDels.length === 0) return _activeDeliveryBoxMeshesBuf;
+      _seenDeliveryBoxMeshes.clear();
+      for (let di = 0; di < activeDels.length; di++) {
+        const d = activeDels[di];
+        if (!d) continue;
         const collect = (arr) => {
           if (!Array.isArray(arr)) return;
-          arr.forEach((b) => {
-            if (b && b.mesh && meshes.indexOf(b.mesh) === -1) {
+          for (let i = 0; i < arr.length; i++) {
+            const b = arr[i];
+            if (b && b.mesh && !_seenDeliveryBoxMeshes.has(b.mesh)) {
+              _seenDeliveryBoxMeshes.add(b.mesh);
               b.mesh.userData.deliveryId = d.id;
-              meshes.push(b.mesh);
+              _activeDeliveryBoxMeshesBuf.push(b.mesh);
             }
-          });
+          }
         };
         collect(d.physicalBoxes);
         collect(d.creditBoxes);
-      });
-      return meshes;
+      }
+      _seenDeliveryBoxMeshes.clear();
+      return _activeDeliveryBoxMeshesBuf;
     }
 
     function createCreditToteLabelTexture() {

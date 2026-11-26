@@ -13,8 +13,17 @@
 
   const dom = {};
 
+  const MENU_TYPE_TEXT = 'RECEIVING SIMULATOR';
+  let typeTimerId = null;
+  let typeAnimState = {
+    phase: 'typing',
+    charCount: 0
+  };
+
   function cacheDom() {
     dom.mainOverlay = document.getElementById('main-menu-overlay');
+    dom.menuLogoTypeText = document.getElementById('menu-logo-type-text');
+    dom.menuLogoCursor = document.getElementById('menu-logo-cursor');
     dom.btnNewGame = document.getElementById('btn-menu-new-game');
     dom.btnMainLoad = document.getElementById('btn-menu-load-game');
     dom.btnTutorial = document.getElementById('btn-menu-tutorial');
@@ -128,6 +137,89 @@
     }
   }
 
+  function isMainMenuAnimationEligible() {
+    const g = global.DSDGame;
+    if (!dom.mainOverlay || !dom.menuLogoTypeText) return false;
+    if (!dom.mainOverlay.classList.contains('active') || dom.mainOverlay.classList.contains('submodal-open')) {
+      return false;
+    }
+    if (g) {
+      if (typeof g.isMainMenuOpen === 'function' && !g.isMainMenuOpen()) return false;
+      if (typeof g.isSaveLoadModalOpen === 'function' && g.isSaveLoadModalOpen()) return false;
+      if (typeof g.isInfoModalOpen === 'function' && g.isInfoModalOpen()) return false;
+    }
+    return true;
+  }
+
+  function stopLogoTypewriter() {
+    if (typeTimerId !== null) {
+      clearTimeout(typeTimerId);
+      typeTimerId = null;
+    }
+    if (dom.menuLogoCursor) {
+      dom.menuLogoCursor.classList.remove('blinking');
+    }
+  }
+
+  function renderLogoTypewriterFrame() {
+    if (dom.menuLogoTypeText) {
+      dom.menuLogoTypeText.textContent = MENU_TYPE_TEXT.slice(0, typeAnimState.charCount);
+    }
+    if (dom.menuLogoCursor) {
+      const shouldBlink = typeAnimState.phase === 'hold_end' || typeAnimState.phase === 'hold_empty';
+      dom.menuLogoCursor.classList.toggle('blinking', shouldBlink);
+    }
+  }
+
+  function stepLogoTypewriter() {
+    typeTimerId = null;
+    if (!isMainMenuAnimationEligible()) {
+      stopLogoTypewriter();
+      return;
+    }
+
+    let delayMs = 85;
+    if (typeAnimState.phase === 'typing') {
+      if (typeAnimState.charCount < MENU_TYPE_TEXT.length) {
+        typeAnimState.charCount += 1;
+        delayMs = 85;
+      } else {
+        typeAnimState.phase = 'hold_end';
+        delayMs = 3200;
+      }
+    } else if (typeAnimState.phase === 'hold_end') {
+      typeAnimState.phase = 'backspacing';
+      typeAnimState.charCount = Math.max(0, MENU_TYPE_TEXT.length - 1);
+      delayMs = 55;
+    } else if (typeAnimState.phase === 'backspacing') {
+      if (typeAnimState.charCount > 0) {
+        typeAnimState.charCount -= 1;
+        delayMs = 55;
+      } else {
+        typeAnimState.phase = 'hold_empty';
+        delayMs = 550;
+      }
+    } else {
+      typeAnimState.phase = 'typing';
+      typeAnimState.charCount = 0;
+      delayMs = 85;
+    }
+
+    renderLogoTypewriterFrame();
+    typeTimerId = setTimeout(stepLogoTypewriter, delayMs);
+  }
+
+  function startLogoTypewriter() {
+    if (!isMainMenuAnimationEligible() || typeTimerId !== null) return;
+    typeAnimState = { phase: 'typing', charCount: 0 };
+    renderLogoTypewriterFrame();
+    typeTimerId = setTimeout(stepLogoTypewriter, 120);
+  }
+
+  function isLogoTypewriterRunning() {
+    return typeTimerId !== null;
+  }
+
   function syncOverlaysFromGame() {
     const g = global.DSDGame;
     if (!g) return;
@@ -138,8 +230,10 @@
 
     if (dom.mainOverlay) {
       dom.mainOverlay.classList.toggle('active', mainOpen);
-      dom.mainOverlay.classList.toggle('submodal-open', mainOpen && saveOpen);
+      dom.mainOverlay.classList.toggle('submodal-open', mainOpen && (saveOpen || infoOpen));
     }
+    if (mainOpen && !saveOpen && !infoOpen) startLogoTypewriter();
+    else stopLogoTypewriter();
     if (dom.pauseOverlay) {
       dom.pauseOverlay.classList.toggle('active', pauseOpen && !mainOpen);
       if (pauseOpen && dom.pauseMetaText && global.ShiftClock && global.ShiftStats) {
@@ -584,6 +678,7 @@
     openSaveLoadModal: openSaveLoadModal,
     closeSaveLoadModal: closeSaveLoadModal,
     openInfoModal: openInfoModal,
-    closeInfoModal: closeInfoModal
+    closeInfoModal: closeInfoModal,
+    isLogoTypewriterRunning: isLogoTypewriterRunning
   };
 })(window);

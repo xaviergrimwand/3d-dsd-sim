@@ -703,6 +703,99 @@
     };
   };
 
+  /**
+   * Filters and bounds raw pointer-lock / mouse-drag look deltas so Chromium/Windows
+   * pointer-recenter spikes and post-hitch event bursts cannot snap the camera ~180 degrees.
+   */
+  global.createPointerLookController = function createPointerLookController(opts) {
+    const o = opts || {};
+    const mouseSens = Number(o.mouseSens) > 0 ? Number(o.mouseSens) : 0.0022;
+    const maxEventDeltaPx = Number(o.maxEventDeltaPx) > 0 ? Number(o.maxEventDeltaPx) : 450;
+    const outlierEventDeltaPx = Number(o.outlierEventDeltaPx) > 0 ? Number(o.outlierEventDeltaPx) : 550;
+    const lockSettleWindowMs = Number(o.lockSettleWindowMs) >= 0 ? Number(o.lockSettleWindowMs) : 120;
+    const lockSettleMaxPx = Number(o.lockSettleMaxPx) > 0 ? Number(o.lockSettleMaxPx) : 160;
+    const maxFrameRad = Number(o.maxFrameRad) > 0 ? Number(o.maxFrameRad) : 1.35;
+
+    let lockAcquiredMs = -Infinity;
+    let skipFirstLockedMove = false;
+    let frameYawRad = 0;
+    let framePitchRad = 0;
+    let rejectedSpikes = 0;
+
+    function onLockAcquired(nowMs) {
+      const t = (typeof nowMs === 'number' && Number.isFinite(nowMs)) ? nowMs : performance.now();
+      lockAcquiredMs = t;
+      skipFirstLockedMove = true;
+    }
+
+    function onLockReleased() {
+      skipFirstLockedMove = false;
+      lockAcquiredMs = -Infinity;
+    }
+
+    function beginFrame() {
+      frameYawRad = 0;
+      framePitchRad = 0;
+    }
+
+    function processDelta(rawDx, rawDy, optsIn) {
+      const p = optsIn || {};
+      const dx = Number(rawDx);
+      const dy = Number(rawDy);
+      if (!Number.isFinite(dx) || !Number.isFinite(dy)) {
+        return { dYaw: 0, dPitch: 0, rejected: true };
+      }
+      const isLocked = Boolean(p.isLocked);
+      const nowMs = (typeof p.nowMs === 'number' && Number.isFinite(p.nowMs)) ? p.nowMs : performance.now();
+
+      if (isLocked) {
+        if (skipFirstLockedMove) {
+          skipFirstLockedMove = false;
+          if ((nowMs - lockAcquiredMs) <= lockSettleWindowMs && (Math.abs(dx) > lockSettleMaxPx || Math.abs(dy) > lockSettleMaxPx)) {
+            rejectedSpikes += 1;
+            return { dYaw: 0, dPitch: 0, rejected: true };
+          }
+        }
+        if (Math.abs(dx) > outlierEventDeltaPx || Math.abs(dy) > outlierEventDeltaPx) {
+          rejectedSpikes += 1;
+          return { dYaw: 0, dPitch: 0, rejected: true };
+        }
+      } else if (Math.abs(dx) > outlierEventDeltaPx * 1.3 || Math.abs(dy) > outlierEventDeltaPx * 1.3) {
+        rejectedSpikes += 1;
+        return { dYaw: 0, dPitch: 0, rejected: true };
+      }
+
+      const clampedDx = Math.max(-maxEventDeltaPx, Math.min(maxEventDeltaPx, dx));
+      const clampedDy = Math.max(-maxEventDeltaPx, Math.min(maxEventDeltaPx, dy));
+      let dYaw = -clampedDx * mouseSens;
+      let dPitch = -clampedDy * mouseSens;
+
+      const remYawPos = Math.max(0, maxFrameRad - frameYawRad);
+      const remYawNeg = Math.min(0, -maxFrameRad - frameYawRad);
+      dYaw = Math.max(remYawNeg, Math.min(remYawPos, dYaw));
+      frameYawRad += dYaw;
+
+      const remPitchPos = Math.max(0, maxFrameRad - framePitchRad);
+      const remPitchNeg = Math.min(0, -maxFrameRad - framePitchRad);
+      dPitch = Math.max(remPitchNeg, Math.min(remPitchPos, dPitch));
+      framePitchRad += dPitch;
+
+      return { dYaw, dPitch, rejected: false };
+    }
+
+    function getStats() {
+      return { rejectedSpikes, frameYawRad, framePitchRad };
+    }
+
+    return {
+      onLockAcquired,
+      onLockReleased,
+      beginFrame,
+      processDelta,
+      getStats
+    };
+  };
+
   function init3DGame(mode) {
     if (initialized) return;
     initialized = true;
@@ -1159,12 +1252,27 @@
       return hudOverlayPriority.isElementOverHud(el);
     }
 
+    let lastHudPointCheckMs = -Infinity;
+    let lastHudPointCheckX = -999;
+    let lastHudPointCheckY = -999;
+    let lastHudPointOver = false;
+
     function isPointerCoveredByUiOverlay() {
       if (isPointerLocked || usingTouchAim || isTouchDevice) return false;
-      if (lastPointerClient.x >= 0 && lastPointerClient.y >= 0 && hudOverlayPriority.isPointOverHud(lastPointerClient.x, lastPointerClient.y)) {
-        return true;
-      }
       if (pointerOverUiOverlay) return true;
+      const cx = lastPointerClient.x;
+      const cy = lastPointerClient.y;
+      if (cx >= 0 && cy >= 0) {
+        const nowMs = performance.now();
+        if (cx === lastHudPointCheckX && cy === lastHudPointCheckY && (nowMs - lastHudPointCheckMs) < 48) {
+          return lastHudPointOver;
+        }
+        lastHudPointCheckX = cx;
+        lastHudPointCheckY = cy;
+        lastHudPointCheckMs = nowMs;
+        lastHudPointOver = hudOverlayPriority.isPointOverHud(cx, cy);
+        if (lastHudPointOver) return true;
+      }
       return false;
     }
 
@@ -1782,6 +1890,9 @@
       }
     }
 
+    const pointerLookCtrl = global.createPointerLookController({ mouseSens });
+    let pendingJackYawDelta = 0;
+
     let lastTouchTapMs = 0;
     const ctrlPointerHold = global.createCtrlPointerHoldController({
       isLocked: () => Boolean(isPointerLocked || (renderer && renderer.domElement && document.pointerLockElement === renderer.domElement)),
@@ -1832,10 +1943,27 @@
       isPointerLocked = (document.pointerLockElement === renderer.domElement);
       if (isPointerLocked) {
         pointerOverUiOverlay = false;
+        pointerLookCtrl.onLockAcquired();
         ctrlPointerHold.onPointerLockAcquired();
+      } else {
+        pointerLookCtrl.onLockReleased();
+        pendingJackYawDelta = 0;
       }
       updateLockHintDisplay();
     });
+
+    function applyFilteredMouseLook(rawDx, rawDy, locked) {
+      const res = pointerLookCtrl.processDelta(rawDx, rawDy, { isLocked: locked });
+      if (res.dYaw === 0 && res.dPitch === 0) return;
+      if (!player.hasElectricJack && !player.hitchedPallet) {
+        player.yaw += res.dYaw;
+      } else {
+        // Coalesce expensive 27-step jack/pallet turn collision solve to once per frame in updatePlayer
+        pendingJackYawDelta += res.dYaw;
+      }
+      player.pitch += res.dPitch;
+      clampPitch();
+    }
 
     window.addEventListener('mousemove', (e) => {
       if (isBlockingModalOpen()) return;
@@ -1844,17 +1972,12 @@
       }
       lastPointerClient.x = e.clientX;
       lastPointerClient.y = e.clientY;
-      pointerOverUiOverlay = !isPointerLocked && (
-        isElementOverOverlayUi(e.target) ||
-        hudOverlayPriority.isPointOverHud(e.clientX, e.clientY)
-      );
-      if (!pointerOverUiOverlay) {
+      pointerOverUiOverlay = !isPointerLocked && !isMouseDragging && isElementOverOverlayUi(e.target);
+      if (!pointerOverUiOverlay && !isPointerLocked) {
         updatePointerNDC(e.clientX, e.clientY);
       }
       if (isPointerLocked) {
-        setPlayerYawChecked(player.yaw - e.movementX * mouseSens);
-        player.pitch -= e.movementY * mouseSens;
-        clampPitch();
+        applyFilteredMouseLook(e.movementX, e.movementY, true);
       } else if (isMouseDragging) {
         if ((e.buttons & 1) === 0 && (e.buttons & 2) === 0) {
           isMouseDragging = false;
@@ -1865,9 +1988,7 @@
         mouseDragMoved = Math.max(mouseDragMoved, Math.hypot(e.clientX - mouseDownPos.x, e.clientY - mouseDownPos.y));
         lastMousePos.x = e.clientX;
         lastMousePos.y = e.clientY;
-        setPlayerYawChecked(player.yaw - dx * mouseSens);
-        player.pitch -= dy * mouseSens;
-        clampPitch();
+        applyFilteredMouseLook(dx, dy, false);
       }
     });
 
@@ -1886,6 +2007,10 @@
 
     window.addEventListener('mouseup', () => {
       isMouseDragging = false;
+    });
+    window.addEventListener('blur', () => {
+      isMouseDragging = false;
+      pendingJackYawDelta = 0;
     });
 
     function clampPitch() {
@@ -2802,6 +2927,9 @@
       );
     }
 
+    const _tmpInteractCandidates = [];
+    const _tmpClaimsTargets = [];
+
     function findFocusedInteractibleFromNDC(ndc) {
       if (isCarryingBackstockCase() || isHoldingClaimsItem() || isHoldingRecallTote() || isArrangingRecallItem()) {
         return { item: null, dist: Infinity };
@@ -2811,13 +2939,14 @@
       interactRaycaster.setFromCamera(ndc, camera);
       interactRaycaster.far = 7.5;
 
-      const candidateMeshes = [];
-      interactibles.forEach((item) => {
+      _tmpInteractCandidates.length = 0;
+      for (let i = 0; i < interactibles.length; i++) {
+        const item = interactibles[i];
         if (item.type === 'electric_jack' && (player.hasElectricJack || !electricJackWorld.visible)) {
-          return;
+          continue;
         }
         if (item.type === 'pallet' && (item.target.isHitched || player.hitchedPallet || (item.target.group && !item.target.group.visible))) {
-          return;
+          continue;
         }
         if (
           item.type === 'driver' &&
@@ -2825,18 +2954,18 @@
           item.session.state === 'OUTSIDE_WAITING' &&
           (!sideRollupDoor.isOpen || sideRollupDoor.currentProgress < 0.35)
         ) {
-          return; // Must push side door button to open door and speak with waiting drivers/vendors!
+          continue; // Must push side door button to open door and speak with waiting drivers/vendors!
         }
         const center = item.boxCenter;
         const reach = getInteractibleFocusReach(item);
         const dist = Math.hypot(px - center.x, pz - center.z);
         if (dist < reach.maxDist) {
-          candidateMeshes.push(item.mesh);
+          _tmpInteractCandidates.push(item.mesh);
         }
-      });
+      }
 
-      const intersects = candidateMeshes.length > 0 ? interactRaycaster.intersectObjects(candidateMeshes, false) : [];
-      if (intersects.length > 0) {
+      const intersects = _tmpInteractCandidates.length > 0 ? interactRaycaster.intersectObjects(_tmpInteractCandidates, false) : null;
+      if (intersects && intersects.length > 0) {
         const hit = intersects[0];
         const hitItem = hit.object && hit.object.userData ? hit.object.userData.interactible : null;
         const reach = getInteractibleFocusReach(hitItem);
@@ -2920,6 +3049,42 @@
 
     const reticle = document.getElementById('reticle');
     const hudInfotipEl = document.getElementById('hud-infotip');
+    const _tmpHighlightPos = new THREE.Vector3();
+    const _tmpHighlightQuat = new THREE.Quaternion();
+    const _tmpHighlightOffset = new THREE.Vector3();
+    const _infotipResolveCtx = {
+      isBlockingModalOpen: false,
+      isTouch: false,
+      deliverySystem: null,
+      overageDeliveryId: null,
+      hoveredPhysicalBox: null,
+      hoveredBoxMesh: null,
+      hoveredLabelCase: null,
+      hoveredInventoryCase: null,
+      hoveredSupplyCase: null,
+      hoveredBackstockTarget: null,
+      hoveredBackstockCase: null,
+      hoveredClaimsTote: null,
+      hoveredClaimsItem: null,
+      hoveredRecallItem: null,
+      hoveredRecallArrangeSpot: null,
+      hoveredRecallBottomDock: false,
+      hoveredClaimsReceptacle: null,
+      hoveredRecallTote: false,
+      focusedInteractible: null,
+      carryingBackstock: false,
+      holdingClaimsItem: false,
+      holdingRecallTote: false,
+      arrangingRecallItem: false,
+      recallState: null,
+      hasElectricJack: false,
+      hitchedPallet: null,
+      jackBattery: 100,
+      jackDockedAtCharger: false
+    };
+    const _infotipRenderOpts = { isTouch: false, isAimCenter: true, pointerNDC: null };
+    const _infotipLastState = {};
+    let _lastInfotipEvalMs = -1;
 
     function setReticleActive(active) {
       const flag = Boolean(active);
@@ -2931,6 +3096,15 @@
     function updateNearbyInteractions(dt) {
       if (lookTouchId !== null && lookTouchMaxMove < 10) {
         lookTouchHeldMs += (dt || 0.016) * 1000;
+      }
+
+      if (isBlockingModalOpen() || (container && container.classList && container.classList.contains('main-menu-open'))) {
+        focusHighlightGroup.visible = false;
+        setReticleActive(false);
+        if (window.InfotipRenderer && hudInfotipEl) {
+          window.InfotipRenderer.renderToElement(hudInfotipEl, null);
+        }
+        return;
       }
 
       const aimNDC = getAimNDC();
@@ -3198,74 +3372,64 @@
               }
             }
           }
-          if (window.ClaimsTotes && typeof window.ClaimsTotes.getInteractableToteMeshes === 'function') {
-            const toteMeshes = window.ClaimsTotes.getInteractableToteMeshes();
-            if (toteMeshes.length > 0) {
-              interactRaycaster.far = 4.6;
-              const tHits = interactRaycaster.intersectObjects(toteMeshes, false);
-              if (tHits.length > 0 && tHits[0].distance < bestPickDist && tHits[0].object.userData && tHits[0].object.userData.claimsToteRef) {
-                uiState.hoveredClaimsTote = tHits[0].object.userData.claimsToteRef;
-                uiState.hoveredClaimsToteMesh = uiState.hoveredClaimsTote.mesh;
-                uiState.hoveredBackstockCase = null;
-                uiState.hoveredBackstockCaseMesh = null;
-                bestPickDist = tHits[0].distance;
-                focusedInteractible = null;
+          if (window.ClaimsTotes) {
+            _tmpClaimsTargets.length = 0;
+            const cTargets = _tmpClaimsTargets;
+            if (typeof window.ClaimsTotes.getInteractableToteMeshes === 'function') {
+              const tList = window.ClaimsTotes.getInteractableToteMeshes();
+              for (let i = 0; i < tList.length; i++) if (tList[i]) cTargets.push(tList[i]);
+            }
+            if (typeof window.ClaimsTotes.getRecallTopItemMeshes === 'function') {
+              const riList = window.ClaimsTotes.getRecallTopItemMeshes();
+              for (let i = 0; i < riList.length; i++) if (riList[i]) cTargets.push(riList[i]);
+            }
+            if (typeof window.ClaimsTotes.getRecallToteHitMeshes === 'function') {
+              const rtList = window.ClaimsTotes.getRecallToteHitMeshes();
+              for (let i = 0; i < rtList.length; i++) if (rtList[i]) cTargets.push(rtList[i]);
+            }
+            if (typeof window.ClaimsTotes.getReceptacleHitMeshes === 'function') {
+              const recList = window.ClaimsTotes.getReceptacleHitMeshes();
+              for (let i = 0; i < recList.length; i++) {
+                const m = recList[i];
+                if (m && m.userData && m.userData.claimsReceptacle && !m.userData.claimsReceptacle.toteRec) {
+                  cTargets.push(m);
+                }
               }
             }
-          }
-          if (window.ClaimsTotes && typeof window.ClaimsTotes.getRecallTopItemMeshes === 'function') {
-            const rItemMeshes = window.ClaimsTotes.getRecallTopItemMeshes();
-            if (rItemMeshes.length > 0) {
+            if (cTargets.length > 0) {
               interactRaycaster.far = 4.6;
-              const riHits = interactRaycaster.intersectObjects(rItemMeshes, false);
-              if (riHits.length > 0 && riHits[0].distance < bestPickDist && riHits[0].object.userData && riHits[0].object.userData.recallItemRef) {
-                uiState.hoveredRecallItem = riHits[0].object.userData.recallItemRef;
-                uiState.hoveredRecallItemMesh = uiState.hoveredRecallItem.mesh;
-                uiState.hoveredClaimsTote = null;
-                uiState.hoveredClaimsToteMesh = null;
-                uiState.hoveredBackstockCase = null;
-                uiState.hoveredBackstockCaseMesh = null;
-                bestPickDist = riHits[0].distance;
-                focusedInteractible = null;
-              }
-            }
-          }
-          if (window.ClaimsTotes && typeof window.ClaimsTotes.getRecallToteHitMeshes === 'function') {
-            const rToteMeshes = window.ClaimsTotes.getRecallToteHitMeshes();
-            if (rToteMeshes.length > 0) {
-              interactRaycaster.far = 4.6;
-              const rtHits = interactRaycaster.intersectObjects(rToteMeshes, false);
-              if (rtHits.length > 0 && rtHits[0].distance < bestPickDist && rtHits[0].object.userData && rtHits[0].object.userData.recallToteRef) {
-                uiState.hoveredRecallTote = true;
-                uiState.hoveredRecallItem = null;
-                uiState.hoveredRecallItemMesh = null;
-                uiState.hoveredClaimsTote = null;
-                uiState.hoveredClaimsToteMesh = null;
-                uiState.hoveredBackstockCase = null;
-                uiState.hoveredBackstockCaseMesh = null;
-                bestPickDist = rtHits[0].distance;
-                focusedInteractible = null;
-              }
-            }
-          }
-          if (window.ClaimsTotes && typeof window.ClaimsTotes.getReceptacleHitMeshes === 'function') {
-            const floorRecMeshes = window.ClaimsTotes.getReceptacleHitMeshes()
-              .filter((m) => m && m.userData && m.userData.claimsReceptacle && !m.userData.claimsReceptacle.toteRec);
-            if (floorRecMeshes.length > 0) {
-              interactRaycaster.far = 4.6;
-              const frHits = interactRaycaster.intersectObjects(floorRecMeshes, false);
-              if (frHits.length > 0 && frHits[0].distance < bestPickDist && frHits[0].object.userData && frHits[0].object.userData.claimsReceptacle) {
-                uiState.hoveredClaimsReceptacle = frHits[0].object.userData.claimsReceptacle;
-                uiState.hoveredClaimsReceptacleMesh = frHits[0].object;
-                uiState.hoveredRecallTote = false;
-                uiState.hoveredRecallItem = null;
-                uiState.hoveredRecallItemMesh = null;
-                uiState.hoveredClaimsTote = null;
-                uiState.hoveredClaimsToteMesh = null;
-                uiState.hoveredBackstockCase = null;
-                uiState.hoveredBackstockCaseMesh = null;
-                bestPickDist = frHits[0].distance;
-                focusedInteractible = null;
+              const cHits = interactRaycaster.intersectObjects(cTargets, false);
+              if (cHits.length > 0 && cHits[0].distance < bestPickDist && cHits[0].object && cHits[0].object.userData) {
+                const hitObj = cHits[0].object;
+                const ud = hitObj.userData;
+                if (ud.claimsToteRef) {
+                  uiState.hoveredClaimsTote = ud.claimsToteRef;
+                  uiState.hoveredClaimsToteMesh = uiState.hoveredClaimsTote.mesh;
+                  uiState.hoveredBackstockCase = null;
+                  uiState.hoveredBackstockCaseMesh = null;
+                  bestPickDist = cHits[0].distance;
+                  focusedInteractible = null;
+                } else if (ud.recallItemRef) {
+                  uiState.hoveredRecallItem = ud.recallItemRef;
+                  uiState.hoveredRecallItemMesh = uiState.hoveredRecallItem.mesh;
+                  uiState.hoveredBackstockCase = null;
+                  uiState.hoveredBackstockCaseMesh = null;
+                  bestPickDist = cHits[0].distance;
+                  focusedInteractible = null;
+                } else if (ud.recallToteRef) {
+                  uiState.hoveredRecallTote = true;
+                  uiState.hoveredBackstockCase = null;
+                  uiState.hoveredBackstockCaseMesh = null;
+                  bestPickDist = cHits[0].distance;
+                  focusedInteractible = null;
+                } else if (ud.claimsReceptacle) {
+                  uiState.hoveredClaimsReceptacle = ud.claimsReceptacle;
+                  uiState.hoveredClaimsReceptacleMesh = hitObj;
+                  uiState.hoveredBackstockCase = null;
+                  uiState.hoveredBackstockCaseMesh = null;
+                  bestPickDist = cHits[0].distance;
+                  focusedInteractible = null;
+                }
               }
             }
           }
@@ -3298,13 +3462,11 @@
 
       if (uiState.hoveredPhysicalBox && uiState.hoveredBoxMesh) {
         focusHighlightGroup.visible = true;
-        const wp = new THREE.Vector3();
-        const wq = new THREE.Quaternion();
-        uiState.hoveredBoxMesh.getWorldPosition(wp);
-        uiState.hoveredBoxMesh.getWorldQuaternion(wq);
+        uiState.hoveredBoxMesh.getWorldPosition(_tmpHighlightPos);
+        uiState.hoveredBoxMesh.getWorldQuaternion(_tmpHighlightQuat);
         const gp = uiState.hoveredBoxMesh.geometry.parameters || { width: 0.25, height: 0.26, depth: 0.35 };
-        focusHighlightGroup.position.copy(wp);
-        focusHighlightGroup.quaternion.copy(wq);
+        focusHighlightGroup.position.copy(_tmpHighlightPos);
+        focusHighlightGroup.quaternion.copy(_tmpHighlightQuat);
         focusHighlightGroup.scale.set(gp.width + 0.025, gp.height + 0.025, gp.depth + 0.025);
 
         const boxOverageMode = Boolean(uiState.overageDeliveryId && !uiState.hoveredPhysicalBox.isCredit);
@@ -3320,14 +3482,12 @@
       } else if (uiState.hoveredLabelCase && uiState.hoveredLabelMesh) {
         const lc = uiState.hoveredLabelCase;
         const lm = uiState.hoveredLabelMesh;
-        const wp = new THREE.Vector3();
-        const wq = new THREE.Quaternion();
-        lm.getWorldPosition(wp);
-        lm.getWorldQuaternion(wq);
+        lm.getWorldPosition(_tmpHighlightPos);
+        lm.getWorldQuaternion(_tmpHighlightQuat);
         const gp = (lm.geometry && lm.geometry.parameters) || { width: 0.34, height: 0.26, depth: 0.30 };
         focusHighlightGroup.visible = true;
-        focusHighlightGroup.position.copy(wp);
-        focusHighlightGroup.quaternion.copy(wq);
+        focusHighlightGroup.position.copy(_tmpHighlightPos);
+        focusHighlightGroup.quaternion.copy(_tmpHighlightQuat);
         focusHighlightGroup.scale.set(gp.width + 0.025, gp.height + 0.025, gp.depth + 0.025);
 
         const isSupplyLc = Boolean(String(lc.deptNo || '') === '60' || String(lc.vendorNo || '') === '601' || lc.targetRackId === 'claims_steel');
@@ -3349,14 +3509,12 @@
       } else if (uiState.hoveredInventoryCase && uiState.hoveredInventoryMesh) {
         const ic = uiState.hoveredInventoryCase;
         const im = uiState.hoveredInventoryMesh;
-        const wp = new THREE.Vector3();
-        const wq = new THREE.Quaternion();
-        im.getWorldPosition(wp);
-        im.getWorldQuaternion(wq);
+        im.getWorldPosition(_tmpHighlightPos);
+        im.getWorldQuaternion(_tmpHighlightQuat);
         const gp = (im.geometry && im.geometry.parameters) || { width: 0.34, height: 0.26, depth: 0.30 };
         focusHighlightGroup.visible = true;
-        focusHighlightGroup.position.copy(wp);
-        focusHighlightGroup.quaternion.copy(wq);
+        focusHighlightGroup.position.copy(_tmpHighlightPos);
+        focusHighlightGroup.quaternion.copy(_tmpHighlightQuat);
         focusHighlightGroup.scale.set(gp.width + 0.025, gp.height + 0.025, gp.depth + 0.025);
 
         const isPlaced = Boolean(ic.placedOnRack && ic.rackSlot);
@@ -3379,14 +3537,12 @@
       } else if (uiState.hoveredSupplyCase && uiState.hoveredSupplyMesh) {
         const scBox = uiState.hoveredSupplyCase;
         const sm = uiState.hoveredSupplyMesh;
-        const wp = new THREE.Vector3();
-        const wq = new THREE.Quaternion();
-        sm.getWorldPosition(wp);
-        sm.getWorldQuaternion(wq);
+        sm.getWorldPosition(_tmpHighlightPos);
+        sm.getWorldQuaternion(_tmpHighlightQuat);
         const gp = (sm.geometry && sm.geometry.parameters) || { width: 0.34, height: 0.26, depth: 0.30 };
         focusHighlightGroup.visible = true;
-        focusHighlightGroup.position.copy(wp);
-        focusHighlightGroup.quaternion.copy(wq);
+        focusHighlightGroup.position.copy(_tmpHighlightPos);
+        focusHighlightGroup.quaternion.copy(_tmpHighlightQuat);
         focusHighlightGroup.scale.set(gp.width + 0.025, gp.height + 0.025, gp.depth + 0.025);
 
         const isSupplyBox = Boolean(
@@ -3416,14 +3572,12 @@
           ? window.BackstockRacks.canPickupCase(bc)
           : { ok: true };
         const isPickBlocked = Boolean(pickCheck && !pickCheck.ok);
-        const wp = new THREE.Vector3();
-        const wq = new THREE.Quaternion();
-        bm.getWorldPosition(wp);
-        bm.getWorldQuaternion(wq);
+        bm.getWorldPosition(_tmpHighlightPos);
+        bm.getWorldQuaternion(_tmpHighlightQuat);
         const gp = (bm.geometry && bm.geometry.parameters) || { width: 0.34, height: 0.26, depth: 0.30 };
         focusHighlightGroup.visible = true;
-        focusHighlightGroup.position.copy(wp);
-        focusHighlightGroup.quaternion.copy(wq);
+        focusHighlightGroup.position.copy(_tmpHighlightPos);
+        focusHighlightGroup.quaternion.copy(_tmpHighlightQuat);
         focusHighlightGroup.scale.set(gp.width + 0.025, gp.height + 0.025, gp.depth + 0.025);
         crtMaskMat.color.setHex(isPickBlocked ? 0xef4444 : 0xf59e0b);
         crtMaskMat.opacity = pulse;
@@ -3440,15 +3594,18 @@
       } else if (uiState.hoveredClaimsItem && uiState.hoveredClaimsItemMesh) {
         const item = uiState.hoveredClaimsItem;
         const im = uiState.hoveredClaimsItemMesh;
-        const wp = new THREE.Vector3();
-        const wq = new THREE.Quaternion();
-        im.getWorldPosition(wp);
-        im.getWorldQuaternion(wq);
-        const lCenter = (item.localCenter ? item.localCenter.clone() : new THREE.Vector3(0, 0.06, 0)).applyQuaternion(wq);
-        const lSize = item.localSize || new THREE.Vector3(0.12, 0.12, 0.12);
+        im.getWorldPosition(_tmpHighlightPos);
+        im.getWorldQuaternion(_tmpHighlightQuat);
+        if (item.localCenter) {
+          _tmpHighlightOffset.copy(item.localCenter);
+        } else {
+          _tmpHighlightOffset.set(0, 0.06, 0);
+        }
+        _tmpHighlightOffset.applyQuaternion(_tmpHighlightQuat);
+        const lSize = item.localSize || { x: 0.12, y: 0.12, z: 0.12 };
         focusHighlightGroup.visible = true;
-        focusHighlightGroup.position.copy(wp).add(lCenter);
-        focusHighlightGroup.quaternion.copy(wq);
+        focusHighlightGroup.position.copy(_tmpHighlightPos).add(_tmpHighlightOffset);
+        focusHighlightGroup.quaternion.copy(_tmpHighlightQuat);
         focusHighlightGroup.scale.set(lSize.x + 0.014, lSize.y + 0.014, lSize.z + 0.014);
         crtMaskMat.color.setHex(item.scannerConfirmed ? 0x22c55e : 0x38bdf8);
         crtMaskMat.opacity = Math.min(0.20, pulse * 0.45);
@@ -3461,15 +3618,18 @@
       } else if (uiState.hoveredRecallItem && uiState.hoveredRecallItemMesh) {
         const item = uiState.hoveredRecallItem;
         const im = uiState.hoveredRecallItemMesh;
-        const wp = new THREE.Vector3();
-        const wq = new THREE.Quaternion();
-        im.getWorldPosition(wp);
-        im.getWorldQuaternion(wq);
-        const lCenter = (item.localCenter ? item.localCenter.clone() : new THREE.Vector3(0, 0.06, 0)).applyQuaternion(wq);
-        const lSize = item.localSize || new THREE.Vector3(0.11, 0.12, 0.11);
+        im.getWorldPosition(_tmpHighlightPos);
+        im.getWorldQuaternion(_tmpHighlightQuat);
+        if (item.localCenter) {
+          _tmpHighlightOffset.copy(item.localCenter);
+        } else {
+          _tmpHighlightOffset.set(0, 0.06, 0);
+        }
+        _tmpHighlightOffset.applyQuaternion(_tmpHighlightQuat);
+        const lSize = item.localSize || { x: 0.11, y: 0.12, z: 0.11 };
         focusHighlightGroup.visible = true;
-        focusHighlightGroup.position.copy(wp).add(lCenter);
-        focusHighlightGroup.quaternion.copy(wq);
+        focusHighlightGroup.position.copy(_tmpHighlightPos).add(_tmpHighlightOffset);
+        focusHighlightGroup.quaternion.copy(_tmpHighlightQuat);
         focusHighlightGroup.scale.set(lSize.x + 0.014, lSize.y + 0.014, lSize.z + 0.014);
         crtMaskMat.color.setHex(holdingRecallTote ? 0x22c55e : 0xf59e0b);
         crtMaskMat.opacity = Math.min(0.22, pulse * 0.5);
@@ -3552,41 +3712,123 @@
 
       if (window.InfotipRenderer && window.InfotipAdapters && hudInfotipEl) {
         const blocking = isBlockingModalOpen() || pointerOccluded || (container && container.classList.contains('main-menu-open'));
-        const spec = blocking ? null : window.InfotipAdapters.resolveActiveSpec({
-          isBlockingModalOpen: blocking,
-          isTouch: isTouchDevice,
-          deliverySystem: DeliverySystem,
-          overageDeliveryId: uiState.overageDeliveryId,
-          hoveredPhysicalBox: uiState.hoveredPhysicalBox,
-          hoveredBoxMesh: uiState.hoveredBoxMesh,
-          hoveredLabelCase: uiState.hoveredLabelCase,
-          hoveredInventoryCase: uiState.hoveredInventoryCase,
-          hoveredSupplyCase: uiState.hoveredSupplyCase,
-          hoveredBackstockTarget: uiState.hoveredBackstockTarget,
-          hoveredBackstockCase: uiState.hoveredBackstockCase,
-          hoveredClaimsTote: uiState.hoveredClaimsTote,
-          hoveredClaimsItem: uiState.hoveredClaimsItem,
-          hoveredRecallItem: uiState.hoveredRecallItem,
-          hoveredRecallArrangeSpot: uiState.hoveredRecallArrangeSpot,
-          hoveredRecallBottomDock: uiState.hoveredRecallBottomDock,
-          hoveredClaimsReceptacle: uiState.hoveredClaimsReceptacle,
-          hoveredRecallTote: uiState.hoveredRecallTote,
-          focusedInteractible: focusedInteractible,
-          carryingBackstock: carryingBackstock,
-          holdingClaimsItem: holdingClaimsItem,
-          holdingRecallTote: holdingRecallTote,
-          arrangingRecallItem: arrangingRecallItem,
-          recallState: (window.ClaimsTotes && typeof window.ClaimsTotes.getRecallState === 'function') ? window.ClaimsTotes.getRecallState() : null,
-          hasElectricJack: player.hasElectricJack,
-          hitchedPallet: player.hitchedPallet,
-          jackBattery: jackBattery,
-          jackDockedAtCharger: jackDockedAtCharger
-        });
-        window.InfotipRenderer.renderToElement(hudInfotipEl, spec, {
-          isTouch: isTouchDevice,
-          isAimCenter: Boolean(isPointerLocked || usingTouchAim || isTouchDevice),
-          pointerNDC: aimNDC
-        });
+        const isAimCenterNow = Boolean(isPointerLocked || usingTouchAim || isTouchDevice);
+        const recallSt = (!blocking && window.ClaimsTotes && typeof window.ClaimsTotes.getRecallState === 'function')
+          ? window.ClaimsTotes.getRecallState()
+          : null;
+        const battFloor = Math.floor(jackBattery);
+        const infotipNowMs = performance.now();
+        const stateChanged = (
+          _infotipLastState.blocking !== blocking ||
+          _infotipLastState.isTouch !== isTouchDevice ||
+          _infotipLastState.isAimCenter !== isAimCenterNow ||
+          _infotipLastState.overageDeliveryId !== uiState.overageDeliveryId ||
+          _infotipLastState.hoveredPhysicalBox !== uiState.hoveredPhysicalBox ||
+          _infotipLastState.hoveredBoxMesh !== uiState.hoveredBoxMesh ||
+          _infotipLastState.hoveredLabelCase !== uiState.hoveredLabelCase ||
+          _infotipLastState.hoveredInventoryCase !== uiState.hoveredInventoryCase ||
+          _infotipLastState.hoveredSupplyCase !== uiState.hoveredSupplyCase ||
+          _infotipLastState.hoveredBackstockTarget !== uiState.hoveredBackstockTarget ||
+          _infotipLastState.hoveredBackstockCase !== uiState.hoveredBackstockCase ||
+          _infotipLastState.hoveredClaimsTote !== uiState.hoveredClaimsTote ||
+          _infotipLastState.hoveredClaimsItem !== uiState.hoveredClaimsItem ||
+          _infotipLastState.hoveredRecallItem !== uiState.hoveredRecallItem ||
+          _infotipLastState.hoveredRecallArrangeSpot !== uiState.hoveredRecallArrangeSpot ||
+          _infotipLastState.hoveredRecallBottomDock !== uiState.hoveredRecallBottomDock ||
+          _infotipLastState.hoveredClaimsReceptacle !== uiState.hoveredClaimsReceptacle ||
+          _infotipLastState.hoveredRecallTote !== uiState.hoveredRecallTote ||
+          _infotipLastState.focusedInteractible !== focusedInteractible ||
+          _infotipLastState.carryingBackstock !== carryingBackstock ||
+          _infotipLastState.holdingClaimsItem !== holdingClaimsItem ||
+          _infotipLastState.holdingRecallTote !== holdingRecallTote ||
+          _infotipLastState.arrangingRecallItem !== arrangingRecallItem ||
+          _infotipLastState.hasElectricJack !== player.hasElectricJack ||
+          _infotipLastState.hitchedPallet !== player.hitchedPallet ||
+          _infotipLastState.battFloor !== battFloor ||
+          _infotipLastState.jackDockedAtCharger !== jackDockedAtCharger ||
+          (!isAimCenterNow && (_infotipLastState.ndcX !== aimNDC.x || _infotipLastState.ndcY !== aimNDC.y))
+        );
+        const hasActiveTarget = Boolean(
+          !blocking && (
+            uiState.hoveredPhysicalBox || uiState.hoveredLabelCase || uiState.hoveredInventoryCase ||
+            uiState.hoveredSupplyCase || (uiState.hoveredBackstockTarget && carryingBackstock) ||
+            uiState.hoveredBackstockCase || uiState.hoveredClaimsTote || uiState.hoveredClaimsItem ||
+            arrangingRecallItem || uiState.hoveredRecallItem || uiState.hoveredRecallBottomDock ||
+            uiState.hoveredClaimsReceptacle || uiState.hoveredRecallTote || focusedInteractible ||
+            carryingBackstock || holdingClaimsItem || holdingRecallTote ||
+            player.hasElectricJack || player.hitchedPallet
+          )
+        );
+        const needsPeriodicRefresh = hasActiveTarget && (_lastInfotipEvalMs < 0 || (infotipNowMs - _lastInfotipEvalMs) >= 140);
+        if (stateChanged || needsPeriodicRefresh) {
+          _lastInfotipEvalMs = infotipNowMs;
+          _infotipLastState.blocking = blocking;
+          _infotipLastState.isTouch = isTouchDevice;
+          _infotipLastState.isAimCenter = isAimCenterNow;
+          _infotipLastState.overageDeliveryId = uiState.overageDeliveryId;
+          _infotipLastState.hoveredPhysicalBox = uiState.hoveredPhysicalBox;
+          _infotipLastState.hoveredBoxMesh = uiState.hoveredBoxMesh;
+          _infotipLastState.hoveredLabelCase = uiState.hoveredLabelCase;
+          _infotipLastState.hoveredInventoryCase = uiState.hoveredInventoryCase;
+          _infotipLastState.hoveredSupplyCase = uiState.hoveredSupplyCase;
+          _infotipLastState.hoveredBackstockTarget = uiState.hoveredBackstockTarget;
+          _infotipLastState.hoveredBackstockCase = uiState.hoveredBackstockCase;
+          _infotipLastState.hoveredClaimsTote = uiState.hoveredClaimsTote;
+          _infotipLastState.hoveredClaimsItem = uiState.hoveredClaimsItem;
+          _infotipLastState.hoveredRecallItem = uiState.hoveredRecallItem;
+          _infotipLastState.hoveredRecallArrangeSpot = uiState.hoveredRecallArrangeSpot;
+          _infotipLastState.hoveredRecallBottomDock = uiState.hoveredRecallBottomDock;
+          _infotipLastState.hoveredClaimsReceptacle = uiState.hoveredClaimsReceptacle;
+          _infotipLastState.hoveredRecallTote = uiState.hoveredRecallTote;
+          _infotipLastState.focusedInteractible = focusedInteractible;
+          _infotipLastState.carryingBackstock = carryingBackstock;
+          _infotipLastState.holdingClaimsItem = holdingClaimsItem;
+          _infotipLastState.holdingRecallTote = holdingRecallTote;
+          _infotipLastState.arrangingRecallItem = arrangingRecallItem;
+          _infotipLastState.hasElectricJack = player.hasElectricJack;
+          _infotipLastState.hitchedPallet = player.hitchedPallet;
+          _infotipLastState.battFloor = battFloor;
+          _infotipLastState.jackDockedAtCharger = jackDockedAtCharger;
+          _infotipLastState.ndcX = aimNDC.x;
+          _infotipLastState.ndcY = aimNDC.y;
+
+          let spec = null;
+          if (!blocking && hasActiveTarget) {
+            _infotipResolveCtx.isBlockingModalOpen = false;
+            _infotipResolveCtx.isTouch = isTouchDevice;
+            _infotipResolveCtx.deliverySystem = DeliverySystem;
+            _infotipResolveCtx.overageDeliveryId = uiState.overageDeliveryId;
+            _infotipResolveCtx.hoveredPhysicalBox = uiState.hoveredPhysicalBox;
+            _infotipResolveCtx.hoveredBoxMesh = uiState.hoveredBoxMesh;
+            _infotipResolveCtx.hoveredLabelCase = uiState.hoveredLabelCase;
+            _infotipResolveCtx.hoveredInventoryCase = uiState.hoveredInventoryCase;
+            _infotipResolveCtx.hoveredSupplyCase = uiState.hoveredSupplyCase;
+            _infotipResolveCtx.hoveredBackstockTarget = uiState.hoveredBackstockTarget;
+            _infotipResolveCtx.hoveredBackstockCase = uiState.hoveredBackstockCase;
+            _infotipResolveCtx.hoveredClaimsTote = uiState.hoveredClaimsTote;
+            _infotipResolveCtx.hoveredClaimsItem = uiState.hoveredClaimsItem;
+            _infotipResolveCtx.hoveredRecallItem = uiState.hoveredRecallItem;
+            _infotipResolveCtx.hoveredRecallArrangeSpot = uiState.hoveredRecallArrangeSpot;
+            _infotipResolveCtx.hoveredRecallBottomDock = uiState.hoveredRecallBottomDock;
+            _infotipResolveCtx.hoveredClaimsReceptacle = uiState.hoveredClaimsReceptacle;
+            _infotipResolveCtx.hoveredRecallTote = uiState.hoveredRecallTote;
+            _infotipResolveCtx.focusedInteractible = focusedInteractible;
+            _infotipResolveCtx.carryingBackstock = carryingBackstock;
+            _infotipResolveCtx.holdingClaimsItem = holdingClaimsItem;
+            _infotipResolveCtx.holdingRecallTote = holdingRecallTote;
+            _infotipResolveCtx.arrangingRecallItem = arrangingRecallItem;
+            _infotipResolveCtx.recallState = recallSt;
+            _infotipResolveCtx.hasElectricJack = player.hasElectricJack;
+            _infotipResolveCtx.hitchedPallet = player.hitchedPallet;
+            _infotipResolveCtx.jackBattery = jackBattery;
+            _infotipResolveCtx.jackDockedAtCharger = jackDockedAtCharger;
+            spec = window.InfotipAdapters.resolveActiveSpec(_infotipResolveCtx);
+          }
+          _infotipRenderOpts.isTouch = isTouchDevice;
+          _infotipRenderOpts.isAimCenter = isAimCenterNow;
+          _infotipRenderOpts.pointerNDC = aimNDC;
+          window.InfotipRenderer.renderToElement(hudInfotipEl, spec, _infotipRenderOpts);
+        }
       }
 
       // Action button stack: Scanner [F] on all devices; context action buttons (Use / Jack / Scan) on touch devices only
@@ -5154,7 +5396,6 @@
       uiState.terminalModalOpen = false;
       terminalModal.style.display = 'none';
       syncPhase2ContainerClasses();
-      syncCrtMonitorDisplay();
       if (!silent) SoundSystem.playButtonClick();
     }
 
@@ -5366,6 +5607,7 @@
     function updatePlayer(dt) {
       const sysPaused = Boolean(window.DSDGame && typeof window.DSDGame.isSystemPaused === 'function' && window.DSDGame.isSystemPaused());
       if (sysPaused || isBlockingModalOpen()) {
+        pendingJackYawDelta = 0;
         if (!wasAudioPaused && SoundSystem && typeof SoundSystem.stopAmbientLoops === 'function') {
           SoundSystem.stopAmbientLoops();
         }
@@ -5373,6 +5615,12 @@
         return;
       }
       wasAudioPaused = false;
+
+      if (Math.abs(pendingJackYawDelta) > 1e-6) {
+        const jackDelta = pendingJackYawDelta;
+        pendingJackYawDelta = 0;
+        setPlayerYawChecked(player.yaw + jackDelta);
+      }
 
       let forwardInput = 0;
       let strafeInput = 0;
@@ -5487,7 +5735,9 @@
 
     // --- MINIMAP RENDERING ---
     let minimapBgCanvas = null;
+    let minimapWorldCanvas = null;
     let minimapBgKey = '';
+    let lastMinimapWorldMs = -1;
     let lastMinimapDrawMs = -1;
     let lastDoorLightsSyncMs = -1;
     let lastHudSyncMs = -1;
@@ -5592,19 +5842,20 @@
       minimapBgKey = `${cw}x${ch}`;
     }
 
-    function renderMinimap() {
-      const cw = minimapCanvas.width;
-      const ch = minimapCanvas.height;
+    function renderMinimapWorldLayer(cw, ch) {
+      if (!minimapWorldCanvas) {
+        minimapWorldCanvas = document.createElement('canvas');
+      }
+      if (minimapWorldCanvas.width !== cw) minimapWorldCanvas.width = cw;
+      if (minimapWorldCanvas.height !== ch) minimapWorldCanvas.height = ch;
+      const wCtx = minimapWorldCanvas.getContext('2d');
+      if (!wCtx) return;
+
       const cellW = cw / COLS;
       const cellH = ch / ROWS;
-
-      if (!minimapBgCanvas || minimapBgKey !== `${cw}x${ch}`) {
-        buildMinimapStaticBg(cw, ch);
-      }
-
-      minimapCtx.clearRect(0, 0, cw, ch);
+      wCtx.clearRect(0, 0, cw, ch);
       if (minimapBgCanvas) {
-        minimapCtx.drawImage(minimapBgCanvas, 0, 0);
+        wCtx.drawImage(minimapBgCanvas, 0, 0);
       }
 
       // Draw docked trailers in rows 0..9 + outline
@@ -5616,18 +5867,18 @@
           const ry = startRow * cellH;
           const rw = 2 * cellW;
           const rh = trailerRows * cellH;
-          minimapCtx.fillStyle = '#9c6644';
-          minimapCtx.fillRect(rx, ry, rw, rh);
-          minimapCtx.strokeStyle = 'rgba(0, 0, 0, 0.25)';
-          minimapCtx.lineWidth = 0.5;
+          wCtx.fillStyle = '#9c6644';
+          wCtx.fillRect(rx, ry, rw, rh);
+          wCtx.strokeStyle = 'rgba(0, 0, 0, 0.25)';
+          wCtx.lineWidth = 0.5;
           for (let r = startRow; r < 10; r++) {
             for (let c = dd.colStart; c <= dd.colEnd; c++) {
-              minimapCtx.strokeRect(c * cellW, r * cellH, cellW, cellH);
+              wCtx.strokeRect(c * cellW, r * cellH, cellW, cellH);
             }
           }
-          minimapCtx.strokeStyle = '#cbd5e1';
-          minimapCtx.lineWidth = 1;
-          minimapCtx.strokeRect(rx + 0.5, ry + 0.5, rw - 1, rh - 1);
+          wCtx.strokeStyle = '#cbd5e1';
+          wCtx.lineWidth = 1;
+          wCtx.strokeRect(rx + 0.5, ry + 0.5, rw - 1, rh - 1);
         }
       });
 
@@ -5636,15 +5887,15 @@
         const x1 = dd.colStart * cellW;
         const w = 2 * cellW;
         const y = 10 * cellH - 1.5;
-        minimapCtx.fillStyle = dd.beaconColor || (dd.isOpen ? '#f59e0b' : '#22c55e');
-        minimapCtx.fillRect(x1, y, w, 3.5);
+        wCtx.fillStyle = dd.beaconColor || (dd.isOpen ? '#f59e0b' : '#22c55e');
+        wCtx.fillRect(x1, y, w, 3.5);
       });
 
       // Draw Side Rollup Door on East Wall (Row 14.5, Col 10) with live beacon status
       const sdy = 13.5 * cellH;
       const sdx = 11 * cellW - 3.5;
-      minimapCtx.fillStyle = sideRollupDoor.beaconColor || (sideRollupDoor.isOpen ? '#f59e0b' : '#22c55e');
-      minimapCtx.fillRect(sdx, sdy - 4.5, 3.5, 9);
+      wCtx.fillStyle = sideRollupDoor.beaconColor || (sideRollupDoor.isOpen ? '#f59e0b' : '#22c55e');
+      wCtx.fillRect(sdx, sdy - 4.5, 3.5, 9);
 
       // Draw Backstock Overstock Staging Pallets near each Steel Rack on minimap
       if (Array.isArray(overstockPallets)) {
@@ -5657,11 +5908,11 @@
           const oz = ((b.minZ - ORIGIN_Z) / totalWorldH) * ch;
           const ow = ((b.maxX - b.minX) / totalWorldW) * cw;
           const oh = ((b.maxZ - b.minZ) / totalWorldH) * ch;
-          minimapCtx.fillStyle = 'rgba(180, 130, 70, 0.85)';
-          minimapCtx.fillRect(ox, oz, Math.max(2, ow), Math.max(2, oh));
-          minimapCtx.strokeStyle = op.accentCss || '#f59e0b';
-          minimapCtx.lineWidth = 1;
-          minimapCtx.strokeRect(ox, oz, Math.max(2, ow), Math.max(2, oh));
+          wCtx.fillStyle = 'rgba(180, 130, 70, 0.85)';
+          wCtx.fillRect(ox, oz, Math.max(2, ow), Math.max(2, oh));
+          wCtx.strokeStyle = op.accentCss || '#f59e0b';
+          wCtx.lineWidth = 1;
+          wCtx.strokeRect(ox, oz, Math.max(2, ow), Math.max(2, oh));
         });
       }
 
@@ -5674,11 +5925,11 @@
         const rz = ((rb.minZ - ORIGIN_Z) / totalWorldH) * ch;
         const rw = ((rb.maxX - rb.minX) / totalWorldW) * cw;
         const rh = ((rb.maxZ - rb.minZ) / totalWorldH) * ch;
-        minimapCtx.fillStyle = '#94a3b8';
-        minimapCtx.fillRect(rx, rz, Math.max(2, rw), Math.max(3, rh));
-        minimapCtx.strokeStyle = '#f59e0b';
-        minimapCtx.lineWidth = 1;
-        minimapCtx.strokeRect(rx, rz, Math.max(2, rw), Math.max(3, rh));
+        wCtx.fillStyle = '#94a3b8';
+        wCtx.fillRect(rx, rz, Math.max(2, rw), Math.max(3, rh));
+        wCtx.strokeStyle = '#f59e0b';
+        wCtx.lineWidth = 1;
+        wCtx.strokeRect(rx, rz, Math.max(2, rw), Math.max(3, rh));
       }
 
       // Draw pallets on minimap
@@ -5695,11 +5946,11 @@
 
         if (p.isHitched) pCol = '#eab308';
 
-        minimapCtx.fillStyle = pCol;
-        minimapCtx.fillRect(mx - 2.5, my - 2.5, 5, 5);
-        minimapCtx.strokeStyle = '#000';
-        minimapCtx.lineWidth = 1;
-        minimapCtx.strokeRect(mx - 2.5, my - 2.5, 5, 5);
+        wCtx.fillStyle = pCol;
+        wCtx.fillRect(mx - 2.5, my - 2.5, 5, 5);
+        wCtx.strokeStyle = '#000';
+        wCtx.lineWidth = 1;
+        wCtx.strokeRect(mx - 2.5, my - 2.5, 5, 5);
       });
 
       // Draw parked electric jack on minimap
@@ -5708,11 +5959,11 @@
         const normJz = (electricJackWorld.position.z - ORIGIN_Z) / (ROWS * TILE_SIZE);
         const jx = normJx * cw;
         const jy = normJz * ch;
-        minimapCtx.fillStyle = '#f59e0b';
-        minimapCtx.fillRect(jx - 3.5, jy - 3.5, 7, 7);
-        minimapCtx.strokeStyle = '#000000';
-        minimapCtx.lineWidth = 1;
-        minimapCtx.strokeRect(jx - 3.5, jy - 3.5, 7, 7);
+        wCtx.fillStyle = '#f59e0b';
+        wCtx.fillRect(jx - 3.5, jy - 3.5, 7, 7);
+        wCtx.strokeStyle = '#000000';
+        wCtx.lineWidth = 1;
+        wCtx.strokeRect(jx - 3.5, jy - 3.5, 7, 7);
       }
 
       // Draw all active delivery drivers and carts across door queues on minimap
@@ -5728,13 +5979,13 @@
           if (s.driver.variant === 'warehouse') dCol = '#22c55e'; // Green for warehouse
           else if (s.driver.variant === 'vendor_truck') dCol = '#94a3b8'; // Grey for vendor truck
 
-          minimapCtx.fillStyle = dCol;
-          minimapCtx.beginPath();
-          minimapCtx.arc(dmx, dmy, 3.8, 0, Math.PI * 2);
-          minimapCtx.fill();
-          minimapCtx.strokeStyle = '#000000';
-          minimapCtx.lineWidth = 1;
-          minimapCtx.stroke();
+          wCtx.fillStyle = dCol;
+          wCtx.beginPath();
+          wCtx.arc(dmx, dmy, 3.8, 0, Math.PI * 2);
+          wCtx.fill();
+          wCtx.strokeStyle = '#000000';
+          wCtx.lineWidth = 1;
+          wCtx.stroke();
         }
 
         if (s.cart && s.cart.mesh && s.cart.mesh.parent) {
@@ -5744,13 +5995,36 @@
           const cmx = normCx * cw;
           const cmy = normCz * ch;
 
-          minimapCtx.fillStyle = '#f59e0b';
-          minimapCtx.fillRect(cmx - 2.5, cmy - 3.5, 5, 7);
-          minimapCtx.strokeStyle = '#000000';
-          minimapCtx.lineWidth = 0.8;
-          minimapCtx.strokeRect(cmx - 2.5, cmy - 3.5, 5, 7);
+          wCtx.fillStyle = '#f59e0b';
+          wCtx.fillRect(cmx - 2.5, cmy - 3.5, 5, 7);
+          wCtx.strokeStyle = '#000000';
+          wCtx.lineWidth = 0.8;
+          wCtx.strokeRect(cmx - 2.5, cmy - 3.5, 5, 7);
         }
       });
+    }
+
+    function renderMinimap(nowMs) {
+      const cw = minimapCanvas.width;
+      const ch = minimapCanvas.height;
+      const tickMs = Number.isFinite(nowMs) ? nowMs : performance.now();
+
+      if (!minimapBgCanvas || minimapBgKey !== `${cw}x${ch}`) {
+        buildMinimapStaticBg(cw, ch);
+        lastMinimapWorldMs = -1;
+      }
+
+      if (!minimapWorldCanvas || lastMinimapWorldMs < 0 || (tickMs - lastMinimapWorldMs) >= 220) {
+        lastMinimapWorldMs = tickMs;
+        renderMinimapWorldLayer(cw, ch);
+      }
+
+      minimapCtx.clearRect(0, 0, cw, ch);
+      if (minimapWorldCanvas) {
+        minimapCtx.drawImage(minimapWorldCanvas, 0, 0);
+      } else if (minimapBgCanvas) {
+        minimapCtx.drawImage(minimapBgCanvas, 0, 0);
+      }
 
       // Draw player position and heading
       const normX = (player.position.x - ORIGIN_X) / (COLS * TILE_SIZE);
@@ -5908,9 +6182,11 @@
 
     // --- Main Animation Loop ---
     let lastTime = performance.now();
+    let lastScannerUiSyncMs = -1;
 
     function animate(now) {
       requestAnimationFrame(animate);
+      pointerLookCtrl.beginFrame();
 
       let dt = (now - lastTime) / 1000;
       if (dt > 0.11) dt = 0.11;
@@ -5924,7 +6200,13 @@
         window.ShiftClock.update(dt, isSystemPaused);
         const clockSnap = window.ShiftClock.getTimeSnapshot();
         wallClock.setTime(clockSnap.hour, clockSnap.minute, clockSnap.second, clockSnap.millisecond, true);
-        if (typeof hallwayTimeclock !== 'undefined') hallwayTimeclock.setTime(clockSnap.hour, clockSnap.minute);
+        if (typeof hallwayTimeclock !== 'undefined' && player && player.position) {
+          const px = Number(player.position.x) || 0;
+          const pz = Number(player.position.z) || 0;
+          if (pz >= 28.0 || (px >= 9.6 && pz >= 21.5)) {
+            hallwayTimeclock.setTime(clockSnap.hour, clockSnap.minute);
+          }
+        }
       } else {
         wallClock.update();
       }
@@ -5965,14 +6247,21 @@
           }
         }
       }
-      if (player.scannerActive) updateScannerDisplay();
+      if (player.scannerActive) {
+        if (lastScannerUiSyncMs < 0 || (now - lastScannerUiSyncMs) >= 250) {
+          lastScannerUiSyncMs = now;
+          updateScannerDisplay();
+        }
+      } else {
+        lastScannerUiSyncMs = -1;
+      }
       if (!lastDoorLightsSyncMs || lastDoorLightsSyncMs < 0 || (now - lastDoorLightsSyncMs) >= 80) {
         lastDoorLightsSyncMs = now;
         renderDoorLightsPanel();
       }
-      if (!lastMinimapDrawMs || lastMinimapDrawMs < 0 || (now - lastMinimapDrawMs) >= 50) {
+      if (!lastMinimapDrawMs || lastMinimapDrawMs < 0 || (now - lastMinimapDrawMs) >= 66) {
         lastMinimapDrawMs = now;
-        renderMinimap();
+        renderMinimap(now);
       }
       renderer.render(scene, camera);
 
@@ -6452,6 +6741,7 @@
           }
           renderPendingDeliveriesPanel();
           DeliverySystem.init();
+          syncCrtMonitorDisplay();
           if (nextShiftSupplyOrders.length > 0) {
             const totalSupCases = nextShiftSupplyOrders.reduce((s, it) => s + Math.max(0, Number(it.cases || it.qty) || 0), 0);
             showNotification(`[[ico:truck]] Vendor #601 Dept 60 supply delivery (${totalSupCases} case${totalSupCases === 1 ? '' : 's'}) scheduled today!`, 'low');
@@ -6555,7 +6845,6 @@
         isPalletTarget: () => false,
         onDeliveryRefused: (d) => {
           DeliverySystem.handleDeliveryRefused(d);
-          syncCrtMonitorDisplay();
         },
         onReceiptUpdated: (d, opts) => {
           syncDeliveryBoxesVisuals(d);
@@ -6565,19 +6854,16 @@
           if (uiState.invoiceModalOpen && d) {
             renderInvoiceDocument(d, uiState.currentInvoiceTab || 'invoice');
           }
-          syncCrtMonitorDisplay();
         },
         onReceiptPrinted: () => {
           if (typeof triggerPrinterPrint === 'function') triggerPrinterPrint();
           if (SoundSystem.playPrinterPrint) SoundSystem.playPrinterPrint();
           else if (SoundSystem.playPaperRustle) SoundSystem.playPaperRustle();
           DeliverySystem.updateDeliveryHud();
-          syncCrtMonitorDisplay();
         },
         onReceiptCollected: () => {
           if (SoundSystem.playPaperRustle) SoundSystem.playPaperRustle();
           DeliverySystem.updateDeliveryHud();
-          syncCrtMonitorDisplay();
         },
         onReceiptDiscarded: () => {
           if (SoundSystem.playPaperRustle) SoundSystem.playPaperRustle();
@@ -6587,7 +6873,6 @@
           if (SoundSystem.playPaperRustle) SoundSystem.playPaperRustle();
           if (res && res.complete && SoundSystem.playSuccessChime) SoundSystem.playSuccessChime();
           DeliverySystem.updateDeliveryHud();
-          syncCrtMonitorDisplay();
         },
         onFinalizeReceiving: () => handleFinalizeReceivingClick(),
         onCloseTerminal: () => closeTerminal(),
@@ -6607,7 +6892,6 @@
             syncPrinterTrayVisual(info.printerTrayCount || 0);
           }
           drawerState.topDrawerSlideOpen = Boolean(info.archiveOpen || drawerState.pendingArchiveOpen);
-          syncCrtMonitorDisplay();
         },
         onPhase2ModalChange: () => {
           syncPhase2ContainerClasses();
@@ -6627,12 +6911,10 @@
 
     if (window.ShiftClock && typeof window.ShiftClock.on === 'function') {
       window.ShiftClock.on('onMinuteTick', (snap) => {
-        renderPendingDeliveriesPanel();
         DeliverySystem.tryStartNextScheduledVendor(snap);
         if (window.DSDReceipts && typeof window.DSDReceipts.updateTerminalClock === 'function') {
           window.DSDReceipts.updateTerminalClock(snap);
         }
-        syncCrtMonitorDisplay(snap);
         if (window.SaveSystem && snap && snap.minute % 5 === 0) {
           window.SaveSystem.triggerAutosave('minute_5');
         }
@@ -6675,6 +6957,13 @@
     }
     container.classList.toggle('main-menu-open', Boolean(window.DSDGame && window.DSDGame.isMainMenuOpen && window.DSDGame.isMainMenuOpen()));
     syncCrtMonitorDisplay();
+
+    // Pre-compile static Three.js shaders up front so rotating 360 degrees does not stutter on lazy GLSL compilation
+    try {
+      if (renderer && typeof renderer.compile === 'function') {
+        renderer.compile(scene, camera);
+      }
+    } catch (_) { }
 
     requestAnimationFrame((now) => {
       lastTime = now;

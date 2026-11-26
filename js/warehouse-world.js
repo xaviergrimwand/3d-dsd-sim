@@ -1622,15 +1622,6 @@
     chargerConduit.position.set(0.16, 2.7, 0.04);
     chargerGroup.add(chargerConduit);
 
-    // Coiled yellow industrial charging lead with black connector plug
-    const cordTorus = new THREE.Mesh(new THREE.TorusGeometry(0.12, 0.024, 8, 20), new THREE.MeshStandardMaterial({ color: 0xeab308, roughness: 0.6 }));
-    cordTorus.position.set(-0.14, -0.42, 0.12);
-    chargerGroup.add(cordTorus);
-
-    const plugHead = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.12, 0.06), new THREE.MeshStandardMaterial({ color: 0x0f172a, roughness: 0.8 }));
-    plugHead.position.set(-0.14, -0.54, 0.12);
-    chargerGroup.add(plugHead);
-
     scene.add(chargerGroup);
 
     // Floor Recharging Bay Marking under Electric Jack Home Position (X = -7.20, Z = 0.57..2.47)

@@ -199,6 +199,8 @@
     });
   }
 
+  let lastHudColonOn = null;
+
   function updateHud(force) {
     if (!global.ShiftClock || !global.ShiftStats) return;
     const snap = global.ShiftClock.getTimeSnapshot();
@@ -207,8 +209,12 @@
     const d = state.dom;
 
     const colonOn = (Math.floor(Date.now() / 500) % 2 === 0);
+    if (d.rdcColon && (force || colonOn !== lastHudColonOn)) {
+      lastHudColonOn = colonOn;
+      d.rdcColon.style.opacity = colonOn ? '1' : '0.28';
+    }
     const pctInt = Math.round((snap.progressPct || 0) * 100);
-    const timeKey = `${snap.formatted12h}|${snap.dateLabel}|${snap.workdayIndex}|${pctInt}|${colonOn ? 1 : 0}|${snap.afterNoon ? 1 : 0}|${snap.overtime ? 1 : 0}|${snap.shiftEnded ? 1 : 0}`;
+    const timeKey = `${snap.formatted12h}|${snap.dateLabel}|${snap.workdayIndex}|${pctInt}|${snap.afterNoon ? 1 : 0}|${snap.overtime ? 1 : 0}|${snap.shiftEnded ? 1 : 0}`;
     if (force || timeKey !== lastHudTimeKey) {
       lastHudTimeKey = timeKey;
       if (d.clockTime) {
@@ -230,9 +236,6 @@
       }
       if (d.rdcMinute) {
         d.rdcMinute.textContent = String(snap.minute).padStart(2, '0');
-      }
-      if (d.rdcColon) {
-        d.rdcColon.style.opacity = colonOn ? '1' : '0.28';
       }
       if (d.rdcIndAm) d.rdcIndAm.classList.toggle('on', snap.amPm === 'AM');
       if (d.rdcIndPm) d.rdcIndPm.classList.toggle('on', snap.amPm === 'PM');

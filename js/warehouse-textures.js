@@ -417,6 +417,8 @@
     canvas.height = H;
     const ctx = canvas.getContext('2d');
     const tex = new THREE.CanvasTexture(canvas);
+    tex.generateMipmaps = false;
+    tex.minFilter = THREE.LinearFilter;
     let lastKey = '';
 
     function draw(data) {
@@ -1368,6 +1370,8 @@
     canvas.width = 256; canvas.height = 192;
     const ctx = canvas.getContext('2d');
     const tex = new THREE.CanvasTexture(canvas);
+    tex.generateMipmaps = false;
+    tex.minFilter = THREE.LinearFilter;
     let lastKey = '';
 
     function draw(hour24, minute) {
@@ -1833,12 +1837,12 @@
     ctx.fill();
 
     ctx.fillStyle = '#f59e0b';
-    ctx.font = '900 32px "Arial Black", sans-serif';
-    ctx.fillText('CROWN', 55, 82);
+    ctx.font = '900 28px "Arial Black", sans-serif';
+    ctx.fillText('ELECTRIC', 52, 80);
 
     ctx.fillStyle = '#ffffff';
     ctx.font = 'bold 15px sans-serif';
-    ctx.fillText('WP-SERIES ELECTRIC', 55, 104);
+    ctx.fillText('PALLET JACK', 52, 104);
 
     // Capacity & Safety Placard
     ctx.fillStyle = '#1e293b';
@@ -2044,6 +2048,8 @@
     canvas.width = 256; canvas.height = 384;
     const ctx = canvas.getContext('2d');
     const texture = new THREE.CanvasTexture(canvas);
+    texture.generateMipmaps = false;
+    texture.minFilter = THREE.LinearFilter;
     let lastKey = '';
 
     function update(state) {

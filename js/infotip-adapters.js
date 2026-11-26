@@ -1277,7 +1277,7 @@
     return {
       tone: low ? 'crit' : 'warn',
       icon: 'jack',
-      title: 'Crown Electric Pallet Jack',
+      title: 'Electric Pallet Jack',
       subtitle: 'Park at Charger Between Unloads to Recharge',
       catChip: `BATT ${batt}%`,
       catChipCls: low ? 'hdr-crit' : '',
