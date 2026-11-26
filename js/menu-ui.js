@@ -29,6 +29,7 @@
     dom.btnTutorial = document.getElementById('btn-menu-tutorial');
     dom.btnAbout = document.getElementById('btn-menu-about');
     dom.mainLoadBadge = document.getElementById('menu-load-badge');
+    dom.menuVersionFooter = document.getElementById('menu-version-footer');
 
     dom.hudPauseBtn = document.getElementById('pause-menu-btn');
     dom.pauseOverlay = document.getElementById('pause-menu-overlay');
@@ -348,8 +349,16 @@
     if (!silent) playClick();
   }
 
+  function resolveGameVersion() {
+    if (global.DSDGame && typeof global.DSDGame.getVersion === 'function') {
+      return global.DSDGame.getVersion();
+    }
+    return global.DSD_GAME_VERSION || 'v0.1.01-0001';
+  }
+
   function openInfoModal(kind) {
     const isTutorial = kind === 'tutorial';
+    const ver = resolveGameVersion();
     if (dom.mimTitle) {
       dom.mimTitle.innerHTML = fmtIconHtml(isTutorial ? '[[ico:book]] TRAINING TUTORIAL' : '[[ico:info]] ABOUT 3D DSD RECEIVING SIMULATOR');
     }
@@ -372,7 +381,7 @@
       } else {
         dom.mimBody.innerHTML = `
           <div class="mim-section">
-            <h4>OVERVIEW</h4>
+            <h4>OVERVIEW · <code>${escapeHtml(ver)}</code></h4>
             <p><strong>3D DSD Receiving Simulator</strong> is a first-person 1996 backroom logistics simulation built around authentic Direct Store Delivery workflows, pallet staging, cold-chain compliance, claims sorting, and daily invoice auditing.</p>
           </div>
           <div class="mim-section">
@@ -662,6 +671,9 @@
 
   function init() {
     cacheDom();
+    if (dom.menuVersionFooter) {
+      dom.menuVersionFooter.textContent = resolveGameVersion();
+    }
     if (!state.initialized) {
       state.initialized = true;
       bindEvents();

@@ -5,7 +5,16 @@
    * DSDGame - Host-facing orchestrator for New 3D Game (3D DSD Receiving Simulator).
    * Coordinates ShiftClock, ShiftStats, HUD updates, shift end/reset lifecycle,
    * and modular subsystem hooks (Phases 0-5).
+   *
+   * Versioning scheme: v<release>.<major>.<minor>-<patch>
+   * - v1.*    : 1.0 final release
+   * - v0.X    : major milestone
+   * - .XX     : minor milestone (2 digits)
+   * - -XXXX   : incremental patches / bug fixes (4 digits)
    */
+  const GAME_VERSION = 'v0.1.01-0001';
+  global.DSD_GAME_VERSION = GAME_VERSION;
+
   const state = {
     initialized: false,
     shiftSummaryOpen: false,
@@ -824,6 +833,8 @@
   }
 
   global.DSDGame = {
+    VERSION: GAME_VERSION,
+    getVersion: () => GAME_VERSION,
     init: init,
     updateHud: updateHud,
     endShift: endShift,
