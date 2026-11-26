@@ -324,6 +324,7 @@
     }
     const s = snapFallback || (getClock() ? getClock().getTimeSnapshot() : null);
     if (s) {
+      if (s.tutorialMode) return '1996-02-01';
       const mIdx = months.indexOf(String(s.monthName || 'FEB').toUpperCase());
       const mm = String((mIdx >= 0 ? mIdx : 1) + 1).padStart(2, '0');
       const dd = String(s.dayOfMonth || '01').padStart(2, '0');
@@ -335,6 +336,7 @@
   function formatShortDateFromSnap(snap, useFullYear) {
     const s = snap || (getClock() ? getClock().getTimeSnapshot() : null);
     if (!s) return useFullYear ? '02/01/1996' : '02/01/96';
+    if (s.tutorialMode) return 'TUTORIAL';
     const monIdx = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'].indexOf(String(s.monthName || 'FEB').toUpperCase());
     const mm = String((monIdx >= 0 ? monIdx : 1) + 1).padStart(2, '0');
     const dd = String(s.dayOfMonth || '01').padStart(2, '0');
@@ -1330,7 +1332,10 @@
     return { ok: true, receipt: rec };
   }
 
-  function resetDailyReceipts() {
+  function resetDailyReceipts(opts) {
+    const o = opts || {};
+    const tutScript = o.tutorialScript !== undefined ? o.tutorialScript : null;
+    state.tutorialScript = tutScript;
     const prevFilingComplete = state.filingComplete;
     const prevTodayEntry = (state.archiveData.length > 0 && state.archiveData[0].isToday && !state.archiveData[0].placeholder)
       ? state.archiveData[0]
@@ -1364,7 +1369,7 @@
     closeTrashCanDialog();
     closeHandReceiptDialog();
 
-    generateNightDropInvoices();
+    generateNightDropInvoices(tutScript);
 
     const snap = getClock() ? getClock().getTimeSnapshot() : { dateLabel: 'FRI FEB 02, 1996' };
     if (prevTodayEntry && (prevFilingComplete || (Array.isArray(prevTodayEntry.vendors) && prevTodayEntry.vendors.length > 0))) {
@@ -1388,7 +1393,7 @@
       generateArchiveData(true);
     }
     state.archiveSelectedDay = 1;
-    generateHomeOfficeTasksForShift();
+    generateHomeOfficeTasksForShift(tutScript);
     syncArchiveReceiptsToLedger();
 
     state.scanner.inventoryMenuIdx = 0;
@@ -2328,6 +2333,8 @@
   global.DSDReceipts = {
     init(hooks) {
       state.restoredFromSave = false;
+      const tutScript = (hooks && hooks.tutorialScript !== undefined) ? hooks.tutorialScript : null;
+      state.tutorialScript = tutScript;
       const isFreshReset = Boolean(hooks && hooks.preserveNone === false);
       if (isFreshReset) {
         state.processedReceipts = [];
@@ -2335,10 +2342,40 @@
         state.archiveData = [];
         state.selectedReceiptNo = null;
         state.receiptsDeptGroup = '01';
+        state.resolvedNightDrops = [];
+        state.pinnedArchiveItems = [];
+        state.nightDropPanelOpen = false;
+        state.activeNightDropTab = 0;
+        state.filingOpen = false;
+        state.filingInvoices = [];
+        state.filingReceipts = [];
+        state.filingComplete = false;
+        state.filedReceiptsCount = 0;
+        state.filingSelectedSide = null;
+        state.filingSelectedIdx = -1;
+        state.archiveOpen = false;
+        state.archiveSelectedDay = 1;
+        state.archiveSelectedVendorIdx = 0;
+        state.printedSlips = [];
+        state.printerTraySlips = [];
+        state.activeSlipIndex = -1;
+        state.printedHudMinimized = false;
+        state.terminalRecallCount = '';
+        state.terminalLedgerMsg = '';
+        closeTrashCanDialog();
+        closeHandReceiptDialog();
+        startManualDraft();
+        state.scanner.inventoryMenuIdx = 0;
+        state.scanner.label = createInitialLabelState();
+        state.scanner.inventory = createInitialInventoryState();
+        state.scanner.supply = createInitialSupplyState();
+        state.scanner.damage = createInitialDamageState();
+        resetScannerSession();
+        renderPrintedReceiptHud();
       }
       Object.assign(state.hooks, hooks || {});
       enrichAllDeliveries();
-      generateNightDropInvoices();
+      generateNightDropInvoices(tutScript);
       if (!state.staticArchiveHistory) {
         const archiveHistPromise = loadArchiveHistory();
         if (archiveHistPromise && typeof archiveHistPromise.then === 'function') {
@@ -2347,14 +2384,14 @@
               restoreHistoricalArchiveDays();
             } else {
               generateArchiveData(true);
-              generateHomeOfficeTasksForShift();
+              generateHomeOfficeTasksForShift(state.tutorialScript);
               syncArchiveReceiptsToLedger();
             }
           });
         }
       }
       generateArchiveData(isFreshReset);
-      generateHomeOfficeTasksForShift();
+      generateHomeOfficeTasksForShift(tutScript);
       syncArchiveReceiptsToLedger();
       notifyDeskStateChanged();
 
@@ -2465,7 +2502,8 @@
     getRequiredReceiptNumbersForDelivery,
     areAllRequiredReceiptsHanded,
     getPendingReceiptHandoffInfo,
-    handPrintedReceiptsToDelivery
+    handPrintedReceiptsToDelivery,
+    formatShortDateFromSnap
   };
 
   Object.defineProperty(global.DSDReceipts, '_internal', {

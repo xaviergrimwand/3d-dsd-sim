@@ -554,8 +554,120 @@
     };
   }
 
+  function buildTutorialSchedule(scriptSpec) {
+    const rawList = Array.isArray(scriptSpec)
+      ? scriptSpec
+      : (scriptSpec && Array.isArray(scriptSpec.deliveries) ? scriptSpec.deliveries : []);
+    const cfg = getCatalogConfig();
+    const catalog = global.DSDCatalog;
+
+    state.shiftLimits = {
+      dryRemaining: Number(cfg.maxDryPallets) || 10,
+      chilledRemaining: Number(cfg.maxChilledPallets) || 8,
+      frozenRemaining: Number(cfg.maxFrozenPallets) || 8
+    };
+    state.priorityWarnedDeliveryIds = {};
+
+    const entries = [];
+    rawList.forEach((spec, idx) => {
+      if (!spec || typeof spec !== 'object') return;
+      const etaHour = Number.isFinite(Number(spec.etaHour)) ? Number(spec.etaHour) : 6;
+      const etaMinute = Number.isFinite(Number(spec.etaMinute)) ? Number(spec.etaMinute) : (5 + idx * 10);
+      const deliveryType = spec.type || 'sidedoor';
+
+      if (deliveryType === 'warehouse') {
+        const whEntry = buildWarehouseTruckEntry({
+          id: spec.id || `tut_wh_${idx + 1}`,
+          index: idx + 1,
+          driverName: spec.driverName || 'Alex Mercer',
+          driverGender: spec.driverGender || 'male',
+          etaHour: etaHour,
+          etaMinute: etaMinute,
+          palletCount: Number(spec.palletCount) || 6,
+          dockBay: Number(spec.dockBay) || 1,
+          invoiceNo: spec.invoiceNo || `0100${String(idx + 1).padStart(2, '0')}`,
+          forcePattern: Array.isArray(spec.forcePattern) ? spec.forcePattern : ['F', 'C', 'D'],
+          reserveForNextTruck: false
+        });
+        if (whEntry) {
+          if (spec.preferredBay !== undefined) whEntry.preferredBay = spec.preferredBay;
+          entries.push(whEntry);
+        }
+        return;
+      }
+
+      const vendorEntry = (spec.vendorNo && catalog && typeof catalog.getVendor === 'function')
+        ? catalog.getVendor(String(spec.vendorNo))
+        : (spec.vendorEntry || null);
+      const dsdEntry = buildDynamicDsdEntry({
+        id: spec.id || `tut_dsd_${idx + 1}`,
+        type: deliveryType,
+        vendorEntry: vendorEntry,
+        driverName: spec.driverName || (deliveryType === 'sidedoor' ? 'Jordan Reyes' : 'Marcus Vance'),
+        driverGender: spec.driverGender,
+        etaHour: etaHour,
+        etaMinute: etaMinute,
+        dockBay: spec.dockBay || null,
+        invoiceNo: spec.invoiceNo || `9001${String(idx + 1).padStart(2, '0')}`,
+        customInvoiceItems: Array.isArray(spec.items) ? spec.items : (Array.isArray(spec.customInvoiceItems) ? spec.customInvoiceItems : null)
+      });
+
+      if (spec.outOfTemp !== undefined) {
+        dsdEntry.outOfTemp = Boolean(spec.outOfTemp);
+        dsdEntry.tempChecked = dsdEntry.tempZone === 'D';
+      }
+
+      if (spec.shortage) {
+        applyDiscrepanciesToDsdEntry(dsdEntry, {
+          forceShort: true,
+          shortItemIndex: typeof spec.shortage === 'object' ? spec.shortage.itemIndex : 0,
+          shortDropCases: typeof spec.shortage === 'object' ? spec.shortage.dropCases : 1
+        });
+      }
+      if (spec.overage) {
+        applyDiscrepanciesToDsdEntry(dsdEntry, {
+          forceOver: true,
+          overItemIndex: typeof spec.overage === 'object' ? spec.overage.itemIndex : Math.min(1, Math.max(0, dsdEntry.invoiceItems.length - 1)),
+          overAddCases: typeof spec.overage === 'object' ? spec.overage.addCases : 1
+        });
+      }
+
+      if (Array.isArray(spec.creditItems)) {
+        dsdEntry.creditInvoiceNo = spec.creditInvoiceNo || String((parseInt(dsdEntry.invoiceNo, 10) || 900101) + 1).padStart(6, '0');
+        dsdEntry.creditItems = spec.creditItems.map((it) => Object.assign({
+          unitsPerCase: 1,
+          price: 4.99,
+          type: 'ambient',
+          notScannable: false
+        }, it));
+      } else if (spec.hasCredit && Array.isArray(dsdEntry.invoiceItems) && dsdEntry.invoiceItems.length > 0) {
+        const invNoNum = parseInt(dsdEntry.invoiceNo, 10) || 0;
+        dsdEntry.creditInvoiceNo = spec.creditInvoiceNo || (invNoNum > 0 ? String(invNoNum + 1).padStart(6, '0') : dsdEntry.invoiceNo);
+        const src = dsdEntry.invoiceItems[0];
+        dsdEntry.creditItems = [{
+          code: src.code,
+          name: src.name,
+          qty: Number(spec.creditQty) || 1,
+          unitsPerCase: 1,
+          price: Number(src.price || 4.99),
+          type: src.type || 'ambient',
+          notScannable: Boolean(src.notScannable)
+        }];
+      }
+
+      entries.push(dsdEntry);
+    });
+
+    entries.sort((a, b) => a.etaTotalMins - b.etaTotalMins);
+    state.schedule = entries;
+    return entries;
+  }
+
   function generateDailySchedule(opts) {
     const scheduleOpts = opts || {};
+    if (scheduleOpts.tutorialScript !== undefined && scheduleOpts.tutorialScript !== null) {
+      return buildTutorialSchedule(scheduleOpts.tutorialScript);
+    }
     const cfg = getCatalogConfig();
     const catalog = global.DSDCatalog;
     state.shiftLimits = {
@@ -827,8 +939,8 @@
     const items = entry.invoiceItems;
     const indices = items.map((_, i) => i);
 
-    const doShort = Boolean(o.forceBoth) || (typeof o.shortageChance === 'number' && Math.random() < o.shortageChance);
-    const doOver = Boolean(o.forceBoth) || (typeof o.overageChance === 'number' && Math.random() < o.overageChance);
+    const doShort = Boolean(o.forceBoth || o.forceShort) || (typeof o.shortageChance === 'number' && Math.random() < o.shortageChance);
+    const doOver = Boolean(o.forceBoth || o.forceOver) || (typeof o.overageChance === 'number' && Math.random() < o.overageChance);
     if (!doShort && !doOver) return;
 
     let shortIdx = -1;
@@ -837,13 +949,19 @@
         const upc = Math.max(1, Number(items[i].unitsPerCase) || 1);
         return Math.round((Number(items[i].qty) || 0) / upc) >= 2;
       });
-      shortIdx = shortCandidates.length > 0
-        ? shortCandidates[randInt(0, shortCandidates.length - 1)]
-        : 0;
+      if (Number.isInteger(o.shortItemIndex) && o.shortItemIndex >= 0 && o.shortItemIndex < items.length) {
+        shortIdx = o.shortItemIndex;
+      } else {
+        shortIdx = shortCandidates.length > 0
+          ? shortCandidates[randInt(0, shortCandidates.length - 1)]
+          : 0;
+      }
       const upc = Math.max(1, Number(items[shortIdx].unitsPerCase) || 1);
       const billedCases = Math.max(1, Math.round((Number(items[shortIdx].qty) || upc) / upc));
       const maxDropCases = Math.max(1, Math.min(2, billedCases - 1));
-      const dropCases = randInt(1, maxDropCases);
+      const dropCases = Number.isFinite(Number(o.shortDropCases))
+        ? Math.max(1, Math.min(billedCases, Math.round(Number(o.shortDropCases))))
+        : randInt(1, maxDropCases);
       const physCases = Math.max(0, billedCases - dropCases);
       items[shortIdx].physicalCases = physCases;
       items[shortIdx].physicalQty = physCases * upc;
@@ -851,11 +969,15 @@
 
     if (doOver) {
       const overCandidates = indices.filter((i) => i !== shortIdx);
-      if (overCandidates.length > 0) {
-        const overIdx = overCandidates[randInt(0, overCandidates.length - 1)];
+      if (overCandidates.length > 0 || Number.isInteger(o.overItemIndex)) {
+        const overIdx = (Number.isInteger(o.overItemIndex) && o.overItemIndex >= 0 && o.overItemIndex < items.length)
+          ? o.overItemIndex
+          : overCandidates[randInt(0, overCandidates.length - 1)];
         const upc = Math.max(1, Number(items[overIdx].unitsPerCase) || 1);
         const billedCases = Math.max(1, Math.round((Number(items[overIdx].qty) || upc) / upc));
-        const addCases = randInt(1, 2);
+        const addCases = Number.isFinite(Number(o.overAddCases))
+          ? Math.max(1, Math.round(Number(o.overAddCases)))
+          : randInt(1, 2);
         const physCases = billedCases + addCases;
         items[overIdx].physicalCases = physCases;
         items[overIdx].physicalQty = physCases * upc;
@@ -1644,6 +1766,8 @@
     importState: importState,
     relinkSpawnedPallets: relinkSpawnedPallets,
     generateDailySchedule: generateDailySchedule,
+    buildTutorialSchedule: buildTutorialSchedule,
+    applyDiscrepanciesToDsdEntry: applyDiscrepanciesToDsdEntry,
     getScheduleRows: getScheduleRows,
     getNonWarehouseQueue: getNonWarehouseQueue,
     onPalletStaged: onPalletStaged,

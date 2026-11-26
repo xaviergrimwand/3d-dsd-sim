@@ -1203,10 +1203,13 @@
     return out;
   }
 
-  function spawnStartingBackstock() {
+  function spawnStartingBackstock(opts) {
     clearAllCases();
-    const spawnProdCase = (rackId, prod) => {
-      addCaseToOverstockPallet({
+    const o = opts || {};
+    const tutScript = o.tutorialScript;
+    const spawnProdCase = (rackId, prod, extra) => {
+      const ex = extra || {};
+      const rec = addCaseToOverstockPallet({
         rackId: rackId,
         code: prod.code,
         name: prod.name,
@@ -1217,9 +1220,63 @@
         size: prod.size,
         unitsPerCase: prod.unitsPerCase,
         notScannable: prod.notScannable,
-        source: 'shift_start'
+        source: ex.source || 'shift_start'
       });
+      if (rec && ex.labeled) rec.labeled = true;
+      if (rec && ex.inventoried) rec.inventoried = true;
+      return rec;
     };
+
+    if (tutScript && tutScript.backstock !== undefined) {
+      const bsSpec = tutScript.backstock;
+      if (bsSpec === 'none' || (Array.isArray(bsSpec) && bsSpec.length === 0)) {
+        return;
+      }
+      if (Array.isArray(bsSpec)) {
+        bsSpec.forEach((entry) => {
+          if (!entry) return;
+          const cnt = Math.max(1, Math.round(Number(entry.count) || 1));
+          const prod = {
+            code: String(entry.code || '60101'),
+            name: entry.name || 'Tutorial Case',
+            deptNo: String(entry.deptNo || '01'),
+            vendorNo: String(entry.vendorNo || ''),
+            vendorName: entry.vendorName || '',
+            type: entry.type || 'ambient',
+            size: entry.size || 'medium',
+            unitsPerCase: Number(entry.unitsPerCase) || 8,
+            notScannable: Boolean(entry.notScannable)
+          };
+          for (let i = 0; i < cnt; i++) {
+            spawnProdCase(entry.rackId || resolveRackIdForItem(prod), prod, {
+              source: entry.source || 'tutorial',
+              labeled: Boolean(entry.labeled),
+              inventoried: Boolean(entry.inventoried)
+            });
+          }
+        });
+        return;
+      }
+      if (typeof bsSpec === 'object') {
+        if (bsSpec.seedSupply !== false) {
+          getCatalogProductsForDeptGroup('60', true).slice(0, Number(bsSpec.supplyCount) || 2).forEach((prod) => {
+            spawnProdCase('claims_steel', prod, { source: 'tutorial' });
+          });
+        }
+        const zones = [
+          { key: 'dry', rackId: 'dry_steel', pool: getCatalogProductsForDeptGroup(['1', '4', '5'], false), defCount: 2 },
+          { key: 'cooler', rackId: 'cooler_steel', pool: getCatalogProductsForDeptGroup('2', false), defCount: 1 },
+          { key: 'freezer', rackId: 'freezer_steel', pool: getCatalogProductsForDeptGroup('3', false), defCount: 1 }
+        ];
+        zones.forEach((z) => {
+          const want = Number.isFinite(Number(bsSpec[z.key])) ? Math.max(0, Number(bsSpec[z.key])) : (bsSpec.minimal ? z.defCount : 0);
+          for (let i = 0; i < want && i < z.pool.length; i++) {
+            spawnProdCase(z.rackId, z.pool[i], { source: 'tutorial' });
+          }
+        });
+        return;
+      }
+    }
 
     const starterPlan = [
       { rackId: 'claims_steel', pool: getCatalogProductsForDeptGroup('60', true), guaranteeAll: true },
@@ -2072,7 +2129,7 @@
     return candidates.find((c) => codesMatch(c.code, codeStr)) || null;
   }
 
-  function resetForShift() {
+  function resetForShift(opts) {
     const overstockPallets = (state.world && Array.isArray(state.world.overstockPallets))
       ? state.world.overstockPallets
       : [];
@@ -2087,7 +2144,7 @@
     });
     rebuildRackAndPalletRegistries();
     buildPlacementTargets();
-    spawnStartingBackstock();
+    spawnStartingBackstock(opts);
   }
 
   function exportState() {

@@ -5990,6 +5990,116 @@
       });
     }
 
+    let tutorialBeacon = null;
+
+    function ensureTutorialBeacon() {
+      if (tutorialBeacon) return tutorialBeacon;
+      if (typeof THREE === 'undefined' || !scene || typeof THREE.Group !== 'function') return null;
+
+      const group = new THREE.Group();
+      group.visible = false;
+
+      const ringGeo = new THREE.CylinderGeometry(0.92, 0.92, 0.04, 24, 1, true);
+      const ringMat = new THREE.MeshBasicMaterial({
+        color: 0x22c55e,
+        transparent: true,
+        opacity: 0.72,
+        depthWrite: false
+      });
+      if (THREE.DoubleSide !== undefined) ringMat.side = THREE.DoubleSide;
+      const ringMesh = new THREE.Mesh(ringGeo, ringMat);
+      ringMesh.position.y = 0.05;
+      group.add(ringMesh);
+
+      const discGeo = new THREE.CylinderGeometry(0.68, 0.68, 0.02, 20);
+      const discMat = new THREE.MeshBasicMaterial({
+        color: 0x22c55e,
+        transparent: true,
+        opacity: 0.22,
+        depthWrite: false
+      });
+      const discMesh = new THREE.Mesh(discGeo, discMat);
+      discMesh.position.y = 0.03;
+      group.add(discMesh);
+
+      const pillarGeo = new THREE.CylinderGeometry(0.18, 0.42, 3.6, 16, 1, true);
+      const pillarMat = new THREE.MeshBasicMaterial({
+        color: 0x4ade80,
+        transparent: true,
+        opacity: 0.24,
+        depthWrite: false
+      });
+      if (THREE.DoubleSide !== undefined) pillarMat.side = THREE.DoubleSide;
+      const pillarMesh = new THREE.Mesh(pillarGeo, pillarMat);
+      pillarMesh.position.y = 1.85;
+      group.add(pillarMesh);
+
+      const capGeo = new THREE.SphereGeometry(0.18, 12, 12);
+      const capMat = new THREE.MeshBasicMaterial({
+        color: 0xfacc15,
+        transparent: true,
+        opacity: 0.92
+      });
+      const capMesh = new THREE.Mesh(capGeo, capMat);
+      capMesh.position.y = 2.3;
+      group.add(capMesh);
+
+      scene.add(group);
+      tutorialBeacon = { group, ringMesh, ringMat, discMesh, discMat, pillarMesh, pillarMat, capMesh };
+      return tutorialBeacon;
+    }
+
+    function getActiveTutorialWorldTarget() {
+      if (!window.DSDTutorial || typeof window.DSDTutorial.getActiveWorldTarget !== 'function') {
+        return null;
+      }
+      const target = window.DSDTutorial.getActiveWorldTarget();
+      if (!target || !Number.isFinite(Number(target.x)) || !Number.isFinite(Number(target.z))) {
+        return null;
+      }
+      return target;
+    }
+
+    function updateTutorialWorldGuidance(nowMs) {
+      const target = getActiveTutorialWorldTarget();
+      if (!target) {
+        if (tutorialBeacon && tutorialBeacon.group) {
+          tutorialBeacon.group.visible = false;
+        }
+        return;
+      }
+      const beacon = ensureTutorialBeacon();
+      if (!beacon || !beacon.group) return;
+
+      const t = (Number.isFinite(nowMs) ? nowMs : performance.now()) * 0.001;
+      const pulse = 0.5 + 0.5 * Math.sin(t * 4.2);
+      const colorHex = target.colorHex !== undefined ? target.colorHex : 0x22c55e;
+
+      beacon.group.visible = true;
+      beacon.group.position.set(
+        Number(target.x) || 0,
+        Number(target.y) || 0,
+        Number(target.z) || 0
+      );
+
+      if (beacon.ringMat && beacon.ringMat.color && typeof beacon.ringMat.color.setHex === 'function') {
+        beacon.ringMat.color.setHex(colorHex);
+        beacon.ringMat.opacity = 0.45 + pulse * 0.45;
+      }
+      if (beacon.discMat && beacon.discMat.color && typeof beacon.discMat.color.setHex === 'function') {
+        beacon.discMat.color.setHex(colorHex);
+        beacon.discMat.opacity = 0.12 + pulse * 0.16;
+      }
+      if (beacon.pillarMat && beacon.pillarMat.color && typeof beacon.pillarMat.color.setHex === 'function') {
+        beacon.pillarMat.color.setHex(colorHex);
+        beacon.pillarMat.opacity = 0.14 + pulse * 0.16;
+      }
+      const ringScale = 0.85 + pulse * 0.35;
+      beacon.ringMesh.scale.set(ringScale, 1, ringScale);
+      beacon.capMesh.position.y = 2.0 + Math.sin(t * 3.4) * 0.25;
+      beacon.pillarMesh.visible = target.showPillar !== false;
+    }
+
     function renderMinimap(nowMs) {
       const cw = minimapCanvas.width;
       const ch = minimapCanvas.height;
@@ -6010,6 +6120,25 @@
         minimapCtx.drawImage(minimapWorldCanvas, 0, 0);
       } else if (minimapBgCanvas) {
         minimapCtx.drawImage(minimapBgCanvas, 0, 0);
+      }
+
+      // Draw pulsing Tutorial Objective ping on minimap when a tutorial world target is active
+      const tutTarget = getActiveTutorialWorldTarget();
+      if (tutTarget) {
+        const tx = ((Number(tutTarget.x) - ORIGIN_X) / (COLS * TILE_SIZE)) * cw;
+        const ty = ((Number(tutTarget.z) - ORIGIN_Z) / (ROWS * TILE_SIZE)) * ch;
+        const pulse = 0.5 + 0.5 * Math.sin(tickMs * 0.008);
+        minimapCtx.save();
+        minimapCtx.strokeStyle = '#4ade80';
+        minimapCtx.lineWidth = 2;
+        minimapCtx.beginPath();
+        minimapCtx.arc(tx, ty, 5 + pulse * 5, 0, Math.PI * 2);
+        minimapCtx.stroke();
+        minimapCtx.fillStyle = '#facc15';
+        minimapCtx.beginPath();
+        minimapCtx.arc(tx, ty, 3.2, 0, Math.PI * 2);
+        minimapCtx.fill();
+        minimapCtx.restore();
       }
 
       // Draw player position and heading
@@ -6249,6 +6378,7 @@
         lastMinimapDrawMs = now;
         renderMinimap(now);
       }
+      updateTutorialWorldGuidance(now);
       renderer.render(scene, camera);
 
       const frameWorkMs = performance.now() - now;
@@ -6362,7 +6492,11 @@
       renderDoorLightsPanel();
     }
 
-    function resetAllForFreshCampaign() {
+    function resetAllForFreshCampaign(opts) {
+      const o = opts || {};
+      const isTut = Boolean(o.tutorialMode);
+      const tutScript = o.tutorialScript !== undefined ? o.tutorialScript : null;
+
       DeliverySystem.cancelPendingArrivals();
       DeliverySystem.clearAllSessions();
       closeScanner();
@@ -6371,7 +6505,7 @@
       closeTerminal();
       closeDoorQueueModal(true);
 
-      if (window.ShiftClock) window.ShiftClock.init();
+      if (window.ShiftClock) window.ShiftClock.init({ tutorialMode: isTut });
       if (window.ShiftStats) window.ShiftStats.resetDailyStats();
       if (window.DSDMessages && typeof window.DSDMessages.clearSession === 'function') {
         window.DSDMessages.clearSession();
@@ -6420,18 +6554,18 @@
       syncElectricJackBatteryVisuals(undefined, true);
 
       if (window.WarehouseTrucks) {
-        window.WarehouseTrucks.resetForShift();
+        window.WarehouseTrucks.resetForShift({ tutorialScript: tutScript });
         DELIVERY_MANIFEST.length = 0;
         DELIVERY_MANIFEST.push(...window.WarehouseTrucks.getNonWarehouseQueue());
       }
       if (window.DSDReceipts) {
-        window.DSDReceipts.init({ preserveNone: false });
+        window.DSDReceipts.init({ preserveNone: false, tutorialScript: tutScript });
       }
       if (window.BackstockRacks) {
-        window.BackstockRacks.resetForShift();
+        window.BackstockRacks.resetForShift({ tutorialScript: tutScript });
       }
       if (window.ClaimsTotes) {
-        window.ClaimsTotes.resetForShift();
+        window.ClaimsTotes.resetForShift({ tutorialScript: tutScript });
       }
       syncDoorMeshesImmediate();
       updateStagedCounter();
@@ -6619,6 +6753,11 @@
           if (window.SaveSystem && typeof window.SaveSystem.triggerAutosave === 'function') {
             setTimeout(() => window.SaveSystem.triggerAutosave('new_game'), 1600);
           }
+        },
+        onTutorialStart: (tutOpts) => {
+          campaignStarted = true;
+          resetAllForFreshCampaign(tutOpts || { tutorialMode: true });
+          DeliverySystem.startShiftArrivals(400);
         },
         onMenuStateChange: (menuFlags) => {
           if (menuFlags && menuFlags.shiftSummaryOpen) {
@@ -6941,6 +7080,212 @@
     if (window.DSDMenuUI && typeof window.DSDMenuUI.init === 'function') {
       window.DSDMenuUI.init();
     }
+
+    function readStationPos(pred, fallback) {
+      const item = interactibles.find(pred);
+      if (!item) return fallback;
+      const center = typeof item.boxCenter === 'object' && item.boxCenter
+        ? item.boxCenter
+        : (item.mesh && item.mesh.position ? item.mesh.position : null);
+      if (!center) return fallback;
+      return {
+        x: Number(center.x) || fallback.x,
+        y: Number(center.y) || fallback.y,
+        z: Number(center.z) || fallback.z
+      };
+    }
+
+    function closeAllGameplayModals(silent) {
+      try { if (uiState.scannerModalOpen) closeScanner(true); } catch (_) { }
+      try { if (uiState.overageDeliveryId && typeof exitOverageFlagMode === 'function') exitOverageFlagMode(true); } catch (_) { }
+      try { if (uiState.bolModalOpen) closeWarehouseBol(); } catch (_) { }
+      try { if (uiState.invoiceModalOpen) closeInvoice(); } catch (_) { }
+      try { if (uiState.terminalModalOpen) closeTerminal(true); } catch (_) { }
+      try { if (uiState.doorQueueModalOpen) closeDoorQueueModal(true); } catch (_) { }
+      try { closePopupModal(); } catch (_) { }
+      if (window.DSDReceipts) {
+        try { if (typeof window.DSDReceipts.closeNightDropPanel === 'function') window.DSDReceipts.closeNightDropPanel(true); } catch (_) { }
+        try { if (typeof window.DSDReceipts.closeFilingOverlay === 'function') window.DSDReceipts.closeFilingOverlay(); } catch (_) { }
+        try { if (typeof window.DSDReceipts.closeInvoiceArchive === 'function') window.DSDReceipts.closeInvoiceArchive(); } catch (_) { }
+        try { if (typeof window.DSDReceipts.closeTrashCanDialog === 'function') window.DSDReceipts.closeTrashCanDialog(true); } catch (_) { }
+        try { if (typeof window.DSDReceipts.closeHandReceiptDialog === 'function') window.DSDReceipts.closeHandReceiptDialog(true); } catch (_) { }
+      }
+      if (!silent) {
+        try { updateLockHintDisplay(); } catch (_) { }
+      }
+    }
+
+    function getTutorialStationsSnapshot() {
+      const fZone = global.WarehouseWorld.gridToWorld(1.5, 19.5);
+      const cZone = global.WarehouseWorld.gridToWorld(6.5, 19.5);
+      const dZone = global.WarehouseWorld.gridToWorld(4.5, 13.5);
+      const d1 = dockDoors && dockDoors[0] ? dockDoors[0] : { worldX: -9.6, worldZ: -2.4 };
+      const d2 = dockDoors && dockDoors[1] ? dockDoors[1] : { worldX: -3.6, worldZ: -2.4 };
+      const claimsRack = Array.isArray(steelRacks) ? steelRacks.find((r) => r && r.id === 'claims_steel') : null;
+      const dryRack = Array.isArray(steelRacks) ? steelRacks.find((r) => r && r.id === 'dry_steel') : null;
+      const coolerRack = Array.isArray(steelRacks) ? steelRacks.find((r) => r && r.id === 'cooler_steel') : null;
+      const freezerRack = Array.isArray(steelRacks) ? steelRacks.find((r) => r && r.id === 'freezer_steel') : null;
+
+      return {
+        dockButton1: readStationPos((it) => it && it.type === 'dock_button' && (!it.door || it.door.id === 1), { x: d1.worldX - 1.5, y: 1.25, z: doorZ + 0.15 }),
+        dockDoor1: { x: Number(d1.worldX) || -9.6, y: 1.0, z: Number(d1.worldZ) || doorZ },
+        dockButton2: readStationPos((it) => it && it.type === 'dock_button' && it.door && it.door.id === 2, { x: d2.worldX - 1.5, y: 1.25, z: doorZ + 0.15 }),
+        dockDoor2: { x: Number(d2.worldX) || -3.6, y: 1.0, z: Number(d2.worldZ) || doorZ },
+        sideDoorButton: readStationPos((it) => it && it.type === 'side_door_button', { x: Number(sideRollupDoor.worldX) || 13.0, y: 1.25, z: Number(sideRollupDoor.worldZ) - 1.5 }),
+        sideDoor: { x: Number(sideRollupDoor.worldX) || 13.0, y: 1.0, z: Number(sideRollupDoor.worldZ) || 8.4 },
+        jackCharger: { x: JACK_HOME_POS.x, y: 0.9, z: JACK_HOME_POS.z },
+        freezerZone: { x: fZone.x, y: 0.4, z: fZone.z },
+        coolerZone: { x: cZone.x, y: 0.4, z: cZone.z },
+        dryZone: { x: dZone.x, y: 0.4, z: dZone.z },
+        terminal: readStationPos((it) => it && it.type === 'terminal', { x: 12.2, y: 1.35, z: 5.0 }),
+        nightDropTray: readStationPos((it) => it && it.type === 'desk_papers', { x: 12.2, y: 1.15, z: 4.3 }),
+        fileCabinet: readStationPos((it) => it && it.type === 'file_cabinet', { x: 11.9, y: 0.72, z: 4.3 }),
+        filingFolder: readStationPos((it) => it && it.type === 'filing_folder', { x: 12.2, y: 1.15, z: 5.7 }),
+        printer: readStationPos((it) => it && it.type === 'printer', { x: 12.3, y: 1.25, z: 4.3 }),
+        claimsSteel: claimsRack && claimsRack.spanEdges
+          ? { x: (claimsRack.spanEdges[0] + claimsRack.spanEdges[claimsRack.spanEdges.length - 1]) * 0.5, y: 1.1, z: Number(claimsRack.aisleEdge || 13.0) - 0.6 }
+          : { x: 7.2, y: 1.1, z: 12.2 },
+        drySteel: dryRack && dryRack.spanEdges
+          ? { x: (dryRack.spanEdges[0] + dryRack.spanEdges[dryRack.spanEdges.length - 1]) * 0.5, y: 1.1, z: Number(dryRack.aisleEdge || 13.0) - 0.6 }
+          : { x: -2.4, y: 1.1, z: 12.2 },
+        coolerSteel: coolerRack && coolerRack.spanEdges
+          ? { x: Number(coolerRack.aisleEdge || 7.2) - 0.6, y: 1.1, z: (coolerRack.spanEdges[0] + coolerRack.spanEdges[coolerRack.spanEdges.length - 1]) * 0.5 }
+          : { x: 6.4, y: 1.1, z: 22.8 },
+        freezerSteel: freezerRack && freezerRack.spanEdges
+          ? { x: Number(freezerRack.aisleEdge || -12.0) + 0.6, y: 1.1, z: (freezerRack.spanEdges[0] + freezerRack.spanEdges[freezerRack.spanEdges.length - 1]) * 0.5 }
+          : { x: -11.2, y: 1.1, z: 22.8 },
+        recallCart: (typeof recallCart !== 'undefined' && recallCart)
+          ? { x: Number(recallCart.x) || 9.0, y: 0.9, z: Number(recallCart.z) || 14.0 }
+          : { x: 9.0, y: 0.9, z: 14.0 },
+        timeclock: readStationPos((it) => it && it.type === 'timeclock', { x: -8.0, y: 1.4, z: 33.5 })
+      };
+    }
+
+    const _fwdTmp = new THREE.Vector3();
+
+    global.DSDRuntime = {
+      closeAllGameplayModals: closeAllGameplayModals,
+      resetTutorialChapterState: function (opts) {
+        const o = opts || {};
+        closeAllGameplayModals(true);
+        campaignStarted = true;
+        resetAllForFreshCampaign({
+          tutorialMode: true,
+          tutorialScript: o.tutorialScript !== undefined ? o.tutorialScript : null
+        });
+        if (window.ShiftClock && o.time && typeof window.ShiftClock.setTutorialTime === 'function') {
+          window.ShiftClock.setTutorialTime(o.time.hour || 6, o.time.minute || 0, { silent: true });
+        }
+        if (Array.isArray(o.arriveDeliveryIds) && DeliverySystem && typeof DeliverySystem.forceArriveDelivery === 'function') {
+          o.arriveDeliveryIds.forEach((delId) => DeliverySystem.forceArriveDelivery(delId));
+        }
+        if (window.DSDGame && typeof window.DSDGame.updateHud === 'function') {
+          window.DSDGame.updateHud(true);
+        }
+        renderPendingDeliveriesPanel();
+        syncCrtMonitorDisplay();
+      },
+      forceArriveDelivery: function (id) {
+        return DeliverySystem && typeof DeliverySystem.forceArriveDelivery === 'function'
+          ? DeliverySystem.forceArriveDelivery(id)
+          : false;
+      },
+      getDirectionalGuidance: function (target) {
+        if (!target || !Number.isFinite(Number(target.x)) || !Number.isFinite(Number(target.z))) {
+          return null;
+        }
+        const tx = Number(target.x);
+        const tz = Number(target.z);
+        const dx = tx - player.position.x;
+        const dz = tz - player.position.z;
+        const distanceM = Math.hypot(dx, dz);
+        let fx = -Math.sin(player.yaw);
+        let fz = -Math.cos(player.yaw);
+        if (camera && typeof camera.getWorldDirection === 'function') {
+          camera.getWorldDirection(_fwdTmp);
+          const fLen = Math.hypot(_fwdTmp.x, _fwdTmp.z);
+          if (fLen > 1e-4) {
+            fx = _fwdTmp.x / fLen;
+            fz = _fwdTmp.z / fLen;
+          }
+        }
+        const tLen = Math.max(1e-4, Math.hypot(dx, dz));
+        const ux = dx / tLen;
+        const uz = dz / tLen;
+        const dot = Math.max(-1, Math.min(1, fx * ux + fz * uz));
+        const crossY = fx * uz - fz * ux; // positive when target is to the right in (X-right, Z-back) view space
+        const absAngleDeg = Math.round((Math.acos(dot) * 180) / Math.PI);
+        const side = absAngleDeg <= 34 ? 'ahead' : (crossY > 0 ? 'right' : 'left');
+        return {
+          distanceM: distanceM,
+          angleDeg: absAngleDeg,
+          side: side,
+          inFront: side === 'ahead'
+        };
+      },
+      getTutorialSnapshot: function () {
+        return {
+          player: {
+            x: Number(player.position.x) || 0,
+            y: Number(player.position.y) || 1.65,
+            z: Number(player.position.z) || 0,
+            yaw: Number(player.yaw) || 0,
+            pitch: Number(player.pitch) || 0,
+            hasElectricJack: Boolean(player.hasElectricJack),
+            hitchedPalletId: (player.hitchedPallet && player.hitchedPallet.data) ? player.hitchedPallet.data.id : null,
+            scannerActive: Boolean(player.scannerActive)
+          },
+          modals: {
+            scannerOpen: Boolean(uiState.scannerModalOpen),
+            invoiceOpen: Boolean(uiState.invoiceModalOpen),
+            bolOpen: Boolean(uiState.bolModalOpen),
+            terminalOpen: Boolean(uiState.terminalModalOpen),
+            doorQueueOpen: Boolean(uiState.doorQueueModalOpen),
+            overageFlagMode: Boolean(uiState.overageDeliveryId)
+          },
+          doors: (dockDoors || []).map((dd) => ({
+            id: dd.id,
+            isOpen: Boolean(dd.isOpen),
+            hasTrailer: Boolean(dd.hasTrailer),
+            trailerType: dd.trailerType || null,
+            currentProgress: Number(dd.currentProgress) || 0
+          })),
+          sideDoor: {
+            isOpen: Boolean(sideRollupDoor.isOpen),
+            currentProgress: Number(sideRollupDoor.currentProgress) || 0
+          },
+          jack: {
+            dockedAtCharger: Boolean(jackDockedAtCharger),
+            hasElectricJack: Boolean(player.hasElectricJack),
+            battery: Number(jackBattery) || 0,
+            x: Number(electricJackWorld.position.x) || JACK_HOME_POS.x,
+            z: Number(electricJackWorld.position.z) || JACK_HOME_POS.z
+          },
+          pallets: (pallets || []).map((p) => ({
+            id: p && p.data ? p.data.id : null,
+            deliveryId: p && p.data ? p.data.deliveryId : null,
+            targetZone: p && p.data ? p.data.targetZone : null,
+            status: p && p.data ? p.data.status : null,
+            isWarehousePallet: Boolean(p && p.data && p.data.isWarehousePallet),
+            isHitched: Boolean(p && p.isHitched),
+            x: p && p.position ? Number(p.position.x) || 0 : 0,
+            z: p && p.position ? Number(p.position.z) || 0 : 0
+          })),
+          sessions: (DeliverySystem && Array.isArray(DeliverySystem.sessions))
+            ? DeliverySystem.sessions.map((s) => ({
+              deliveryId: s.delivery ? s.delivery.id : null,
+              type: s.delivery ? s.delivery.type : null,
+              state: s.state,
+              doorKey: s.doorKey,
+              driverPos: s.driver && s.driver.mesh ? { x: Number(s.driver.mesh.position.x) || 0, y: 1.1, z: Number(s.driver.mesh.position.z) || 0 } : null,
+              cartPos: s.cart && s.cart.mesh ? { x: Number(s.cart.mesh.position.x) || 0, y: 0.7, z: Number(s.cart.mesh.position.z) || 0 } : null,
+              creditTotePos: s.creditTote && s.creditTote.mesh ? { x: Number(s.creditTote.mesh.position.x) || 0, y: 0.4, z: Number(s.creditTote.mesh.position.z) || 0 } : null
+            }))
+            : [],
+          stations: getTutorialStationsSnapshot()
+        };
+      }
+    };
     container.classList.toggle('main-menu-open', Boolean(window.DSDGame && window.DSDGame.isMainMenuOpen && window.DSDGame.isMainMenuOpen()));
     syncCrtMonitorDisplay();
 

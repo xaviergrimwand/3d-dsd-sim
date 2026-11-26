@@ -248,7 +248,17 @@
     }
   }
 
+  function isTutorialSaveBlocked() {
+    const tutActive = Boolean(global.DSDTutorial && typeof global.DSDTutorial.isActive === 'function' && global.DSDTutorial.isActive());
+    const gameTut = Boolean(global.DSDGame && typeof global.DSDGame.isTutorialMode === 'function' && global.DSDGame.isTutorialMode());
+    const clockTut = Boolean(global.ShiftClock && typeof global.ShiftClock.isTutorialMode === 'function' && global.ShiftClock.isTutorialMode());
+    return tutActive || gameTut || clockTut;
+  }
+
   function saveGame(slotId) {
+    if (isTutorialSaveBlocked()) {
+      return { ok: false, error: 'Save/Load disabled in Tutorial Mode' };
+    }
     const cfg = getSlotConfig(slotId);
     let json;
     let payload;
@@ -285,6 +295,9 @@
   }
 
   function loadGame(slotId) {
+    if (isTutorialSaveBlocked()) {
+      return { ok: false, error: 'Save/Load disabled in Tutorial Mode' };
+    }
     const readRes = readSlotPayload(slotId);
     if (!readRes.ok) return readRes;
     return applySavePayload(readRes.payload);
@@ -397,6 +410,9 @@
   }
 
   function importSaveJson(jsonText, opts) {
+    if (isTutorialSaveBlocked()) {
+      return { ok: false, error: 'Save/Load disabled in Tutorial Mode' };
+    }
     const o = opts || {};
     let parsed;
     try {
@@ -421,6 +437,9 @@
   }
 
   function triggerAutosave(reason) {
+    if (isTutorialSaveBlocked()) {
+      return { ok: false, skipped: true, error: 'Save/Load disabled in Tutorial Mode' };
+    }
     if (typeof state.hooks.canAutosave === 'function' && !state.hooks.canAutosave()) {
       return { ok: false, skipped: true };
     }
@@ -464,6 +483,7 @@
     exportSaveJson: exportSaveJson,
     downloadSaveFile: downloadSaveFile,
     importSaveJson: importSaveJson,
-    triggerAutosave: triggerAutosave
+    triggerAutosave: triggerAutosave,
+    isTutorialSaveBlocked: isTutorialSaveBlocked
   };
 })(window);

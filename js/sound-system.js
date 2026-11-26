@@ -15,6 +15,7 @@
     let sfxBus = null;
     let uiBus = null;
     let ambienceBus = null;
+    let musicBus = null;
 
     let whiteNoiseBuf = null;
     let pinkNoiseBuf = null;
@@ -39,7 +40,9 @@
       masterVolume: 0.85,
       sfxVolume: 1.0,
       uiVolume: 0.9,
-      ambienceVolume: 0.55
+      ambienceVolume: 0.55,
+      musicMuted: false,
+      musicVolume: 0.55
     };
 
     function loadSettings() {
@@ -61,6 +64,10 @@
         }
         if (Number.isFinite(Number(parsed.ambienceVolume))) {
           settings.ambienceVolume = Math.max(0, Math.min(1, Number(parsed.ambienceVolume)));
+        }
+        if (typeof parsed.musicMuted === 'boolean') settings.musicMuted = parsed.musicMuted;
+        if (Number.isFinite(Number(parsed.musicVolume))) {
+          settings.musicVolume = Math.max(0, Math.min(1, Number(parsed.musicVolume)));
         }
       } catch (_) { }
     }
@@ -88,6 +95,12 @@
       }
       if (ambienceBus && ambienceBus.gain) {
         ambienceBus.gain.setTargetAtTime(settings.ambienceVolume, now, 0.04);
+      }
+      if (musicBus && musicBus.gain) {
+        musicBus.gain.setTargetAtTime(settings.musicMuted ? 0 : settings.musicVolume, now, 0.06);
+      }
+      if (global.MusicSystem && typeof global.MusicSystem.syncVolume === 'function') {
+        global.MusicSystem.syncVolume();
       }
     }
 
@@ -154,10 +167,12 @@
           sfxBus = audioCtx.createGain();
           uiBus = audioCtx.createGain();
           ambienceBus = audioCtx.createGain();
+          musicBus = audioCtx.createGain();
 
           sfxBus.connect(masterGain);
           uiBus.connect(masterGain);
           ambienceBus.connect(masterGain);
+          musicBus.connect(masterGain);
           masterGain.connect(audioCtx.destination);
 
           applyMixGains();
@@ -279,6 +294,10 @@
         if (patch.ambienceVolume !== undefined && Number.isFinite(Number(patch.ambienceVolume))) {
           settings.ambienceVolume = Math.max(0, Math.min(1, Number(patch.ambienceVolume)));
         }
+        if (typeof patch.musicMuted === 'boolean') settings.musicMuted = patch.musicMuted;
+        if (patch.musicVolume !== undefined && Number.isFinite(Number(patch.musicVolume))) {
+          settings.musicVolume = Math.max(0, Math.min(1, Number(patch.musicVolume)));
+        }
         applyMixGains();
         saveSettings();
         return this.getSettings();
@@ -288,11 +307,42 @@
         settings.muted = !settings.muted;
         applyMixGains();
         saveSettings();
+        if (global.MusicSystem && typeof global.MusicSystem.syncVolume === 'function') {
+          global.MusicSystem.syncVolume();
+        }
         return settings.muted;
       },
 
       isMuted: function () {
         return Boolean(settings.muted);
+      },
+
+      toggleMusicMute: function () {
+        settings.musicMuted = !settings.musicMuted;
+        applyMixGains();
+        saveSettings();
+        if (global.MusicSystem && typeof global.MusicSystem.syncVolume === 'function') {
+          global.MusicSystem.syncVolume();
+        }
+        return settings.musicMuted;
+      },
+
+      isMusicMuted: function () {
+        return Boolean(settings.musicMuted);
+      },
+
+      getContext: function (skipResume) {
+        return getAudioContext(skipResume);
+      },
+
+      getMusicBus: function () {
+        getAudioContext(true);
+        return musicBus;
+      },
+
+      ensureUnlocked: function () {
+        const ctx = getAudioContext(false);
+        return ctx;
       },
 
       // Crisp 1990s Zebra/Symbol barcode laser chirp

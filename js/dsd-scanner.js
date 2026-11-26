@@ -3224,7 +3224,7 @@
       sc.homeSelectedIdx = selIdx;
       const optionRows = homeOptions.map((label, idx) => {
         const isSel = idx === selIdx;
-        return '<div class="lcd-scr-line' + (isSel ? ' notice' : '') + '">' + escapeHtml(label.slice(0, 24)) + '</div>';
+        return '<div class="lcd-scr-line' + (isSel ? ' notice' : '') + '" data-tut="sc-home-' + idx + '">' + escapeHtml(label.slice(0, 24)) + '</div>';
       }).join('');
       linesHtml =
         '<div class="lcd-scr-line">HANDHELD TERMINAL</div>' +
@@ -3270,13 +3270,13 @@
       linesHtml =
         '<div class="lcd-scr-line">DEPT 60 SUPPLY ORDER</div>' +
         line2Sup +
-        '<div class="lcd-scr-line">SKU:   <span class="lcd-input-box' + (sup.activeField === 'sku' ? ' active' : '') + '">' + skuDisp + '</span> ' + escapeHtml(idxDisp) + '</div>' +
-        '<div class="lcd-scr-line">Cases: <span class="lcd-input-box' + (sup.activeField === 'qty' ? ' active' : '') + '">' + qtyDisp + '</span> Stk:' + escapeHtml(String(curStockUnits)) + 'u</div>' +
+        '<div class="lcd-scr-line">SKU:   <span class="lcd-input-box' + (sup.activeField === 'sku' ? ' active' : '') + '" data-tut="sc-sup-sku">' + skuDisp + '</span> ' + escapeHtml(idxDisp) + '</div>' +
+        '<div class="lcd-scr-line">Cases: <span class="lcd-input-box' + (sup.activeField === 'qty' ? ' active' : '') + '" data-tut="sc-sup-qty">' + qtyDisp + '</span> Stk:' + escapeHtml(String(curStockUnits)) + 'u</div>' +
         '<div class="lcd-scr-line">' + escapeHtml(itemLabel) + '</div>' +
         '<div class="lcd-scr-line">' + escapeHtml(priceLabel.slice(0, 20)) + '</div>' +
         line7Sup +
         '<div class="lcd-scr-line">F2 Totals | F3 Back</div>' +
-        '<div class="lcd-scr-line">F4 Cart(' + escapeHtml(String(cart.length)) + ') | F5 ORDER</div>';
+        '<div class="lcd-scr-line" data-tut="sc-sup-order">F4 Cart(' + escapeHtml(String(cart.length)) + ') | F5 ORDER</div>';
     } else if (sc.screen === 'supply-cart') {
       if (!sc.supply) sc.supply = createInitialSupplyState();
       const sup = sc.supply;
@@ -3383,7 +3383,7 @@
       sc.inventoryMenuIdx = subIdx;
       const subRows = subOptions.map((label, idx) => {
         const isSel = idx === subIdx;
-        return '<div class="lcd-scr-line' + (isSel ? ' notice' : '') + '">' + escapeHtml(label.slice(0, 24)) + '</div>';
+        return '<div class="lcd-scr-line' + (isSel ? ' notice' : '') + '" data-tut="sc-inv-opt-' + idx + '">' + escapeHtml(label.slice(0, 24)) + '</div>';
       }).join('');
       linesHtml =
         '<div class="lcd-scr-line">BACKROOM INVENTORY</div>' +
@@ -3405,7 +3405,7 @@
       linesHtml =
         '<div class="lcd-scr-line">LABEL CASES</div>' +
         line2Notice +
-        '<div class="lcd-scr-line">Code: <span class="lcd-input-box active">' + codeDisp + '</span></div>' +
+        '<div class="lcd-scr-line">Code: <span class="lcd-input-box active" data-tut="sc-lbl-code">' + codeDisp + '</span></div>' +
         '<div class="lcd-scr-line">Pack: ' + escapeHtml(qtyText.slice(0, 17)) + '</div>' +
         '<div class="lcd-scr-line">Product Name:</div>' +
         '<div class="lcd-scr-line">' + escapeHtml(prodNameText) + '</div>' +
@@ -3428,8 +3428,8 @@
         '<div class="lcd-scr-line">AUDIT BACKROOM</div>' +
         line2Inv +
         '<div class="lcd-scr-line">Bin:   ' + escapeHtml(binStr) + '</div>' +
-        '<div class="lcd-scr-line">UPC:   <span class="lcd-input-box' + (inv.activeField === 'productCode' ? ' active' : '') + '">' + upcDisp + '</span></div>' +
-        '<div class="lcd-scr-line">Units: <span class="lcd-input-box' + (inv.activeField === 'quantity' ? ' active' : '') + '">' + qtyDisp + '</span></div>' +
+        '<div class="lcd-scr-line">UPC:   <span class="lcd-input-box' + (inv.activeField === 'productCode' ? ' active' : '') + '" data-tut="sc-inv-upc">' + upcDisp + '</span></div>' +
+        '<div class="lcd-scr-line">Units: <span class="lcd-input-box' + (inv.activeField === 'quantity' ? ' active' : '') + '" data-tut="sc-inv-qty">' + qtyDisp + '</span></div>' +
         '<div class="lcd-scr-line">Product Name:</div>' +
         '<div class="lcd-scr-line">' + escapeHtml(prodNameText) + '</div>' +
         '<div class="lcd-scr-line"> F3 Back | - Adj</div>' +
@@ -3495,7 +3495,7 @@
       linesHtml =
         '<div class="lcd-scr-line">MARKDOWN CLAIMS</div>' +
         line2Notice +
-        '<div class="lcd-scr-line">Code: <span class="lcd-input-box active">' + codeDisp + '</span></div>' +
+        '<div class="lcd-scr-line">Code: <span class="lcd-input-box active" data-tut="sc-dmg-code">' + codeDisp + '</span></div>' +
         '<div class="lcd-scr-line"> </div>' +
         '<div class="lcd-scr-line">Scan Item or Enter PLU</div>' +
         '<div class="lcd-scr-line"> </div>' +
@@ -3598,13 +3598,13 @@
       linesHtml =
         '<div class="lcd-scr-line">CREATE RECEIPT</div>' +
         line2Notice +
-        '<div class="lcd-scr-line">Dept#:   <span class="lcd-input-box' + (sc.activeField === 'deptNo' ? ' active' : '') + '">' + deptDisp + '</span></div>' +
-        '<div class="lcd-scr-line">Vendor:  <span class="lcd-input-box' + (sc.activeField === 'vendorNo' ? ' active' : '') + '">' + vendDisp + '</span></div>' +
-        '<div class="lcd-scr-line">Invoice: <span class="lcd-input-box' + (sc.activeField === 'invoiceNo' ? ' active' : '') + '">' + invDisp + '</span></div>' +
-        '<div class="lcd-scr-line">Units:   <span class="lcd-input-box' + (sc.activeField === 'units' ? ' active' : '') + '">' + unitsDisp + '</span></div>' +
-        '<div class="lcd-scr-line">Cost:    <span class="lcd-input-box' + (sc.activeField === 'cost' ? ' active' : '') + '">' + costDisp + '</span></div>' +
+        '<div class="lcd-scr-line">Dept#:   <span class="lcd-input-box' + (sc.activeField === 'deptNo' ? ' active' : '') + '" data-tut="sc-field-deptNo">' + deptDisp + '</span></div>' +
+        '<div class="lcd-scr-line">Vendor:  <span class="lcd-input-box' + (sc.activeField === 'vendorNo' ? ' active' : '') + '" data-tut="sc-field-vendorNo">' + vendDisp + '</span></div>' +
+        '<div class="lcd-scr-line">Invoice: <span class="lcd-input-box' + (sc.activeField === 'invoiceNo' ? ' active' : '') + '" data-tut="sc-field-invoiceNo">' + invDisp + '</span></div>' +
+        '<div class="lcd-scr-line">Units:   <span class="lcd-input-box' + (sc.activeField === 'units' ? ' active' : '') + '" data-tut="sc-field-units">' + unitsDisp + '</span></div>' +
+        '<div class="lcd-scr-line">Cost:    <span class="lcd-input-box' + (sc.activeField === 'cost' ? ' active' : '') + '" data-tut="sc-field-cost">' + costDisp + '</span></div>' +
         resumeHintLine +
-        '<div class="lcd-scr-line">ENT Create | F3 Back</div>';
+        '<div class="lcd-scr-line" data-tut="sc-create-ent">ENT Create | F3 Back</div>';
     } else if (sc.screen === 'resume') {
       const initialRecs = getInitialReceipts();
       const selIdx = Math.max(0, Math.min(Math.max(0, initialRecs.length - 1), sc.resumeSelectedIdx || 0));
@@ -3646,13 +3646,13 @@
       linesHtml =
         '<div class="lcd-scr-line">Receipt: ' + escapeHtml(sc.activeReceiptNo || '--') + '</div>' +
         line2Scan +
-        '<div class="lcd-scr-line">UPC:   <span class="lcd-input-box' + (sc.activeField === 'productCode' ? ' active' : '') + '">' + upcDisp + '</span></div>' +
-        '<div class="lcd-scr-line">Units: <span class="lcd-input-box' + (sc.activeField === 'quantity' ? ' active' : '') + '">' + qtyDisp + '</span></div>' +
+        '<div class="lcd-scr-line">UPC:   <span class="lcd-input-box' + (sc.activeField === 'productCode' ? ' active' : '') + '" data-tut="sc-field-productCode">' + upcDisp + '</span></div>' +
+        '<div class="lcd-scr-line">Units: <span class="lcd-input-box' + (sc.activeField === 'quantity' ? ' active' : '') + '" data-tut="sc-field-quantity">' + qtyDisp + '</span></div>' +
         '<div class="lcd-scr-line">Product Name:</div>' +
         '<div class="lcd-scr-line">' + escapeHtml(prodNameText) + '</div>' +
         '<div class="lcd-scr-line"> </div>' +
-        '<div class="lcd-scr-line"> - Credit| F2 Total</div>' +
-        '<div class="lcd-scr-line"> F4 List | F5 FINAL</div>';
+        '<div class="lcd-scr-line" data-tut="sc-scan-credit"> - Credit| F2 Total</div>' +
+        '<div class="lcd-scr-line" data-tut="sc-scan-finalize"> F4 List | F5 FINAL</div>';
     } else if (sc.screen === 'list') {
       const items = sc.scannedItems || [];
       const scroll = Math.max(0, Math.min(Math.max(0, items.length - 6), sc.listScroll || 0));
@@ -3752,6 +3752,8 @@
     }
 
     const nextBodyHtml = linesHtml;
+    bodyEl.dataset.tutScreen = sc.screen || 'home';
+    bodyEl.dataset.tutField = sc.activeField || (sc.supply && sc.supply.activeField) || (sc.inventory && sc.inventory.activeField) || '';
     if (nextBodyHtml !== lastScannerBodyHtml) {
       lastScannerBodyHtml = nextBodyHtml;
       bodyEl.innerHTML = nextBodyHtml;

@@ -22,6 +22,8 @@
     mainMenuOpen: true,
     saveLoadModalOpen: false,
     infoModalOpen: false,
+    tutorialMode: false,
+    tutorialScript: null,
     noonPunchOutNotified: false,
     hooks: {
       showAlert: null,
@@ -31,6 +33,7 @@
       playButtonClick: null,
       getUnfinishedWork: null,
       onNewGame: null,
+      onTutorialStart: null,
       onMenuStateChange: null,
       onHudUpdate: null,
       onResetShift: []
@@ -162,13 +165,14 @@
     const d = state.dom;
     if (!d.clockCalGrid) return;
     const s = snap || (global.ShiftClock ? global.ShiftClock.getTimeSnapshot() : {});
+    const isTut = Boolean(state.tutorialMode || s.tutorialMode);
     const curDay = parseInt(s.dayOfMonth, 10) || 1;
-    const calKey = `${s.monthName || 'FEB'}|${curDay}|${s.workdayIndex || 1}|${s.shiftEnded ? 1 : 0}|${s.campaignComplete ? 1 : 0}`;
+    const calKey = `${s.monthName || 'FEB'}|${curDay}|${s.workdayIndex || 0}|${isTut ? 1 : 0}|${s.shiftEnded ? 1 : 0}|${s.campaignComplete ? 1 : 0}`;
     if (calKey === lastCalRenderKey && d.clockCalGrid.children.length > 0) return;
     lastCalRenderKey = calKey;
 
     if (d.clockCalWorkday) {
-      d.clockCalWorkday.textContent = 'DAY ' + (s.workdayIndex || 1) + '/21';
+      d.clockCalWorkday.textContent = isTut ? 'TUTORIAL' : ('DAY ' + (s.workdayIndex || 1) + '/21');
     }
 
     const cells = buildFebruaryCalendarCells(s);
@@ -222,8 +226,9 @@
       lastHudColonOn = colonOn;
       d.rdcColon.style.opacity = colonOn ? '1' : '0.28';
     }
+    const isTut = Boolean(state.tutorialMode || snap.tutorialMode);
     const pctInt = Math.round((snap.progressPct || 0) * 100);
-    const timeKey = `${snap.formatted12h}|${snap.dateLabel}|${snap.workdayIndex}|${pctInt}|${snap.afterNoon ? 1 : 0}|${snap.overtime ? 1 : 0}|${snap.shiftEnded ? 1 : 0}`;
+    const timeKey = `${snap.formatted12h}|${snap.dateLabel}|${snap.workdayIndex}|${isTut ? 1 : 0}|${pctInt}|${snap.afterNoon ? 1 : 0}|${snap.overtime ? 1 : 0}|${snap.shiftEnded ? 1 : 0}`;
     if (force || timeKey !== lastHudTimeKey) {
       lastHudTimeKey = timeKey;
       if (d.clockTime) {
@@ -233,7 +238,7 @@
         d.retroClock.classList.toggle('is-overtime', Boolean(snap.overtime));
       }
       if (d.clockDate) {
-        d.clockDate.textContent = snap.dateLabel + ' · DAY ' + snap.workdayIndex + '/21';
+        d.clockDate.textContent = isTut ? 'TUTORIAL' : (snap.dateLabel + ' · DAY ' + snap.workdayIndex + '/21');
       }
       if (d.rdcHourMain) {
         const h12 = snap.hour12 || 6;
@@ -251,9 +256,17 @@
       if (d.rdcProgress) {
         d.rdcProgress.style.width = pctInt + '%';
       }
-      if (d.rdcDow) d.rdcDow.textContent = snap.dayName || 'MON';
-      if (d.rdcMonDay) d.rdcMonDay.textContent = (snap.monthName || 'JAN') + ' ' + (snap.dayOfMonth || '01');
-      if (d.rdcYear) d.rdcYear.textContent = String(snap.year || 1996);
+      if (d.rdcDow) {
+        d.rdcDow.textContent = isTut ? '' : (snap.dayName || 'MON');
+        d.rdcDow.style.display = isTut ? 'none' : '';
+      }
+      if (d.rdcMonDay) {
+        d.rdcMonDay.textContent = isTut ? 'TUTORIAL' : ((snap.monthName || 'JAN') + ' ' + (snap.dayOfMonth || '01'));
+      }
+      if (d.rdcYear) {
+        d.rdcYear.textContent = isTut ? '' : String(snap.year || 1996);
+        d.rdcYear.style.display = isTut ? 'none' : '';
+      }
       renderClockCalendar(snap);
       if (snap.afterNoon && !snap.shiftEnded && !state.noonPunchOutNotified) {
         state.noonPunchOutNotified = true;
@@ -339,7 +352,8 @@
       } else if (reason === 'timeclock') {
         reasonText = 'PUNCHED OUT AT TIMECLOCK (' + snap.formatted12h + (snap.overtime ? ' · OVERTIME' : '') + ')';
       }
-      d.summarySubtitle.textContent = snap.dateLabel + ' (DAY ' + snap.workdayIndex + '/21) — ' + reasonText;
+      const isTut = Boolean(state.tutorialMode || snap.tutorialMode);
+      d.summarySubtitle.textContent = (isTut ? 'TUTORIAL' : (snap.dateLabel + ' (DAY ' + snap.workdayIndex + '/21)')) + ' — ' + reasonText;
     }
     if (d.summaryRank) {
       d.summaryRank.textContent = summary.rank.label;
@@ -379,8 +393,11 @@
     }
 
     if (d.nextShiftBtn) {
+      const isTut = Boolean(state.tutorialMode || snap.tutorialMode);
       const isLastDay = snap.workdayIndex >= 21;
-      d.nextShiftBtn.textContent = isLastDay ? 'COMPLETE FEBRUARY CAMPAIGN' : 'START NEXT SHIFT';
+      d.nextShiftBtn.textContent = isTut
+        ? 'RETURN TO MAIN MENU'
+        : (isLastDay ? 'COMPLETE FEBRUARY CAMPAIGN' : 'START NEXT SHIFT');
     }
   }
 
@@ -415,6 +432,13 @@
   }
 
   function startNextShift() {
+    if (state.tutorialMode || (global.ShiftClock && typeof global.ShiftClock.isTutorialMode === 'function' && global.ShiftClock.isTutorialMode())) {
+      if (typeof state.hooks.playButtonClick === 'function') {
+        state.hooks.playButtonClick();
+      }
+      returnToMainMenu();
+      return;
+    }
     if (typeof state.hooks.playButtonClick === 'function') {
       state.hooks.playButtonClick();
     }
@@ -599,7 +623,8 @@
   function bindEvents() {
     bindRemainingLegend();
     bindClockCalendar();
-    if (state.dom.nextShiftBtn) {
+    if (state.dom.nextShiftBtn && !state.dom.nextShiftBtn._dsdNextShiftBound) {
+      state.dom.nextShiftBtn._dsdNextShiftBound = true;
       state.dom.nextShiftBtn.addEventListener('click', startNextShift);
     }
 
@@ -668,14 +693,18 @@
     if (global.ShiftClock && typeof global.ShiftClock.setSystemPaused === 'function') {
       global.ShiftClock.setSystemPaused(isSystemPaused());
     }
+    const menuFlags = {
+      mainMenuOpen: state.mainMenuOpen,
+      systemMenuOpen: state.systemMenuOpen,
+      saveLoadModalOpen: state.saveLoadModalOpen,
+      infoModalOpen: state.infoModalOpen,
+      shiftSummaryOpen: state.shiftSummaryOpen
+    };
+    if (global.MusicSystem && typeof global.MusicSystem.setSceneState === 'function') {
+      global.MusicSystem.setSceneState(menuFlags);
+    }
     if (typeof state.hooks.onMenuStateChange === 'function') {
-      state.hooks.onMenuStateChange({
-        mainMenuOpen: state.mainMenuOpen,
-        systemMenuOpen: state.systemMenuOpen,
-        saveLoadModalOpen: state.saveLoadModalOpen,
-        infoModalOpen: state.infoModalOpen,
-        shiftSummaryOpen: state.shiftSummaryOpen
-      });
+      state.hooks.onMenuStateChange(menuFlags);
     }
   }
 
@@ -688,14 +717,19 @@
       if (hooks.playButtonClick) state.hooks.playButtonClick = hooks.playButtonClick;
       if (hooks.getUnfinishedWork) state.hooks.getUnfinishedWork = hooks.getUnfinishedWork;
       if (typeof hooks.onNewGame === 'function') state.hooks.onNewGame = hooks.onNewGame;
+      if (typeof hooks.onTutorialStart === 'function') state.hooks.onTutorialStart = hooks.onTutorialStart;
       if (typeof hooks.onMenuStateChange === 'function') state.hooks.onMenuStateChange = hooks.onMenuStateChange;
       if (typeof hooks.onHudUpdate === 'function') state.hooks.onHudUpdate = hooks.onHudUpdate;
       if (typeof hooks.onResetShift === 'function') state.hooks.onResetShift.push(hooks.onResetShift);
     }
 
+    cacheDom();
+    if (state.dom.nextShiftBtn && !state.dom.nextShiftBtn._dsdNextShiftBound) {
+      state.dom.nextShiftBtn._dsdNextShiftBound = true;
+      state.dom.nextShiftBtn.addEventListener('click', startNextShift);
+    }
     if (!state.initialized) {
       state.initialized = true;
-      cacheDom();
       bindEvents();
     }
     syncClockPauseFlag();
@@ -762,6 +796,8 @@
   }
 
   function startNewGame() {
+    state.tutorialMode = false;
+    state.tutorialScript = null;
     state.shiftSummaryOpen = false;
     state.systemMenuOpen = false;
     state.saveLoadModalOpen = false;
@@ -770,6 +806,9 @@
     state.noonPunchOutNotified = false;
     if (state.dom.summaryModal) {
       state.dom.summaryModal.style.display = 'none';
+    }
+    if (global.DSDTutorial && typeof global.DSDTutorial.stop === 'function') {
+      try { global.DSDTutorial.stop(); } catch (_) { }
     }
     if (typeof state.hooks.onNewGame === 'function') {
       state.hooks.onNewGame();
@@ -781,9 +820,61 @@
     updateHud(true);
   }
 
+  function startTutorialShift(opts) {
+    const o = opts || {};
+    state.tutorialMode = true;
+    state.tutorialScript = o.tutorialScript || null;
+    state.shiftSummaryOpen = false;
+    state.systemMenuOpen = false;
+    state.saveLoadModalOpen = false;
+    state.infoModalOpen = false;
+    state.mainMenuOpen = false;
+    state.noonPunchOutNotified = false;
+    if (state.dom.summaryModal) {
+      state.dom.summaryModal.style.display = 'none';
+    }
+    if (typeof state.hooks.onTutorialStart === 'function') {
+      state.hooks.onTutorialStart({ tutorialMode: true, tutorialScript: state.tutorialScript, startChapter: o.startChapter });
+    } else {
+      if (global.ShiftClock && typeof global.ShiftClock.setTutorialMode === 'function') {
+        global.ShiftClock.setTutorialMode(true);
+      }
+      if (global.ShiftStats && typeof global.ShiftStats.resetDailyStats === 'function') {
+        global.ShiftStats.resetDailyStats();
+      }
+      state.hooks.onResetShift.forEach((fn) => {
+        try { fn({ tutorialMode: true, tutorialScript: state.tutorialScript }); } catch (err) { console.error('onResetShift error:', err); }
+      });
+    }
+    if (global.ShiftClock) {
+      if (typeof global.ShiftClock.isTutorialMode === 'function' && !global.ShiftClock.isTutorialMode() && typeof global.ShiftClock.setTutorialMode === 'function') {
+        global.ShiftClock.setTutorialMode(true);
+      }
+      global.ShiftClock.setPaused(false);
+    }
+    syncClockPauseFlag();
+    updateHud(true);
+    if (global.DSDTutorial && typeof global.DSDTutorial.start === 'function' && o.autoStartController !== false) {
+      global.DSDTutorial.start({
+        chapter: o.startChapter !== undefined ? o.startChapter : 0,
+        script: state.tutorialScript
+      });
+    }
+    return true;
+  }
+
   function returnToMainMenu() {
-    if (global.SaveSystem && typeof global.SaveSystem.triggerAutosave === 'function') {
+    const wasTutorial = Boolean(state.tutorialMode || (global.ShiftClock && typeof global.ShiftClock.isTutorialMode === 'function' && global.ShiftClock.isTutorialMode()));
+    if (!wasTutorial && global.SaveSystem && typeof global.SaveSystem.triggerAutosave === 'function') {
       global.SaveSystem.triggerAutosave('return_to_menu');
+    }
+    state.tutorialMode = false;
+    state.tutorialScript = null;
+    if (global.DSDTutorial && typeof global.DSDTutorial.stop === 'function') {
+      try { global.DSDTutorial.stop(); } catch (_) { }
+    }
+    if (wasTutorial && global.ShiftClock && typeof global.ShiftClock.setTutorialMode === 'function') {
+      global.ShiftClock.setTutorialMode(false);
     }
     state.shiftSummaryOpen = false;
     state.systemMenuOpen = false;
@@ -797,6 +888,8 @@
   }
 
   function syncAfterLoad() {
+    state.tutorialMode = false;
+    state.tutorialScript = null;
     state.shiftSummaryOpen = false;
     state.systemMenuOpen = false;
     state.saveLoadModalOpen = false;
@@ -854,6 +947,8 @@
     isInfoModalOpen: isInfoModalOpen,
     setInfoModalOpen: setInfoModalOpen,
     startNewGame: startNewGame,
+    startTutorialShift: startTutorialShift,
+    isTutorialMode: () => Boolean(state.tutorialMode),
     returnToMainMenu: returnToMainMenu,
     syncAfterLoad: syncAfterLoad,
     buildFebruaryCalendarCells: buildFebruaryCalendarCells,

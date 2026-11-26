@@ -667,6 +667,8 @@
     enrichAllDeliveries();
 
     const screen = state.currentScreen || 'menu';
+    body.dataset.tutScreen = screen;
+    body.dataset.tutField = state.terminalActiveField || '';
     if (backBtn) {
       backBtn.style.display = screen === 'menu' ? 'none' : 'inline-block';
       backBtn.textContent = screen === 'receipt-detail' ? '[ F12=LIST ]' : '[ F12=MENU ]';
@@ -1666,9 +1668,171 @@
     }
   }
 
-  function generateHomeOfficeTasksForShift() {
+  function generateHomeOfficeTasksForShift(script) {
     state.homeOfficeTasks = [];
     state.terminalPage.tasks = 0;
+
+    if (script && script.homeOfficeTasks !== undefined) {
+      const specs = Array.isArray(script.homeOfficeTasks) ? script.homeOfficeTasks : [];
+      if (specs.length === 0) {
+        return;
+      }
+      const archPool = [];
+      (state.archiveData || []).forEach((day) => {
+        if (!day || day.isToday || day.placeholder || !Array.isArray(day.vendors)) return;
+        day.vendors.forEach((v) => {
+          if (!v || v.deptNo === '01' || v.hasShort || !Array.isArray(v.items) || v.items.length === 0) return;
+          const invNo = padDigits(v.invoiceNo, 6);
+          const primaryRec = (v.receipts || []).find((r) => r && r.type !== 'credit' && padDigits(r.invoiceNo, 6) === invNo);
+          if (primaryRec && Array.isArray(primaryRec.items) && primaryRec.items.length > 0) {
+            archPool.push({ day: day, vendor: v, primaryRec: primaryRec });
+          }
+        });
+      });
+
+      specs.forEach((spec, i) => {
+        if (!spec || typeof spec !== 'object') return;
+        const releaseMin = Number.isFinite(Number(spec.releaseMinute)) ? Number(spec.releaseMinute) : 360;
+        const pick = archPool[i % Math.max(1, archPool.length)] || null;
+        if (spec.fromArchive !== false && pick && (spec.type === 'shortage' || spec.type === 'overage' || spec.type === 'receipt_not_found')) {
+          const day = pick.day;
+          const v = pick.vendor;
+          const rec = pick.primaryRec;
+          const invNo = padDigits(v.invoiceNo, 6);
+          if (spec.type === 'shortage') {
+            const targetItem = v.items[0];
+            const upc = getItemUnitsPerCase(targetItem, 'sidedoor');
+            if (Math.round((Number(targetItem.qty) || 0) / upc) < 2) {
+              targetItem.qty = 3 * upc;
+              targetItem.receivedQty = 3 * upc;
+              targetItem.unitsPerCase = upc;
+            }
+            const invQty = Number(targetItem.qty) || (3 * upc);
+            const diff = Math.min(invQty - upc, upc);
+            const reportedRecQty = invQty - diff;
+            const recLine = rec.items.find((ri) => String(ri.code) === String(targetItem.code));
+            if (recLine) recLine.qty = reportedRecQty;
+            const isVendorShort = spec.isVendorShort !== undefined ? Boolean(spec.isVendorShort) : true;
+            v.hasShort = isVendorShort;
+            targetItem.archivedShort = isVendorShort;
+            targetItem.receivedQty = isVendorShort ? reportedRecQty : invQty;
+            state.homeOfficeTasks.push({
+              id: spec.id || ('tut_ho_' + (i + 1) + '_' + invNo),
+              type: 'shortage',
+              isVendorShort: isVendorShort,
+              dateStr: day.dateStr,
+              shortDate: day.shortDate || day.dateStr,
+              vendorName: v.vendorName,
+              vendorNo: padDigits(v.vendorNo, 3),
+              deptNo: padDigits(v.deptNo, 2),
+              invoiceNo: invNo,
+              receiptNumber: rec.receiptNumber,
+              itemCode: String(targetItem.code),
+              itemName: targetItem.name,
+              invoiceQty: invQty,
+              receiptQty: reportedRecQty,
+              targetDelta: diff,
+              releaseMinute: releaseMin,
+              releaseTimeLabel: formatMinute12h(releaseMin),
+              released: false,
+              status: 'pending',
+              failReason: '',
+              feedbackMsg: '',
+              feedbackKind: ''
+            });
+            return;
+          }
+          if (spec.type === 'overage') {
+            const targetItem = v.items[0];
+            const upc = getItemUnitsPerCase(targetItem, 'sidedoor');
+            const invQty = Number(targetItem.qty) || upc;
+            const overDiff = upc;
+            const recordedRecQty = invQty + overDiff;
+            const recLine = rec.items.find((ri) => String(ri.code) === String(targetItem.code));
+            if (recLine) recLine.qty = recordedRecQty;
+            v.hasShort = false;
+            targetItem.archivedShort = false;
+            targetItem.receivedQty = invQty;
+            state.homeOfficeTasks.push({
+              id: spec.id || ('tut_ho_' + (i + 1) + '_' + invNo),
+              type: 'overage',
+              isVendorShort: false,
+              dateStr: day.dateStr,
+              shortDate: day.shortDate || day.dateStr,
+              vendorName: v.vendorName,
+              vendorNo: padDigits(v.vendorNo, 3),
+              deptNo: padDigits(v.deptNo, 2),
+              invoiceNo: invNo,
+              receiptNumber: rec.receiptNumber,
+              itemCode: String(targetItem.code),
+              itemName: targetItem.name,
+              invoiceQty: invQty,
+              receiptQty: recordedRecQty,
+              targetDelta: -overDiff,
+              releaseMinute: releaseMin,
+              releaseTimeLabel: formatMinute12h(releaseMin),
+              released: false,
+              status: 'pending',
+              failReason: '',
+              feedbackMsg: '',
+              feedbackKind: ''
+            });
+            return;
+          }
+          if (spec.type === 'receipt_not_found') {
+            const isDnr = Boolean(spec.isDnr);
+            const expectedItems = v.items.map((it) => ({
+              code: String(it.code),
+              name: it.name,
+              qty: Number(it.qty) || 0
+            }));
+            if (isDnr) {
+              const vIdx = day.vendors.indexOf(v);
+              if (vIdx !== -1) day.vendors.splice(vIdx, 1);
+            } else {
+              v.receipts = (v.receipts || []).filter((r) => !(r && r.type !== 'credit' && padDigits(r.invoiceNo, 6) === invNo));
+            }
+            state.homeOfficeTasks.push({
+              id: spec.id || ('tut_ho_' + (i + 1) + '_' + invNo),
+              type: 'receipt_not_found',
+              isDnr: isDnr,
+              dateStr: day.dateStr,
+              shortDate: day.shortDate || day.dateStr,
+              vendorName: v.vendorName,
+              vendorNo: padDigits(v.vendorNo, 3),
+              deptNo: padDigits(v.deptNo, 2),
+              invoiceNo: invNo,
+              expectedItems: isDnr ? [] : expectedItems,
+              releaseMinute: releaseMin,
+              releaseTimeLabel: formatMinute12h(releaseMin),
+              released: false,
+              status: 'pending',
+              failReason: '',
+              feedbackMsg: '',
+              feedbackKind: ''
+            });
+            return;
+          }
+        }
+        state.homeOfficeTasks.push(Object.assign({
+          id: spec.id || ('tut_ho_' + (i + 1)),
+          type: spec.type || 'shortage',
+          releaseMinute: releaseMin,
+          releaseTimeLabel: formatMinute12h(releaseMin),
+          released: false,
+          status: 'pending',
+          failReason: '',
+          feedbackMsg: '',
+          feedbackKind: ''
+        }, spec));
+      });
+
+      const clock = getClock();
+      if (clock && typeof clock.getTimeSnapshot === 'function') {
+        updateHomeOfficeTasks(clock.getTimeSnapshot());
+      }
+      return;
+    }
 
     if (!Array.isArray(state.archiveData) || state.archiveData.length <= 1) return;
 
@@ -2150,9 +2314,9 @@
             ${linesHtml}
             ${feedbackHtml}
             <div style="display:flex; justify-content:flex-end; flex-wrap:wrap; gap:6px; margin-top:6px;">
-              <button class="crt-btn-sm" type="button" data-ho-create="1">[ + RECEIPT [1] ]</button>
+              <button class="crt-btn-sm" type="button" data-ho-create="1" data-tut="ho-btn-create">[ + RECEIPT [1] ]</button>
               ${extraActionBtn}
-              <button class="crt-btn-sm crt-btn-primary" type="button" data-ho-verify="${escapeHtml(t.id)}">[ VERIFY ]</button>
+              <button class="crt-btn-sm crt-btn-primary" type="button" data-ho-verify="${escapeHtml(t.id)}" data-tut="ho-btn-verify">[ VERIFY ]</button>
             </div>
           </div>`;
       }).join('');
@@ -2731,10 +2895,55 @@
     return pool;
   }
 
-  function generateNightDropInvoices() {
+  function generateNightDropInvoices(script) {
     const pool = getDsdVendorsPool();
     state.nightDropInvoices = [];
     state.resolvedNightDrops = [];
+
+    if (script && script.nightDrops !== undefined) {
+      const ndSpecs = Array.isArray(script.nightDrops) ? script.nightDrops : [];
+      ndSpecs.forEach((spec, idx) => {
+        if (!spec || typeof spec !== 'object') return;
+        const catalog = getCatalog();
+        const catVendor = (spec.vendorNo && catalog && typeof catalog.getVendor === 'function')
+          ? catalog.getVendor(String(spec.vendorNo))
+          : null;
+        const rawItems = Array.isArray(spec.items) && spec.items.length > 0
+          ? spec.items
+          : ((catVendor && Array.isArray(catVendor.products) ? catVendor.products.slice(0, 2) : [{ code: '14301', name: 'Tutorial Baked Bread', price: 3.49, unitsPerCase: 8 }]));
+        const items = rawItems.map((p) => {
+          const upc = getItemUnitsPerCase(p, 'sidedoor');
+          const cases = Math.max(1, Math.round(Number(p.cases || 2)));
+          const qty = p.qty !== undefined ? Number(p.qty) : (cases * upc);
+          return {
+            code: String(p.code),
+            name: p.name || 'Night Drop Item',
+            qty: qty,
+            cases: Math.max(1, Math.round(qty / Math.max(1, upc))),
+            unitsPerCase: upc,
+            price: Number(p.price) || 3.49,
+            notScannable: Boolean(p.notScannable),
+            type: p.type || 'ambient'
+          };
+        });
+        const invNo = padDigits(spec.invoiceNo || (880100 + idx), 6);
+        const totalAmount = items.reduce((s, it) => s + it.qty * it.price, 0);
+        state.nightDropInvoices.push({
+          id: spec.id || ('nd_tut_' + invNo),
+          vendorNo: padDigits(spec.vendorNo || (catVendor && catVendor.vendorNo) || '143', 3),
+          deptNo: padDigits(spec.deptNo || (catVendor && catVendor.deptNo) || '14', 2),
+          vendorName: spec.vendorName || (catVendor && catVendor.name) || 'SUNRISE BAKERY',
+          deptName: spec.deptName || (catVendor && catVendor.deptName) || 'Bakery',
+          invoiceNo: invNo,
+          deliveryDate: spec.deliveryDate || formatShortDateFromSnap(),
+          items: items,
+          totalAmount: Number(totalAmount.toFixed(2))
+        });
+      });
+      state.activeNightDropTab = 0;
+      return;
+    }
+
     if (pool.length === 0) return;
 
     const maxNd = getWorkdayIndex() === 1 ? 1 : 2;
@@ -4742,6 +4951,19 @@
     },
     printSingleStoreCopy,
     printAllDailyStoreCopies,
-    seedDummyReceiptsAllDepts
+    seedDummyReceiptsAllDepts,
+    getTerminalState() {
+      return {
+        screen: state.currentScreen || 'menu',
+        activeField: state.terminalActiveField || '',
+        createPhase: state.manualDraft ? state.manualDraft.phase : 'header',
+        selectedReceiptNo: state.selectedReceiptNo || null,
+        nightDropOpen: Boolean(state.nightDropPanelOpen),
+        filingOpen: Boolean(state.filingOpen),
+        archiveOpen: Boolean(state.archiveOpen),
+        trashModalOpen: Boolean(state.trashModalOpen),
+        handModalOpen: Boolean(state.handModalOpen)
+      };
+    }
   });
 })(window);

@@ -41,6 +41,9 @@
     dom.btnPauseMute = document.getElementById('btn-pause-mute');
     dom.pauseVolSlider = document.getElementById('pause-vol-slider');
     dom.pauseVolVal = document.getElementById('pause-vol-val');
+    dom.btnPauseMusicMute = document.getElementById('btn-pause-music-mute');
+    dom.pauseMusicSlider = document.getElementById('pause-music-slider');
+    dom.pauseMusicVal = document.getElementById('pause-music-val');
     dom.btnPauseGfx = document.getElementById('btn-pause-gfx');
     dom.pauseFpsVal = document.getElementById('pause-fps-val');
     dom.btnPauseFpsHud = document.getElementById('btn-pause-fps-hud');
@@ -121,6 +124,15 @@
       const pct = Math.round((Number(s.masterVolume) || 0) * 100);
       dom.pauseVolSlider.value = String(pct);
       if (dom.pauseVolVal) dom.pauseVolVal.textContent = pct + '%';
+    }
+    if (dom.btnPauseMusicMute) {
+      dom.btnPauseMusicMute.innerHTML = fmtIconHtml(s.musicMuted ? '[[ico:volumeOff]] MUSIC: OFF' : '[[ico:volumeOn]] MUSIC: ON');
+      dom.btnPauseMusicMute.classList.toggle('muted', Boolean(s.musicMuted));
+    }
+    if (dom.pauseMusicSlider) {
+      const mpct = Math.round((Number(s.musicVolume !== undefined ? s.musicVolume : 0.55) || 0) * 100);
+      dom.pauseMusicSlider.value = String(mpct);
+      if (dom.pauseMusicVal) dom.pauseMusicVal.textContent = mpct + '%';
     }
     if (global.DSDGraphics && typeof global.DSDGraphics.getSettings === 'function') {
       const gs = global.DSDGraphics.getSettings();
@@ -236,12 +248,30 @@
     if (mainOpen && !saveOpen && !infoOpen) startLogoTypewriter();
     else stopLogoTypewriter();
     if (dom.pauseOverlay) {
+      const isTut = Boolean(
+        (g && typeof g.isTutorialMode === 'function' && g.isTutorialMode()) ||
+        (global.DSDTutorial && typeof global.DSDTutorial.isActive === 'function' && global.DSDTutorial.isActive())
+      );
       dom.pauseOverlay.classList.toggle('active', pauseOpen && !mainOpen);
       if (pauseOpen && dom.pauseMetaText && global.ShiftClock && global.ShiftStats) {
         const snap = global.ShiftClock.getTimeSnapshot();
         const score = global.ShiftStats.getLiveScore();
         const scoreStr = (score < 0 ? '-' : '+') + Math.abs(score) + ' pts';
-        dom.pauseMetaText.textContent = `${snap.dayName} ${snap.dateLabel} · ${snap.formatted12h} · DAY ${snap.workdayIndex}/21 · ${scoreStr}`;
+        dom.pauseMetaText.textContent = (snap.tutorialMode || isTut)
+          ? `Tutorial · ${snap.formatted12h} · ${scoreStr}`
+          : `${snap.dayName} ${snap.dateLabel} · ${snap.formatted12h} · DAY ${snap.workdayIndex}/21 · ${scoreStr}`;
+      }
+      if (dom.btnPauseSave) {
+        dom.btnPauseSave.disabled = isTut;
+        dom.btnPauseSave.classList.toggle('muted', isTut);
+        const badge = dom.btnPauseSave.querySelector('.menu-badge');
+        if (badge) badge.textContent = isTut ? 'TUTORIAL' : 'SLOTS';
+      }
+      if (dom.btnPauseLoad) {
+        dom.btnPauseLoad.disabled = isTut;
+        dom.btnPauseLoad.classList.toggle('muted', isTut);
+        const badge = dom.btnPauseLoad.querySelector('.menu-badge');
+        if (badge) badge.textContent = isTut ? 'TUTORIAL' : 'RESTORE';
       }
     }
     if (dom.saveLoadModal) {
@@ -330,6 +360,10 @@
   }
 
   function openSaveLoadModal(mode, fromOverlay) {
+    if (global.SaveSystem && typeof global.SaveSystem.isTutorialSaveBlocked === 'function' && global.SaveSystem.isTutorialSaveBlocked()) {
+      playClick();
+      return;
+    }
     state.slotModalMode = (mode === 'save') ? 'save' : 'load';
     state.returnToOverlay = fromOverlay || (global.DSDGame && global.DSDGame.isMainMenuOpen() ? 'main' : 'pause');
     setStatusMessage('', false);
@@ -468,7 +502,13 @@
 
     if (dom.btnTutorial) {
       dom.btnTutorial.addEventListener('click', () => {
-        openInfoModal('tutorial');
+        if (global.DSDGame && typeof global.DSDGame.startTutorialShift === 'function') {
+          playSuccess();
+          global.DSDGame.startTutorialShift();
+          syncOverlaysFromGame();
+        } else {
+          openInfoModal('tutorial');
+        }
       });
     }
 
@@ -531,6 +571,26 @@
         if (global.SoundSystem && typeof global.SoundSystem.setSettings === 'function') {
           const v = Math.max(0, Math.min(1, Number(dom.pauseVolSlider.value) / 100));
           global.SoundSystem.setSettings({ masterVolume: v, muted: v === 0 ? true : false });
+          syncAudioControls();
+        }
+      });
+    }
+
+    if (dom.btnPauseMusicMute) {
+      dom.btnPauseMusicMute.addEventListener('click', () => {
+        if (global.SoundSystem && typeof global.SoundSystem.toggleMusicMute === 'function') {
+          global.SoundSystem.toggleMusicMute();
+          syncAudioControls();
+          playClick();
+        }
+      });
+    }
+
+    if (dom.pauseMusicSlider) {
+      dom.pauseMusicSlider.addEventListener('input', () => {
+        if (global.SoundSystem && typeof global.SoundSystem.setSettings === 'function') {
+          const v = Math.max(0, Math.min(1, Number(dom.pauseMusicSlider.value) / 100));
+          global.SoundSystem.setSettings({ musicVolume: v, musicMuted: v === 0 ? true : false });
           syncAudioControls();
         }
       });

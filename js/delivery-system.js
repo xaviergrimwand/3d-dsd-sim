@@ -852,7 +852,13 @@
       invSubtitle.textContent = delivery.subtitle;
       if (invDeliveryDate) {
         let dateText = delivery.deliveryDate || '';
-        if (!dateText && window.ShiftClock && typeof window.ShiftClock.getTimeSnapshot === 'function') {
+        const isTutMode = Boolean(
+          (window.ShiftClock && typeof window.ShiftClock.isTutorialMode === 'function' && window.ShiftClock.isTutorialMode()) ||
+          (window.DSDGame && typeof window.DSDGame.isTutorialMode === 'function' && window.DSDGame.isTutorialMode())
+        );
+        if (isTutMode) {
+          dateText = 'TUTORIAL';
+        } else if (!dateText && window.ShiftClock && typeof window.ShiftClock.getTimeSnapshot === 'function') {
           const snap = window.ShiftClock.getTimeSnapshot();
           const monIdx = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'].indexOf(String(snap.monthName || 'FEB').toUpperCase());
           const mm = String((monIdx >= 0 ? monIdx : 1) + 1).padStart(2, '0');
@@ -1931,34 +1937,64 @@
           if (!d || d.completed || d.refused || d.arrived) return;
           if (this.getSessionForDelivery(d.id)) return;
           const etaMins = (d.etaHour || 6) * 60 + (d.etaMinute || 0);
-          if (nowMins < etaMins) return;
-
-          if (d.type === 'sidedoor') {
-            if (this.getSessionForDoor('SD') || this.getWaitingOutsideSessions().length >= 5) {
-              d.queuedAtGate = true;
-              return;
-            }
-            this.enqueueArrivedDelivery(d, 'SD');
-          } else if (d.type === 'vendor_truck') {
-            if (this.getWaitingOutsideSessions().length >= 5) {
-              d.queuedAtGate = true;
-              return;
-            }
-            const bay = (window.WarehouseTrucks && typeof window.WarehouseTrucks.assignBayOnArrival === 'function')
-              ? window.WarehouseTrucks.assignBayOnArrival(d)
-              : null;
-            if (!bay || this.getSessionForDoor('D' + bay)) {
-              d.queuedAtGate = true;
-              return;
-            }
-            if (window.WarehouseTrucks) {
-              window.WarehouseTrucks.ensureBayTrailerAndPalletsForVendorTruck(d);
-            }
-            bindDeliveryBoxesToBayPallets(d);
-            this.enqueueArrivedDelivery(d, 'D' + bay);
-          }
+        if (nowMins < etaMins) return;
+        this.arriveDeliveryNow(d);
         });
         this.updateDeliveryHud();
+      },
+
+      arriveDeliveryNow: function (d) {
+        if (!d || d.completed || d.refused || d.arrived) return false;
+        if (this.getSessionForDelivery(d.id)) return false;
+
+        if (d.type === 'sidedoor') {
+          if (this.getSessionForDoor('SD') || this.getWaitingOutsideSessions().length >= 5) {
+            d.queuedAtGate = true;
+            return false;
+          }
+          return Boolean(this.enqueueArrivedDelivery(d, 'SD'));
+        }
+        if (d.type === 'vendor_truck') {
+          if (this.getWaitingOutsideSessions().length >= 5) {
+            d.queuedAtGate = true;
+            return false;
+          }
+          const bay = (window.WarehouseTrucks && typeof window.WarehouseTrucks.assignBayOnArrival === 'function')
+            ? window.WarehouseTrucks.assignBayOnArrival(d)
+            : null;
+          if (!bay || this.getSessionForDoor('D' + bay)) {
+            d.queuedAtGate = true;
+            return false;
+          }
+          if (window.WarehouseTrucks) {
+            window.WarehouseTrucks.ensureBayTrailerAndPalletsForVendorTruck(d);
+          }
+          bindDeliveryBoxesToBayPallets(d);
+          return Boolean(this.enqueueArrivedDelivery(d, 'D' + bay));
+        }
+        return false;
+      },
+
+      forceArriveDelivery: function (deliveryOrId) {
+        const d = typeof deliveryOrId === 'string'
+          ? (DELIVERY_MANIFEST.find((item) => item && item.id === deliveryOrId) ||
+             ((window.WarehouseTrucks && typeof window.WarehouseTrucks.getScheduleRows === 'function')
+               ? window.WarehouseTrucks.getScheduleRows().find((item) => item && item.id === deliveryOrId)
+               : null))
+          : deliveryOrId;
+        if (!d) return false;
+        if (d.type === 'warehouse') {
+          if (window.WarehouseTrucks && typeof window.WarehouseTrucks.tryArriveQueuedTrucks === 'function') {
+            const snap = { hour: d.etaHour || 6, minute: d.etaMinute || 0, totalMinutes: d.etaTotalMins || 360 };
+            window.WarehouseTrucks.tryArriveQueuedTrucks(snap);
+            this.updateDeliveryHud();
+            return Boolean(d.arrived || d.status !== 'SCHEDULED');
+          }
+          return false;
+        }
+        const ok = this.arriveDeliveryNow(d);
+        this.updateDeliveryHud();
+        return ok;
       },
 
       enqueueArrivedDelivery: function (d, doorKey) {

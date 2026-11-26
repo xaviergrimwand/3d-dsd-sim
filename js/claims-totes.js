@@ -697,7 +697,9 @@
     return itemRec;
   }
 
-  function generateDailyClaimsItems() {
+  function generateDailyClaimsItems(opts) {
+    const o = opts || {};
+    const tutScript = o.tutorialScript;
     const cat = global.DSDCatalog;
     const isLoaded = Boolean(cat && typeof cat.isLoaded === 'function' && cat.isLoaded());
     const hiddenClaimsSrc = (cat && Array.isArray(cat.WAREHOUSE_CLAIM_PRODUCTS)) ? cat.WAREHOUSE_CLAIM_PRODUCTS : [];
@@ -705,6 +707,44 @@
     const vendorOnlySrc = allSrc.filter((p) => p && !p.warehouseOnly);
 
     state.totes.forEach((tote) => clearToteItemMeshes(tote));
+
+    if (tutScript && tutScript.claimsItems !== undefined) {
+      const specs = tutScript.claimsItems;
+      if (specs === 'none' || (Array.isArray(specs) && specs.length === 0)) {
+        state.populated = true;
+        return;
+      }
+      if (Array.isArray(specs)) {
+        specs.forEach((spec, idx) => {
+          if (!spec || typeof spec !== 'object') return;
+          const grayTotes = state.totes.filter((t) => t && !t.isRed);
+          const tote = (Number.isInteger(spec.toteIndex) && state.totes.find((t) => t && t.index === spec.toteIndex))
+            || grayTotes[idx % Math.max(1, grayTotes.length)];
+          if (!tote) return;
+          const prod = {
+            code: String(spec.code || '10011'),
+            name: spec.name || 'Tutorial Damaged Item',
+            deptNo: String(spec.deptNo || '01'),
+            vendorNo: String(spec.vendorNo || ''),
+            vendorName: spec.vendorName || '',
+            price: Number(spec.price) || 4.99,
+            size: spec.size || 'medium',
+            type: spec.type || 'ambient',
+            unitsPerCase: Number(spec.unitsPerCase) || 1,
+            notScannable: Boolean(spec.notScannable),
+            claimKeywords: Array.isArray(spec.claimKeywords) ? spec.claimKeywords : []
+          };
+          const rec = addGeneratedClaimItemToTote(tote, prod);
+          if (rec && spec.damageType) {
+            rec.damageType = spec.damageType;
+            const condObj = DAMAGE_CONDITIONS.find((c) => c.key === spec.damageType);
+            rec.conditionLabel = spec.conditionLabel || (condObj ? condObj.label : rec.conditionLabel);
+          }
+        });
+        state.populated = true;
+        return;
+      }
+    }
 
     const grayTotes = state.totes.filter((t) => t && !t.isRed);
     const usedCodesByTote = grayTotes.map(() => new Set());
@@ -1435,7 +1475,9 @@
     const available = pool.filter((p) => p && !rec.usedProductKeys.includes(p.key));
     const pickPool = available.length > 0 ? available : pool;
     const picked = o.product || pickPool[randInt(0, pickPool.length - 1)] || pool[0];
-    const totalCount = randInt(8, 16);
+    const totalCount = Number.isFinite(Number(o.count))
+      ? Math.max(1, Math.min(20, Math.round(Number(o.count))))
+      : randInt(8, 16);
 
     rec.triggered = true;
     rec.active = true;
@@ -2018,11 +2060,15 @@
     state.initialized = true;
   }
 
-  function resetForShift() {
+  function resetForShift(opts) {
+    const o = opts || {};
     clearHeldItemView();
     resetRecallForShift();
     closeAllTotes(true);
-    generateDailyClaimsItems();
+    generateDailyClaimsItems(o);
+    if (o.tutorialScript && o.tutorialScript.recall && o.tutorialScript.recall.autoTrigger) {
+      triggerDailyRecall(o.tutorialScript.recall);
+    }
   }
 
   function exportState() {
@@ -2382,6 +2428,7 @@
       return (state.recall.active ? 1 : 0) + (Array.isArray(state.recall.queuedRecalls) ? state.recall.queuedRecalls.length : 0);
     },
     getRecallState: getRecallState,
+    triggerDailyRecall: triggerDailyRecall,
     getRecallTopItemMeshes: getRecallTopItemMeshes,
     getRecallToteHitMeshes: getRecallToteHitMeshes,
     getRecallBottomDockHitMeshes: getRecallBottomDockHitMeshes,

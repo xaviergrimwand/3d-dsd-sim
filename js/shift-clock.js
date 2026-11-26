@@ -38,6 +38,7 @@
     gameMinuteProgress: 0, // 0..1 fraction of current in-game minute
     date: { month: 1, day: 1, year: 1996 },
     workdayIndex: 1,
+    tutorialMode: false,
     paused: false,
     systemPaused: false, // Reserved for a future in-game system/pause menu (not active yet)
     preEndWarned: false,
@@ -138,18 +139,53 @@
     });
   }
 
-  function init() {
+  function init(opts) {
+    const o = opts || {};
     const cfg = getConfig();
+    state.tutorialMode = Boolean(o.tutorialMode);
     state.date = {
       month: cfg.startDate.month,
       day: cfg.startDate.day,
       year: cfg.startDate.year
     };
-    state.workdayIndex = 1;
+    state.workdayIndex = state.tutorialMode ? 0 : 1;
     state.campaignComplete = false;
     state.paused = false;
     state.systemPaused = false;
     resetClockToShiftStart();
+  }
+
+  function isTutorialMode() {
+    return Boolean(state.tutorialMode);
+  }
+
+  function setTutorialMode(enabled) {
+    init({ tutorialMode: Boolean(enabled) });
+    return state.tutorialMode;
+  }
+
+  function setTutorialTime(hour, minute, opts) {
+    if (!state.tutorialMode) return false;
+    const h = Math.max(0, Math.min(23, Math.floor(Number(hour) || 0)));
+    const m = Math.max(0, Math.min(59, Math.floor(Number(minute) || 0)));
+    state.hour = h;
+    state.minute = m;
+    state.second = 0;
+    state.millisecond = 0;
+    state.gameMinuteProgress = 0;
+    const nowTotalMin = getCurrentTotalMinutes();
+    const scheduledEndMin = getShiftEndMinutes();
+    state.preEndWarned = nowTotalMin >= scheduledEndMin - 10;
+    state.shiftEndAlerted = nowTotalMin >= scheduledEndMin;
+    state.lastOvertimeMark = Math.max(
+      scheduledEndMin,
+      scheduledEndMin + Math.floor(Math.max(0, nowTotalMin - scheduledEndMin) / 10) * 10
+    );
+    state.shiftEnded = false;
+    if (!(opts && opts.silent)) {
+      emit('onMinuteTick', getTimeSnapshot());
+    }
+    return true;
   }
 
   function setPaused(paused) {
@@ -298,6 +334,9 @@
   }
 
   function advanceWorkday() {
+    if (state.tutorialMode) {
+      return false;
+    }
     const cfg = getConfig();
     const d = new Date(state.date.year, state.date.month, state.date.day);
     do {
@@ -360,6 +399,9 @@
   }
 
   function formatDateShort() {
+    if (state.tutorialMode) {
+      return 'TUTORIAL';
+    }
     const d = new Date(state.date.year, state.date.month, state.date.day);
     const dow = DAY_NAMES[d.getDay()];
     const mon = MONTH_NAMES[state.date.month] || 'FEB';
@@ -388,12 +430,13 @@
       progressPct: progressPct,
       formatted12h: formatTime12h(),
       formatted24h: formatTime24h(),
-      dayName: DAY_NAMES[d.getDay()] || 'MON',
-      monthName: MONTH_NAMES[state.date.month] || 'JAN',
-      dayOfMonth: String(state.date.day).padStart(2, '0'),
-      year: state.date.year,
+      dayName: state.tutorialMode ? 'TUTORIAL' : (DAY_NAMES[d.getDay()] || 'MON'),
+      monthName: state.tutorialMode ? 'TUTORIAL' : (MONTH_NAMES[state.date.month] || 'JAN'),
+      dayOfMonth: state.tutorialMode ? '' : String(state.date.day).padStart(2, '0'),
+      year: state.tutorialMode ? '' : state.date.year,
       dateLabel: formatDateShort(),
       workdayIndex: state.workdayIndex,
+      tutorialMode: Boolean(state.tutorialMode),
       afterNoon: isAfterNoon(),
       overtime: isOvertime(),
       overtimeMinutes: Math.max(0, getCurrentTotalMinutes() - getShiftEndMinutes()),
@@ -426,7 +469,8 @@
         day: Number(state.date.day) || 1,
         year: Number(state.date.year) || 1996
       },
-      workdayIndex: Number(state.workdayIndex) || 1,
+      workdayIndex: state.tutorialMode ? 0 : (Number(state.workdayIndex) || 1),
+      tutorialMode: Boolean(state.tutorialMode),
       paused: Boolean(state.paused),
       preEndWarned: Boolean(state.preEndWarned),
       shiftEndAlerted: Boolean(state.shiftEndAlerted),
@@ -451,7 +495,10 @@
       day: Number(d.day) || cfg.startDate.day,
       year: Number(d.year) || cfg.startDate.year
     };
-    state.workdayIndex = Number.isFinite(Number(data.workdayIndex)) ? Number(data.workdayIndex) : 1;
+    state.tutorialMode = Boolean(data.tutorialMode);
+    state.workdayIndex = state.tutorialMode
+      ? 0
+      : (Number.isFinite(Number(data.workdayIndex)) ? Number(data.workdayIndex) : 1);
     state.paused = Boolean(data.paused);
     state.systemPaused = false;
     const scheduledEndMin = getShiftEndMinutes();
@@ -489,6 +536,9 @@
     isSystemPaused: isSystemPaused,
     resetClockToShiftStart: resetClockToShiftStart,
     advanceWorkday: advanceWorkday,
+    setTutorialMode: setTutorialMode,
+    isTutorialMode: isTutorialMode,
+    setTutorialTime: setTutorialTime,
     getShiftStartMinutes: getShiftStartMinutes,
     getShiftEndHour: getShiftEndHour,
     getShiftEndMinutes: getShiftEndMinutes,
