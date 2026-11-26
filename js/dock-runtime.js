@@ -265,6 +265,23 @@
   };
 
   /**
+   * Returns whether at least one outside-waiting driver/vendor exists per delivery type.
+   */
+  global.getSideDoorWaitingTypeFlags = function getSideDoorWaitingTypeFlags(sessions) {
+    const flags = { warehouse: false, vendor_truck: false, sidedoor: false };
+    if (!Array.isArray(sessions) || sessions.length === 0) return flags;
+    for (let i = 0; i < sessions.length; i++) {
+      const s = sessions[i];
+      if (!s || s.state !== 'OUTSIDE_WAITING' || !s.delivery) continue;
+      const dType = s.delivery.type || 'sidedoor';
+      if (Object.prototype.hasOwnProperty.call(flags, dType)) {
+        flags[dType] = true;
+      }
+    }
+    return flags;
+  };
+
+  /**
    * Unified 2D XZ collision solver covering walking, empty Electric Jack,
    * Hitched Pallets (Warehouse, Vendor Truck, and Overstock), and Truck Trailers.
    */
@@ -2331,7 +2348,7 @@
       // [K]: Toggle Remaining Work Legend popover
       if (!e.ctrlKey && !e.altKey && !e.metaKey && e.code === 'KeyK') {
         if (!isEditableKeyTarget(e.target) && !uiState.invoiceModalOpen && !uiState.terminalModalOpen &&
-            window.DSDGame && typeof window.DSDGame.toggleRemainingLegend === 'function') {
+          window.DSDGame && typeof window.DSDGame.toggleRemainingLegend === 'function') {
           window.DSDGame.toggleRemainingLegend();
           e.preventDefault();
           return;
@@ -2341,7 +2358,7 @@
       // [C]: Toggle Digital Clock February Calendar popover
       if (!e.ctrlKey && !e.altKey && !e.metaKey && e.code === 'KeyC') {
         if (!isEditableKeyTarget(e.target) && !uiState.invoiceModalOpen && !uiState.terminalModalOpen &&
-            window.DSDGame && typeof window.DSDGame.toggleClockCalendar === 'function') {
+          window.DSDGame && typeof window.DSDGame.toggleClockCalendar === 'function') {
           window.DSDGame.toggleClockCalendar();
           e.preventDefault();
           return;
@@ -2351,7 +2368,7 @@
       // [B]: Toggle Dock Beacons status popup
       if (!e.ctrlKey && !e.altKey && !e.metaKey && e.code === 'KeyB') {
         if (!isEditableKeyTarget(e.target) && !uiState.invoiceModalOpen && !uiState.terminalModalOpen &&
-            typeof toggleDoorLightsPopup === 'function') {
+          typeof toggleDoorLightsPopup === 'function') {
           toggleDoorLightsPopup();
           e.preventDefault();
           return;
@@ -2361,7 +2378,7 @@
       // [V]: Toggle held Receipts bar at bottom of screen while holding receipts
       if (!e.ctrlKey && !e.altKey && !e.metaKey && e.code === 'KeyV') {
         if (!isEditableKeyTarget(e.target) && !uiState.terminalModalOpen && hasHeldReceiptSlips() &&
-            window.DSDReceipts && typeof window.DSDReceipts.togglePrintedReceiptHud === 'function') {
+          window.DSDReceipts && typeof window.DSDReceipts.togglePrintedReceiptHud === 'function') {
           window.DSDReceipts.togglePrintedReceiptHud();
           e.preventDefault();
           return;
@@ -2454,9 +2471,9 @@
       // [ArrowLeft]/[ArrowRight]: Switch held receipts when bottom Receipts bar is expanded
       if (!e.ctrlKey && !e.altKey && !e.metaKey && (e.code === 'ArrowLeft' || e.code === 'ArrowRight')) {
         if (!isEditableKeyTarget(e.target) && window.DSDReceipts &&
-            typeof window.DSDReceipts.isPrintedReceiptHudExpanded === 'function' &&
-            window.DSDReceipts.isPrintedReceiptHudExpanded() &&
-            typeof window.DSDReceipts.stepPrintedReceiptSlip === 'function') {
+          typeof window.DSDReceipts.isPrintedReceiptHudExpanded === 'function' &&
+          window.DSDReceipts.isPrintedReceiptHudExpanded() &&
+          typeof window.DSDReceipts.stepPrintedReceiptSlip === 'function') {
           if (window.DSDReceipts.stepPrintedReceiptSlip(e.code === 'ArrowLeft' ? -1 : 1)) {
             e.preventDefault();
             return;
@@ -6204,8 +6221,10 @@
     const doorLightsCountEl = document.getElementById('hud-door-lights-count');
     const sdQueueTxtEl = document.getElementById('dlp-sd-queue-txt');
     const whDriverTagEl = document.getElementById('dlp-wh-driver-tag');
+    const vtDriverTagEl = document.getElementById('dlp-vt-driver-tag');
+    const sdVendorTagEl = document.getElementById('dlp-sd-vendor-tag');
     let lastSdQueueCount = -1;
-    let lastSdHasWh = null;
+    const lastWaitingByType = { warehouse: null, vendor_truck: null, sidedoor: null };
     let lastBeaconsPopupKey = '';
 
     function escPopupHtml(s) {
@@ -6237,7 +6256,7 @@
       }
 
       if (rows.length === 0) {
-        doorLightsRowsEl.innerHTML = '<div class="dlp-pop-empty">No drivers waiting to enter or exit.</div>';
+        doorLightsRowsEl.innerHTML = '<div class="dlp-pop-empty">No one waiting to enter or exit.</div>';
         return;
       }
 
@@ -6251,11 +6270,11 @@
         const detailHtml = r.detailText ? '<span>' + escPopupHtml(r.detailText) + '</span>' : '';
         return (
           '<div class="dlp-pop-row ' + rowCls + '">' +
-            '<span class="dlp-pop-left">' +
-              '<span class="dlp-pop-dir ' + dirCls + '">' + escPopupHtml(r.badgeText) + '</span>' +
-              '<span class="dlp-pop-name">' + escPopupHtml(r.carrier) + '</span>' +
-            '</span>' +
-            '<span class="dlp-pop-meta">' + lateHtml + typeIconHtml + detailHtml + '</span>' +
+          '<span class="dlp-pop-left">' +
+          '<span class="dlp-pop-dir ' + dirCls + '">' + escPopupHtml(r.badgeText) + '</span>' +
+          '<span class="dlp-pop-name">' + escPopupHtml(r.carrier) + '</span>' +
+          '</span>' +
+          '<span class="dlp-pop-meta">' + lateHtml + typeIconHtml + detailHtml + '</span>' +
           '</div>'
         );
       }).join('');
@@ -6303,22 +6322,26 @@
         doorLightEls[4].style.backgroundColor = sdColor;
       }
 
-      if (sdQueueTxtEl || whDriverTagEl) {
+      if (sdQueueTxtEl || whDriverTagEl || vtDriverTagEl || sdVendorTagEl) {
         const sessions = (typeof DeliverySystem !== 'undefined' && DeliverySystem && Array.isArray(DeliverySystem.sessions))
           ? DeliverySystem.sessions
           : [];
         const count = global.countDoorQueueSessions(sessions);
-        const hasWh = sessions.some((s) =>
-          s && s.state === 'OUTSIDE_WAITING' && s.delivery && s.delivery.type === 'warehouse'
-        );
         if (sdQueueTxtEl && lastSdQueueCount !== count) {
           lastSdQueueCount = count;
           sdQueueTxtEl.textContent = String(count);
         }
-        if (whDriverTagEl && lastSdHasWh !== hasWh) {
-          lastSdHasWh = hasWh;
-          whDriverTagEl.classList.toggle('active', hasWh);
-        }
+        const waitingFlags = global.getSideDoorWaitingTypeFlags(sessions);
+        [
+          { key: 'warehouse', el: whDriverTagEl },
+          { key: 'vendor_truck', el: vtDriverTagEl },
+          { key: 'sidedoor', el: sdVendorTagEl }
+        ].forEach((entry) => {
+          if (entry.el && lastWaitingByType[entry.key] !== waitingFlags[entry.key]) {
+            lastWaitingByType[entry.key] = waitingFlags[entry.key];
+            entry.el.classList.toggle('active', waitingFlags[entry.key]);
+          }
+        });
       }
 
       if (doorLightsPanelEl && doorLightsPanelEl.classList.contains('beacons-open')) {

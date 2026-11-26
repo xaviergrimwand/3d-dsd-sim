@@ -401,7 +401,7 @@
       id: 'gui_doors_queue',
       chapter: 1,
       title: '1.6 Dock Beacons & Queue [B]',
-      desc: '**Dock Beacons** (`D1`–`D4` and Side Door `SD`) show live status: **Steady Green** (closed & empty), **Flashing Amber** (driver/vendor waiting to enter or exit), **Steady Amber** (open & active with driver/trailer), **Steady Red** (open & empty), and **Flashing Red** (5+ min alarm). Also shows the **`WH DRIVER`** badge and Side Door queue (hover or press `[B]`).',
+      desc: '**Dock Beacons** (Bays `1`–`4` and Side Door `S`) show live status: **Steady Green** (closed & empty), **Flashing Amber** (driver/vendor waiting to enter or exit), **Steady Amber** (open & active with driver/trailer), **Steady Red** (open & empty), and **Flashing Red** (5+ min alarm). Also shows the **`WH` / `VT` / `SD`** arrival lights and Side Door queue (hover or press `[B]`).',
       hudSpotlights: (rt) => resolveCommandBarSpotlight(
         { selector: '#door-lights-panel', label: 'DOCK BEACONS & QUEUE [B]', role: 'target' },
         '#door-lights-panel.beacons-open',

@@ -208,9 +208,13 @@
         : `(${history.length})`;
     }
     if (dom.preview) {
-      dom.preview.innerHTML = history[0]
-        ? `${escapeHtml(history[0].time)} · ${formatMessageHtml(history[0].text)}`
-        : 'Ready — session alerts &amp; updates';
+      dom.preview.classList.remove('n-item-crit', 'n-item-warn', 'n-item-stat', 'n-item-task');
+      if (history[0]) {
+        dom.preview.classList.add(prioCss(history[0].priority));
+        dom.preview.innerHTML = `${escapeHtml(history[0].time)} · ${formatMessageHtml(history[0].text)}`;
+      } else {
+        dom.preview.innerHTML = 'Ready — session alerts &amp; updates';
+      }
     }
     if (dom.unreadDot) {
       dom.unreadDot.style.display = unreadCount > 0 ? 'inline-block' : 'none';

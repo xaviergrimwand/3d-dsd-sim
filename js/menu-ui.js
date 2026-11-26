@@ -396,7 +396,7 @@
     if (global.DSDGame && typeof global.DSDGame.getVersion === 'function') {
       return global.DSDGame.getVersion();
     }
-    return global.DSD_GAME_VERSION || 'v0.1.03-0001';
+    return global.DSD_GAME_VERSION || 'v0.1.04-0001';
   }
 
   function openInfoModal(kind) {
