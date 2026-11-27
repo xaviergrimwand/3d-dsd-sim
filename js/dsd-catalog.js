@@ -23,6 +23,7 @@
     maxNightDrops: 2,
     minNightDropCases: 2,
     maxNightDropCases: 4,
+    nightDropCreditChance: 0.35,
     minTasks: 1,
     maxTasks: 2,
     taskCutoffMinute: 690, // 11:30 AM stop dropping daily Home Office tasks

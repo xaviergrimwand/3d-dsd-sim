@@ -52,6 +52,8 @@
     dom.btnPauseGfx = document.getElementById('btn-pause-gfx');
     dom.pauseFpsVal = document.getElementById('pause-fps-val');
     dom.btnPauseFpsHud = document.getElementById('btn-pause-fps-hud');
+    dom.btnPauseUiScale = document.getElementById('btn-pause-ui-scale');
+    dom.pauseUiScaleInfo = document.getElementById('pause-ui-scale-info');
 
     dom.saveLoadModal = document.getElementById('save-load-modal');
     dom.slmTitle = document.getElementById('slm-title');
@@ -151,6 +153,20 @@
       if (dom.pauseFpsVal && typeof global.DSDGraphics.getMetrics === 'function') {
         const m = global.DSDGraphics.getMetrics();
         dom.pauseFpsVal.textContent = m && m.fps > 0 ? `${m.fps} FPS · ${m.avgMs.toFixed(1)}ms` : '-- FPS';
+      }
+    }
+    if (global.DSDUIScale && typeof global.DSDUIScale.getSettings === 'function') {
+      const us = global.DSDUIScale.getSettings();
+      const pct = Math.round((Number(us.scale) || 1) * 100);
+      if (dom.btnPauseUiScale) {
+        const modeLabel = us.mode === 'auto' ? 'AUTO' : (pct + '%');
+        dom.btnPauseUiScale.innerHTML = fmtIconHtml('[[ico:target]] SCALE: ' + modeLabel);
+      }
+      if (dom.pauseUiScaleInfo) {
+        const tag = us.mode === 'auto'
+          ? (us.isTabletAuto ? 'TABLET AUTO' : 'DESKTOP')
+          : 'MANUAL';
+        dom.pauseUiScaleInfo.textContent = `${pct}% · ${tag}`;
       }
     }
   }
@@ -396,7 +412,7 @@
     if (global.DSDGame && typeof global.DSDGame.getVersion === 'function') {
       return global.DSDGame.getVersion();
     }
-    return global.DSD_GAME_VERSION || 'v0.1.04-0001';
+    return global.DSD_GAME_VERSION || 'v0.1.05-0001';
   }
 
   function openInfoModal(kind) {
@@ -661,6 +677,20 @@
         }
       });
     }
+
+    if (dom.btnPauseUiScale) {
+      dom.btnPauseUiScale.addEventListener('click', () => {
+        if (global.DSDUIScale && typeof global.DSDUIScale.cycleMode === 'function') {
+          global.DSDUIScale.cycleMode();
+          syncAudioControls();
+          playClick();
+        }
+      });
+    }
+
+    global.addEventListener('dsd-ui-scale-change', () => {
+      syncAudioControls();
+    });
 
     if (dom.slmCloseBtn) {
       dom.slmCloseBtn.addEventListener('click', () => closeSaveLoadModal());

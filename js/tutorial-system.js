@@ -9,8 +9,8 @@
    */
 
   const CHAPTERS = [
-    { id: 'screen_tour', num: 1, icon: 'warehouse', label: 'SCREEN TOUR', sub: 'HUD Command Bar, beacons, minimap & stations', firstStep: 'gui_intro' },
-    { id: 'warehouse_trucks', num: 2, icon: 'truck', label: 'WAREHOUSE TRUCKS', sub: 'Bay doors, electric jack, curtains & staging', firstStep: 'wh_open_bay' },
+    { id: 'screen_tour', num: 1, icon: 'warehouse', label: 'SCREEN TOUR', sub: 'Controls, Command Bar, minimap & stations', firstStep: 'gui_controls' },
+    { id: 'warehouse_trucks', num: 2, icon: 'truck', label: 'WAREHOUSE TRUCKS', sub: 'Side door check-in, Dock 1 escort, electric jack & staging', firstStep: 'wh_admit_driver' },
     { id: 'side_door_vendors', num: 3, icon: 'box', label: 'SIDE DOOR VENDORS', sub: 'Side rollup door, scanner check-in & receipts', firstStep: 'sd_open_door' },
     { id: 'temp_zones', num: 4, icon: 'thermometer', label: 'TEMP ZONES & PRODUCE', sub: 'Temp probes & non-scannable PLU produce', firstStep: 'tz_dock_driver' },
     { id: 'discrepancies_credits', num: 5, icon: 'flag', label: 'DISCREPANCIES & CREDITS', sub: 'Shortages, overage flags & credit memos', firstStep: 'dc_shortage' },
@@ -42,10 +42,37 @@
     return escapeHtml(str).replace(/\[\[ico:([a-zA-Z0-9_-]+)\]\]/g, (_, name) => fmtIco(name));
   }
 
-  function formatStepHtml(str) {
+  function formatInlineTokens(str) {
     return fmtRichText(str)
+      .replace(/\[\[key:([^\]]+)\]\]/g, '<kbd class="tut-key">$1</kbd>')
       .replace(/\*\*([^*]+)\*\*/g, '<strong class="tut-hl">$1</strong>')
       .replace(/`([^`]+)`/g, '<code>$1</code>');
+  }
+
+  function formatStepHtml(str) {
+    const lines = String(str || '').split('\n');
+    const blocks = [];
+    let bulletBuf = [];
+    const flushBullets = () => {
+      if (!bulletBuf.length) return;
+      blocks.push('<ul class="tut-bullets">' + bulletBuf.map((b) => '<li>' + formatInlineTokens(b) + '</li>').join('') + '</ul>');
+      bulletBuf = [];
+    };
+    lines.forEach((rawLine) => {
+      const line = rawLine.trim();
+      if (!line) {
+        flushBullets();
+        return;
+      }
+      if (/^-\s+/.test(line)) {
+        bulletBuf.push(line.replace(/^-\s+/, ''));
+      } else {
+        flushBullets();
+        blocks.push('<p class="tut-lead">' + formatInlineTokens(line) + '</p>');
+      }
+    });
+    flushBullets();
+    return blocks.join('');
   }
 
   function isElementVisible(el) {
@@ -103,6 +130,7 @@
   const CHAPTER_SETUPS = {
     1: {
       time: { hour: 6, minute: 0 },
+      spawn: { defaultSpawn: true },
       tutorialScript: {
         deliveries: [
           {
@@ -146,6 +174,7 @@
     },
     2: {
       time: { hour: 6, minute: 0 },
+      spawn: { station: 'sideDoorButton', offsetX: -2.6, offsetZ: 1.0, lookAtStation: 'sideDoorButton' },
       tutorialScript: {
         deliveries: [
           {
@@ -170,6 +199,7 @@
     },
     3: {
       time: { hour: 6, minute: 5 },
+      spawn: { station: 'sideDoorButton', offsetX: -2.6, offsetZ: 1.0, lookAtStation: 'sideDoorButton' },
       tutorialScript: {
         deliveries: [
           {
@@ -192,6 +222,7 @@
     },
     4: {
       time: { hour: 6, minute: 10 },
+      spawn: { station: 'sideDoorButton', offsetX: -2.6, offsetZ: 1.0, lookAtStation: 'sideDoorButton' },
       tutorialScript: {
         deliveries: [
           {
@@ -218,6 +249,7 @@
     },
     5: {
       time: { hour: 6, minute: 20 },
+      spawn: { station: 'sideDoorButton', offsetX: -2.6, offsetZ: 1.0, lookAtStation: 'sideDoorButton' },
       tutorialScript: {
         deliveries: [
           {
@@ -247,6 +279,7 @@
     },
     6: {
       time: { hour: 6, minute: 30 },
+      spawn: { station: 'terminal', offsetX: -2.4, offsetZ: 0.0, lookAtStation: 'terminal' },
       tutorialScript: {
         deliveries: [],
         nightDrops: [{ vendorNo: '143', invoiceNo: '880143' }],
@@ -258,6 +291,7 @@
     },
     7: {
       time: { hour: 6, minute: 45 },
+      spawn: { station: 'claimsSteel', offsetX: 0.0, offsetZ: -2.3, lookAtStation: 'claimsSteel' },
       tutorialScript: {
         deliveries: [],
         nightDrops: [],
@@ -273,6 +307,7 @@
     },
     8: {
       time: { hour: 12, minute: 0 },
+      spawn: { station: 'drySteel', offsetX: 0.0, offsetZ: -2.3, lookAtStation: 'drySteel' },
       tutorialScript: {
         deliveries: [],
         nightDrops: [],
@@ -321,15 +356,73 @@
     return false;
   }
 
+  function markStepMinimized(stepId) {
+    if (state.collapsed) {
+      state.seenActions[stepId + '_minimized'] = true;
+    }
+  }
+
+  function isStepMinimizedOrProgressed(stepId, progressed) {
+    return Boolean(state.collapsed || state.seenActions[stepId + '_minimized'] || progressed);
+  }
+
+  function resolveMinimizeClearedSpotlights(stepId, defaultSpec, modalOverrideSpec) {
+    if (modalOverrideSpec && modalOverrideSpec.open) {
+      return [modalOverrideSpec];
+    }
+    if (state.collapsed || state.seenActions[stepId + '_minimized']) {
+      return [];
+    }
+    return [defaultSpec];
+  }
+
   // =========================================================================
   // 8-CHAPTER STEP DEFINITIONS
   // =========================================================================
   const STEPS = [
-    // CHAPTER 1: SCREEN TOUR (Command Bar Overview + Left-to-Right Walkthrough)
+    // CHAPTER 1: SCREEN TOUR (Controls -> Command Bar Walkthrough -> Minimap & Stations)
+    {
+      id: 'gui_controls',
+      chapter: 1,
+      title: '1.1 Dock Controls: Movement & Mouse-Look',
+      desc: 'Practice moving and looking around the 3D dock before touring the HUD:\n- Walk: [[key:W]] [[key:A]] [[key:S]] [[key:D]] or [[key:Arrow Keys]]\n- Mouse-Look: Click the 3D dock (or **Click to lock mouse**); hold [[key:Ctrl]] or press [[key:ESC]] to free cursor\n- Actions: [[key:E]] (or Left-Click) interact · [[key:F]] Scanner · [[key:Space]] Pallet Jack',
+      hudSpotlights: () => {
+        if (typeof document !== 'undefined') {
+          const lh = document.querySelector('#lock-hint');
+          if (lh && lh.style.display !== 'none') {
+            const rect = lh.getBoundingClientRect ? lh.getBoundingClientRect() : null;
+            if (rect && rect.width > 0 && rect.height > 0) {
+              return [{ selector: '#lock-hint', label: 'MOUSE-LOOK TOGGLE', role: 'target' }];
+            }
+          }
+        }
+        return [{ selector: '#command-ribbon-bg', label: 'DOCK CONTROLS & HUD', role: 'target', padding: 0 }];
+      },
+      worldTarget: () => null,
+      checklist: (rt) => {
+        const init = state.stepInitialPlayer;
+        const p = rt && rt.player;
+        if (init && p) {
+          if (Number.isFinite(p.x) && Number.isFinite(p.z) && Math.hypot(p.x - init.x, p.z - init.z) > 0.35) {
+            state.seenActions.gui_controls_move = true;
+          }
+          if (
+            (Number.isFinite(p.yaw) && Math.abs(p.yaw - init.yaw) > 0.08) ||
+            (Number.isFinite(p.pitch) && Math.abs(p.pitch - init.pitch) > 0.06)
+          ) {
+            state.seenActions.gui_controls_look = true;
+          }
+        }
+        return [
+          { label: 'Walk around with W A S D or Arrow keys (optional)', done: Boolean(state.seenActions.gui_controls_move) },
+          { label: 'Click 3D dock / pill & look with Mouse (optional), then click Next', done: Boolean(state.seenActions.gui_controls_look) }
+        ];
+      }
+    },
     {
       id: 'gui_intro',
       chapter: 1,
-      title: '1.1 Command Bar Overview',
+      title: '1.2 Command Bar Overview',
       desc: 'Welcome to your **Command Bar** — your live dispatch ribbon across the top of the screen. Next, we will step through every panel from **left to right** so you know how each panel works and its shortcut key.',
       hudSpotlights: () => [{ selector: '#command-ribbon-bg', label: 'COMMAND BAR', role: 'target', padding: 0 }],
       worldTarget: () => null,
@@ -340,8 +433,8 @@
     {
       id: 'gui_clock',
       chapter: 1,
-      title: '1.2 Shift Clock & Calendar [C]',
-      desc: 'On the far left is your **Shift Clock**. Shifts run `6:00 AM` to `2:00 PM`, and you can punch out with no penalty starting at `12:00 PM` once all work is finished. Overtime accrues from `2:00 PM` to `3:00 PM` (pulsing red), ending in a forced clock-out at `3:00 PM`. During training, the date reads `TUTORIAL`; hover or press `[C]` to open the **February 1996 Calendar**.',
+      title: '1.3 Shift Clock & Calendar [C]',
+      desc: 'Top-left shift timer and calendar panel:\n- Regular shift runs `6:00 AM` to `2:00 PM` (punch out free at `12:00 PM` when done)\n- Overtime (`2:00 PM` to `3:00 PM`) pulses red, ending in a forced clock-out at `3:00 PM`\n- Hover the clock or press [[key:C]] to view the **February 1996 Calendar** (`TUTORIAL` during training)',
       hudSpotlights: () => resolveCommandBarSpotlight(
         { selector: '#retro-digital-clock', label: 'SHIFT CLOCK [C]', role: 'target' },
         '#retro-digital-clock.calendar-open',
@@ -355,8 +448,8 @@
     {
       id: 'gui_remaining_work',
       chapter: 1,
-      title: '1.3 Remaining Work & Points [K]',
-      desc: '**Remaining Work** displays your live **PTS** score, total items **LEFT**, and category counters left to right: Side-Door Vendors, Vendor Trucks, Warehouse Trucks, HO Tasks, Claims, Overstock, Inventory (`N/Y`), and Filing (`N/Y`). Hover or press `[K]` for the guide.',
+      title: '1.4 Remaining Work & Points [K]',
+      desc: 'Live **PTS** score, total items **LEFT**, and category counters left to right:\n- Side-Door Vendors, Vendor Trucks, Warehouse Trucks, HO Tasks, Claims & Overstock\n- Daily checklists: Inventory (`N/Y`) and Filing (`N/Y`)\n- Hover the tracker or press [[key:K]] for the Work Guide',
       hudSpotlights: () => resolveCommandBarSpotlight(
         { selector: '#hud-remaining-tracker', label: 'REMAINING WORK [K]', role: 'target' },
         '#hud-remaining-tracker.legend-open',
@@ -370,8 +463,8 @@
     {
       id: 'gui_message_log',
       chapter: 1,
-      title: '1.4 Message Log [M] / [L]',
-      desc: 'In the center sits the **Message Log**. All dock alerts, truck arrivals, door alarms, and compliance updates appear here. Click the bar or press `[M]` (or `[L]`) anytime to review and filter past messages.',
+      title: '1.5 Message Log [M] / [L]',
+      desc: 'Center dispatch bar showing live dock alerts, truck arrivals, door alarms, and compliance updates:\n- Click the bar or press [[key:M]] / [[key:L]] anytime to filter past messages',
       hudSpotlights: () => resolveCommandBarSpotlight(
         { selector: '#hud-msg-bar', label: 'MESSAGE LOG [M]', role: 'target' },
         '#hud-msg-center.open',
@@ -385,8 +478,8 @@
     {
       id: 'gui_pending_deliveries',
       chapter: 1,
-      title: '1.5 Pending Deliveries [P]',
-      desc: '**Pending Deliveries** lists scheduled Warehouse Trucks and DSD Vendors with ETAs, carrier names, assigned bay/door, priority warnings, and countdown timers. Click the panel or press `[P]` to expand the full schedule.',
+      title: '1.6 Pending Deliveries [P]',
+      desc: 'Tracks scheduled Warehouse Trucks and DSD Vendors with ETAs, assigned dock/door, priority warnings, and countdowns:\n- Click the panel or press [[key:P]] to expand the full schedule',
       hudSpotlights: () => resolveCommandBarSpotlight(
         { selector: '#pending-deliveries-panel', label: 'PENDING DELIVERIES [P]', role: 'target' },
         '#pending-deliveries-panel:not(.collapsed)',
@@ -400,8 +493,8 @@
     {
       id: 'gui_doors_queue',
       chapter: 1,
-      title: '1.6 Dock Beacons & Queue [B]',
-      desc: '**Dock Beacons** (Bays `1`–`4` and Side Door `S`) show live status: **Steady Green** (closed & empty), **Flashing Amber** (driver/vendor waiting to enter or exit), **Steady Amber** (open & active with driver/trailer), **Steady Red** (open & empty), and **Flashing Red** (5+ min alarm). Also shows the **`WH` / `VT` / `SD`** arrival lights and Side Door queue (hover or press `[B]`).',
+      title: '1.7 Dock Beacons & Queue [B]',
+      desc: 'Live door status for **Docks `1`–`4`** and **Side Door**, plus **`WH` / `VT` / `SD`** arrival lights:\n- **Green:** Closed & empty · **Flashing Amber:** Driver waiting\n- **Amber:** Open & active · **Red / Flashing Red:** Open & empty (`5+ min` alarm)\n- Hover the panel or press [[key:B]] for the legend and queue count',
       hudSpotlights: (rt) => resolveCommandBarSpotlight(
         { selector: '#door-lights-panel', label: 'DOCK BEACONS & QUEUE [B]', role: 'target' },
         '#door-lights-panel.beacons-open',
@@ -416,8 +509,8 @@
     {
       id: 'gui_system_menu',
       chapter: 1,
-      title: '1.7 System & Pause Menu [ESC]',
-      desc: 'On the far right is **SYSTEM MENU**. Click it or press `[ESC]` to pause the simulation, adjust SFX & Music sliders, check controls, or return to the Main Menu (Campaign Save & Load stay safely locked during Tutorial Mode).',
+      title: '1.8 System & Pause Menu [ESC]',
+      desc: 'Far-right pause and audio controls:\n- Click **SYSTEM MENU** or press [[key:ESC]] to pause, adjust SFX & Music sliders, or exit\n- Campaign Save & Load stay safely locked during Tutorial Mode',
       hudSpotlights: () => [{ selector: '#pause-menu-btn', label: 'SYSTEM MENU [ESC]', role: 'target' }],
       worldTarget: () => null,
       checklist: () => {
@@ -425,66 +518,231 @@
           state.seenActions.gui_system_menu = true;
         }
         return [
-          { label: 'Review controls above, then click Next for Dock Minimap', done: Boolean(state.seenActions.gui_system_menu) }
+          { label: 'Click System Menu or press [ESC] (optional), then click Next for Dock Minimap', done: Boolean(state.seenActions.gui_system_menu) }
         ];
       }
     },
     {
+      id: 'gui_minimap',
+      chapter: 1,
+      title: '1.9 Dock Minimap Overview',
+      desc: 'Below **System Menu** sits your live **Dock Minimap** with blueprint callouts:\n- **North:** Docks `1`–`4` truck stalls & rollup doors\n- **Middle:** Dry Dock work floor, Side Door, Freezer & Cooler\n- **South:** Employee Hallway, Timeclock & your live facing arrow',
+      hudSpotlights: () => [{ selector: '#minimap-container', label: 'DOCK MINIMAP', role: 'target' }],
+      minimapCallouts: () => [
+        {
+          label: 'DOCKS 1–4',
+          u: 1 / 11,
+          v: 0.18,
+          dropUs: [1 / 11, 4 / 11, 7 / 11, 10 / 11],
+          dropV: 0.39,
+          color: '#4ade80'
+        },
+        { label: 'DRY DOCK AREA', u: 0.44, v: 0.50, color: '#e2e8f0' },
+        { label: 'SIDE DOOR', u: 0.96, v: 0.54, color: '#facc15' },
+        { label: 'FREEZER', u: 0.18, v: 0.77, color: '#38bdf8' },
+        { label: 'COOLER', u: 0.64, v: 0.82, color: '#2dd4bf' },
+        { label: 'HALLWAY', u: 0.36, v: 0.94, color: '#cbd5e1' },
+        { label: 'TIMECLOCK', u: 0.97, v: 0.96, side: 'south', color: '#fb923c' }
+      ],
+      worldTarget: () => null,
+      checklist: () => [
+        { label: 'Review the Dock Minimap zones, then click Next to locate Dock Stations', done: false }
+      ]
+    },
+    {
       id: 'gui_stations_look',
       chapter: 1,
-      title: '1.8 Dock Minimap & 3D Walk-Around',
-      desc: 'Below System Menu sits your **Dock Minimap**, showing player facing, doors, and Tutorial objective pings. Click the 3D dock to steer (`WASD` move, `[E]` interact, `[Space]` Pallet Jack, `[F]` Scanner) and walk to the **Computer Desk** (or click **Next**) to start **Chapter 2**.',
-      hudSpotlights: () => [{ selector: '#minimap-container', label: 'DOCK MINIMAP', role: 'target' }],
-      worldTarget: (rt) => rt.stations ? rt.stations.terminal : null,
+      title: '1.10 Locate Computer Desk & Side Door',
+      desc: 'Walk onto the **Main Dock** to locate the **Computer Desk** and **Side Door** along the **East wall**:\n- Moving automatically docks this window to the **bottom-center** so your view stays clear\n- Click **▲** or that bottom bar anytime to reopen (also pops back up on arrival)',
+      hudSpotlights: () => [],
+      onTick: (rt) => {
+        const p = rt && rt.player;
+        const st = rt && rt.stations ? rt.stations : {};
+        const t = st.terminal || null;
+        const sd = st.sideDoor || st.sideDoorButton || null;
+        if (!p || !Number.isFinite(p.x) || !Number.isFinite(p.z)) return;
+        const nearDesk = Boolean(t && Math.hypot(p.x - t.x, p.z - t.z) < 2.8);
+        const nearSide = Boolean(sd && Math.hypot(p.x - sd.x, p.z - sd.z) < 2.8);
+        let newlyReached = false;
+        if (nearDesk && !state.seenActions.gui_stations_desk) {
+          state.seenActions.gui_stations_desk = true;
+          newlyReached = true;
+        }
+        if (nearSide && !state.seenActions.gui_stations_side) {
+          state.seenActions.gui_stations_side = true;
+          newlyReached = true;
+        }
+        const bothDone = Boolean(state.seenActions.gui_stations_desk && state.seenActions.gui_stations_side);
+        if (newlyReached) {
+          state.collapsed = false;
+          state.seenActions.gui_stations_moveBase = { x: p.x, z: p.z };
+          state.seenActions.gui_stations_hidThisLeg = false;
+          return;
+        }
+        if (!bothDone && !nearDesk && !nearSide && !state.seenActions.gui_stations_hidThisLeg) {
+          const base = state.seenActions.gui_stations_moveBase || state.stepInitialPlayer;
+          if (base && Number.isFinite(base.x) && Number.isFinite(base.z) && Math.hypot(p.x - base.x, p.z - base.z) > 0.35) {
+            state.seenActions.gui_stations_hidThisLeg = true;
+            state.collapsed = true;
+            if (!state.seenActions.gui_stations_notifiedHide) {
+              state.seenActions.gui_stations_notifiedHide = true;
+              if (global.DSDMessages && typeof global.DSDMessages.push === 'function') {
+                global.DSDMessages.push('[[ico:book]] Tutorial docked to bottom-center while moving — click ▲ below anytime to reopen (auto-reopens at destination).', 'status', { silent: true });
+              }
+            }
+          }
+        }
+      },
+      worldTarget: (rt) => {
+        const p = rt && rt.player;
+        const st = rt && rt.stations ? rt.stations : {};
+        const t = st.terminal || null;
+        const sd = st.sideDoor || st.sideDoorButton || null;
+        const nearDesk = Boolean(p && t && Math.hypot(p.x - t.x, p.z - t.z) < 2.8);
+        const nearSide = Boolean(p && sd && Math.hypot(p.x - sd.x, p.z - sd.z) < 2.8);
+        const deskDone = Boolean(state.seenActions.gui_stations_desk || nearDesk);
+        const sideDone = Boolean(state.seenActions.gui_stations_side || nearSide);
+        if (!deskDone) return t || sd;
+        if (!sideDone) return sd || t;
+        return null;
+      },
       checklist: (rt) => {
-        const p = rt.player;
-        const t = rt.stations && rt.stations.terminal;
-        const nearDesk = p && t && Math.hypot(p.x - t.x, p.z - t.z) < 4.5;
+        const p = rt && rt.player;
+        const st = rt && rt.stations ? rt.stations : {};
+        const t = st.terminal || null;
+        const sd = st.sideDoor || st.sideDoorButton || null;
+        if (p && t && Math.hypot(p.x - t.x, p.z - t.z) < 2.8) {
+          state.seenActions.gui_stations_desk = true;
+        }
+        if (p && sd && Math.hypot(p.x - sd.x, p.z - sd.z) < 2.8) {
+          state.seenActions.gui_stations_side = true;
+        }
         return [
-          { label: 'Approach the Computer Desk or press Next to start Chapter 2', done: Boolean(nearDesk) }
+          { label: 'Locate & walk near the Computer Desk (East wall)', done: Boolean(state.seenActions.gui_stations_desk) },
+          { label: 'Locate & walk near the Side Door (East wall)', done: Boolean(state.seenActions.gui_stations_side) }
         ];
       },
       isComplete: (rt) => {
-        const p = rt.player;
-        const t = rt.stations && rt.stations.terminal;
-        return Boolean(p && t && Math.hypot(p.x - t.x, p.z - t.z) < 3.4);
+        const p = rt && rt.player;
+        const st = rt && rt.stations ? rt.stations : {};
+        const t = st.terminal || null;
+        const sd = st.sideDoor || st.sideDoorButton || null;
+        if (p && t && Math.hypot(p.x - t.x, p.z - t.z) < 2.8) {
+          state.seenActions.gui_stations_desk = true;
+        }
+        if (p && sd && Math.hypot(p.x - sd.x, p.z - sd.z) < 2.8) {
+          state.seenActions.gui_stations_side = true;
+        }
+        return Boolean(state.seenActions.gui_stations_desk && state.seenActions.gui_stations_side);
       }
     },
 
     // CHAPTER 2: WAREHOUSE TRUCKS
     {
+      id: 'wh_admit_driver',
+      chapter: 2,
+      title: '2.1 Open Side Door, Admit Driver & Close Behind',
+      desc: 'A **Dept 01 Apex Logistics** trailer (`6` pallets) is at **Dock 1** and driver **Alex Mercer** is waiting outside the **Side Door**:\n- **Begin:** Hold [[key:Ctrl]] or press [[key:ESC]] to free your cursor, then click the down arrow **▼** (top-right) to minimize this window and clear your view\n- Press [[key:E]] on the switch to open the Side Door, click the driver [[key:E]] to let them inside, wait for them to clear the doorway, then press [[key:E]] to **close the Side Door behind them**',
+      onTick: () => markStepMinimized('wh_admit_driver'),
+      hudSpotlights: (rt) => resolveMinimizeClearedSpotlights(
+        'wh_admit_driver',
+        { selector: '#door-lights-panel', label: 'SD LIGHT AMBER · WH WAITING', role: 'target' },
+        { open: Boolean(rt && rt.modals && rt.modals.doorQueueOpen), selector: '#door-queue-modal', label: 'CLICK LET IN TO ADMIT DRIVER', role: 'target' }
+      ),
+      worldTarget: (rt) => {
+        const wh = findDelivery('tut_ch2_wh');
+        const sess = (rt.sessions || []).find((s) => s.deliveryId === 'tut_ch2_wh');
+        const admitted = Boolean((sess && sess.state !== 'OUTSIDE_WAITING') || (wh && wh.completed));
+        const cleared = Boolean(
+          (sess && !['OUTSIDE_WAITING', 'ENTERING'].includes(sess.state)) ||
+          (sess && sess.state === 'ENTERING' && sess.driverPos && rt.stations.sideDoor && sess.driverPos.x < rt.stations.sideDoor.x - 1.0) ||
+          (wh && wh.completed)
+        );
+        if (!admitted) {
+          return !rt.sideDoor.isOpen ? rt.stations.sideDoorButton : ((sess && sess.driverPos) || rt.stations.sideDoor);
+        }
+        if (!cleared) return (sess && sess.driverPos) || rt.stations.sideDoor;
+        if (rt.sideDoor.isOpen) return rt.stations.sideDoorButton;
+        return (sess && sess.driverPos) || rt.stations.dockDoor1;
+      },
+      checklist: (rt) => {
+        const wh = findDelivery('tut_ch2_wh');
+        const sess = (rt.sessions || []).find((s) => s.deliveryId === 'tut_ch2_wh');
+        const admitted = Boolean((sess && sess.state !== 'OUTSIDE_WAITING') || (wh && wh.completed));
+        const cleared = Boolean(
+          (sess && !['OUTSIDE_WAITING', 'ENTERING'].includes(sess.state)) ||
+          (sess && sess.state === 'ENTERING' && sess.driverPos && rt.stations.sideDoor && sess.driverPos.x < rt.stations.sideDoor.x - 1.0) ||
+          (wh && wh.completed)
+        );
+        const pastCheckin = Boolean((sess && !['OUTSIDE_WAITING', 'ENTERING', 'WAITING_CHECKIN'].includes(sess.state)) || (wh && wh.completed));
+        const minimized = isStepMinimizedOrProgressed('wh_admit_driver', admitted || pastCheckin || (wh && wh.completed));
+        return [
+          { label: 'Free cursor & click ▼ to minimize tutorial window', done: minimized },
+          { label: 'Open Side Rollup Door [E]', done: Boolean(rt.sideDoor.isOpen || admitted) },
+          { label: 'Click Alex Mercer outside [E] & let them inside', done: admitted },
+          { label: 'Close Side Door behind driver [E]', done: Boolean((cleared && !rt.sideDoor.isOpen) || pastCheckin) }
+        ];
+      },
+      isComplete: (rt) => {
+        const wh = findDelivery('tut_ch2_wh');
+        const sess = (rt.sessions || []).find((s) => s.deliveryId === 'tut_ch2_wh');
+        const admitted = Boolean((sess && sess.state !== 'OUTSIDE_WAITING') || (wh && wh.completed));
+        const cleared = Boolean(
+          (sess && !['OUTSIDE_WAITING', 'ENTERING'].includes(sess.state)) ||
+          (sess && sess.state === 'ENTERING' && sess.driverPos && rt.stations.sideDoor && sess.driverPos.x < rt.stations.sideDoor.x - 1.0) ||
+          (wh && wh.completed)
+        );
+        const pastCheckin = Boolean((sess && !['OUTSIDE_WAITING', 'ENTERING', 'WAITING_CHECKIN'].includes(sess.state)) || (wh && wh.completed));
+        return Boolean((wh && wh.completed) || pastCheckin || (admitted && cleared && !rt.sideDoor.isOpen));
+      }
+    },
+    {
       id: 'wh_open_bay',
       chapter: 2,
-      title: '2.1 Open Bay 1 & Admit Warehouse Driver',
-      desc: 'A **Dept 01 Apex Logistics** trailer has backed into **Bay 1** (`F`, `C`, `D` zones). Open Bay 1 using `[E]` on the green switch, then click the driver outside `[E]` to let them stage the pallets.',
-      hudSpotlights: () => [{ selector: '#door-lights-panel', label: 'BAY 1 AMBER = READY', role: 'target' }],
+      title: '2.2 Check In Driver, Walk to Dock 1 & Open Door',
+      desc: 'Check in the driver inside and open **Dock 1**:\n- **Begin:** Hold [[key:Ctrl]] or press [[key:ESC]] to free your cursor, then click **▼** (top-right) to minimize this window and clear your view\n- Click **Alex Mercer** [[key:E]] to check in for **Dock 1**, walk over to **Dock 1** together, and press [[key:E]] on Dock 1\'s green switch to open the trailer',
+      onTick: () => markStepMinimized('wh_open_bay'),
+      hudSpotlights: () => resolveMinimizeClearedSpotlights(
+        'wh_open_bay',
+        { selector: '#door-lights-panel', label: 'DOCK 1 AMBER = READY', role: 'target' }
+      ),
       worldTarget: (rt) => {
         const bay1 = (rt.doors || []).find((d) => d.id === 1);
-        const whSess = (rt.sessions || []).find((s) => s.type === 'warehouse');
+        const sess = (rt.sessions || []).find((s) => s.deliveryId === 'tut_ch2_wh');
+        const checkedIn = Boolean(sess && !['OUTSIDE_WAITING', 'ENTERING', 'WAITING_CHECKIN'].includes(sess.state));
+        if (!checkedIn && sess && sess.driverPos) return sess.driverPos;
         if (bay1 && !bay1.isOpen) return rt.stations.dockButton1;
-        if (whSess && whSess.driverPos) return whSess.driverPos;
         return rt.stations.dockDoor1;
       },
       checklist: (rt) => {
         const bay1 = (rt.doors || []).find((d) => d.id === 1);
         const wh = findDelivery('tut_ch2_wh');
-        const whSess = (rt.sessions || []).find((s) => s.deliveryId === 'tut_ch2_wh');
-        const driverIn = Boolean(whSess && whSess.state !== 'OUTSIDE_WAITING') || Boolean(wh && (wh.spawnedCount || 0) > 0);
+        const sess = (rt.sessions || []).find((s) => s.deliveryId === 'tut_ch2_wh');
+        const p = rt && rt.player;
+        const d1 = rt && rt.stations ? rt.stations.dockDoor1 : null;
+        const checkedIn = Boolean((sess && !['OUTSIDE_WAITING', 'ENTERING', 'WAITING_CHECKIN'].includes(sess.state)) || (wh && wh.completed));
+        const nearBay1 = Boolean((bay1 && bay1.isOpen) || (checkedIn && p && d1 && Math.hypot(p.x - d1.x, p.z - d1.z) < 5.0) || (wh && wh.completed));
+        const minimized = isStepMinimizedOrProgressed('wh_open_bay', checkedIn || (bay1 && bay1.isOpen) || (wh && wh.completed));
         return [
-          { label: 'Open Dock Bay 1 door [E]', done: Boolean(bay1 && bay1.isOpen) },
-          { label: 'Admit Warehouse driver [E] to stage pallets', done: driverIn }
+          { label: 'Free cursor & click ▼ to minimize tutorial window', done: minimized },
+          { label: 'Click Alex Mercer [E] to check in for Dock 1', done: checkedIn },
+          { label: 'Walk over to Dock 1 with the driver', done: nearBay1 },
+          { label: 'Open Dock 1 door [E] to start unload', done: Boolean((bay1 && bay1.isOpen) || (wh && wh.completed)) }
         ];
       },
       isComplete: (rt) => {
+        const bay1 = (rt.doors || []).find((d) => d.id === 1);
         const wh = findDelivery('tut_ch2_wh');
-        return Boolean(wh && ((wh.spawnedCount || 0) >= (wh.palletSpecs ? wh.palletSpecs.length : 6) || wh.completed));
+        const sess = (rt.sessions || []).find((s) => s.deliveryId === 'tut_ch2_wh');
+        const checkedIn = Boolean((sess && !['OUTSIDE_WAITING', 'ENTERING', 'WAITING_CHECKIN'].includes(sess.state)) || (wh && wh.completed));
+        return Boolean((wh && wh.completed) || (checkedIn && bay1 && bay1.isOpen));
       }
     },
     {
       id: 'wh_equip_jack',
       chapter: 2,
-      title: '2.2 Equip the Electric Walkie Jack',
-      desc: 'Walk to the charging station along the West wall and press `[Space]` to grab the **Electric Pallet Jack**.',
+      title: '2.3 Trailer Temp Zones & Equip Walkie Jack',
+      desc: 'Warehouse trailers carry **Frozen (`F`)**, **Chilled (`C`)**, and **Dry (`D`)** pallets inside:\n- Unload **Dry** pallets first so you can reach **Chilled** and **Frozen** behind the insulated curtains\n- Walk to the **West wall** charging station and press [[key:Space]] to equip the **Electric Pallet Jack**',
       hudSpotlights: () => [],
       worldTarget: (rt) => rt.player.hasElectricJack ? rt.stations.dockDoor1 : rt.stations.jackCharger,
       checklist: (rt) => [
@@ -495,8 +753,8 @@
     {
       id: 'wh_stage_pallets',
       chapter: 2,
-      title: '2.3 Stage Dry (D), Cooler (C) & Freezer (F) Pallets',
-      desc: 'Haul each pallet `[Space]` into its color-coded zone (`D` Dry floor, `C` Light Blue Cooler, `F` Dark Blue Freezer). Drop Dry first to clear insulated trailer curtains.',
+      title: '2.4 Stage Dry (D), Cooler (C) & Freezer (F) Pallets',
+      desc: 'Haul each pallet [[key:Space]] into its color-coded floor zone:\n- `D` Dry floor (drop Dry first to clear insulated curtains)\n- `C` Light Blue Cooler · `F` Dark Blue Freezer',
       hudSpotlights: () => [{ selector: '#hud-remaining-tracker', label: 'REMAINING PALLETS', role: 'target' }],
       worldTarget: (rt) => {
         const hitched = (rt.pallets || []).find((p) => p.isHitched);
@@ -526,8 +784,8 @@
     {
       id: 'wh_sign_close',
       chapter: 2,
-      title: '2.4 Sign Warehouse BOL & Close Bay 1',
-      desc: 'Walk up to the Warehouse driver `[E]` to open & sign the BOL, let them exit, and close **Bay 1** `[E]` to avoid open-door penalties.',
+      title: '2.5 Sign Warehouse BOL & Close Dock 1',
+      desc: 'Wrap up the Dock 1 unload cleanly:\n- Walk up to the Warehouse driver [[key:E]] to open & sign the BOL\n- Let them head back out and close **Dock 1** [[key:E]] to avoid open-door alarms',
       hudSpotlights: (rt) => rt.modals.bolOpen ? [{ selector: '#bol-modal', label: 'SIGN BOL', role: 'target' }] : [],
       worldTarget: (rt) => {
         const whSess = (rt.sessions || []).find((s) => s.deliveryId === 'tut_ch2_wh');
@@ -539,7 +797,7 @@
         const bay1 = (rt.doors || []).find((d) => d.id === 1);
         return [
           { label: 'Sign Warehouse BOL & complete delivery [E]', done: Boolean(wh && (wh.completed || wh.isFinalized)) },
-          { label: 'Close Dock Bay 1 door [E]', done: Boolean(wh && wh.completed && bay1 && !bay1.isOpen) }
+          { label: 'Close Dock 1 door [E]', done: Boolean(wh && wh.completed && bay1 && !bay1.isOpen) }
         ];
       },
       isComplete: (rt) => {
@@ -554,7 +812,7 @@
       id: 'sd_open_door',
       chapter: 3,
       title: '3.1 Open Side Rollup Door & Admit Vendor',
-      desc: 'Dry vendor **V#143** is waiting outside the East **Side Rollup Door**. Press `[E]` on the switch to raise the door, then click the driver `[E]` to bring their cart inside.',
+      desc: 'Dry vendor **V#143** is waiting outside the East **Side Rollup Door**:\n- Press [[key:E]] on the green switch to raise the door\n- Click the driver [[key:E]] to bring their cart inside',
       hudSpotlights: () => [{ selector: '#door-lights-panel', label: 'SD LIGHT AMBER', role: 'target' }],
       worldTarget: (rt) => {
         const sess = (rt.sessions || []).find((s) => s.deliveryId === 'tut_ch3_sd');
@@ -581,7 +839,7 @@
       id: 'sd_scanner_header',
       chapter: 3,
       title: '3.2 Enter 5-Field Receipt Header on Scanner',
-      desc: 'Click the vendor/cart `[E]` for Paper Invoice, open Scanner `[F]` -> `1. CREATE RECEIPT`, and copy **Dept#, Vendor, Invoice, Units & Cost** from the Invoice into the highlighted Scanner field (`ENT`).',
+      desc: 'Open the invoice and create a receipt header:\n- Click the vendor or cart [[key:E]] for the **Paper Invoice**, then press [[key:F]] -> `1. CREATE RECEIPT`\n- Copy **Dept#, Vendor, Invoice, Units & Cost** into each highlighted field using [[key:ENT]]',
       hudSpotlights: (rt) => {
         const sc = global.DSDReceipts && global.DSDReceipts.getScannerState ? global.DSDReceipts.getScannerState() : null;
         if (rt.modals.scannerOpen && sc) {
@@ -614,7 +872,7 @@
       id: 'sd_scan_finalize_print',
       chapter: 3,
       title: '3.3 Scan Cases, Finalize [F5], Print [F6] & Hand Slip',
-      desc: 'Scan/click every box on the vendor cart (`[SCAN]`/`F`), press `F5` -> `ENT` to finalize, press `F6` to print the Store Copy, collect from the printer, and hand to driver `[E]`.',
+      desc: 'Scan and finalize the vendor cart:\n- Scan/click each box ([[key:SCAN]] / [[key:F]]), then press [[key:F5]] -> [[key:ENT]] to finalize\n- Press [[key:F6]] to print the Store Copy, collect from the printer, and hand to driver [[key:E]]',
       hudSpotlights: (rt) => {
         const sc = global.DSDReceipts && global.DSDReceipts.getScannerState ? global.DSDReceipts.getScannerState() : null;
         if (rt.modals.scannerOpen && sc) {
@@ -650,9 +908,9 @@
     {
       id: 'tz_dock_driver',
       chapter: 4,
-      title: '4.1 Check In Cold Truck V#201 & Open Bay 2',
-      desc: 'Commercial refrigerated truck **V#201** has backed into **Bay 2** and the driver is waiting at the **Side Door**. Open the Side Door `[E]` to check them in, then open **Bay 2** `[E]` so their trailer opens.',
-      hudSpotlights: () => [{ selector: '#door-lights-panel', label: 'SD & BAY 2 LIGHTS', role: 'target' }],
+      title: '4.1 Check In Cold Truck V#201 & Open Dock 2',
+      desc: 'Refrigerated truck **V#201** is at **Dock 2** while the driver waits at the **Side Door**:\n- Open the **Side Door** [[key:E]] and click the driver to check them in\n- Open **Dock 2** [[key:E]] so their trailer door opens',
+      hudSpotlights: () => [{ selector: '#door-lights-panel', label: 'SD & DOCK 2 LIGHTS', role: 'target' }],
       worldTarget: (rt) => {
         const bay2 = (rt.doors || []).find((d) => d.id === 2);
         const sess = (rt.sessions || []).find((s) => s.deliveryId === 'tut_ch4_vt');
@@ -674,7 +932,7 @@
         const atCheckin = Boolean((sess && (sess.state === 'WAITING_SIGN' || sess.state === 'EXITING' || sess.state === 'COMPLETED')) || (d && (d.receiptCreated || d.completed)));
         return [
           { label: 'Admit & check in V#201 driver at Side Door [E]', done: checkedIn },
-          { label: 'Open Dock Bay 2 [E] so pallet reaches check-in', done: Boolean((bay2 && bay2.isOpen) || atCheckin) }
+          { label: 'Open Dock 2 [E] so pallet reaches check-in', done: Boolean((bay2 && bay2.isOpen) || atCheckin) }
         ];
       },
       isComplete: (rt) => {
@@ -687,7 +945,7 @@
       id: 'tz_probe_check',
       chapter: 4,
       title: '4.2 Mandatory Temp Probe Before Header Entry',
-      desc: 'Open V#201\'s **Paper Invoice** `[E]` if closed. Cold deliveries (`C` Chilled / `F` Frozen) require a **Temp Probe check** before creating a receipt (`<= 40°F` Chilled, `<= 10°F` Frozen). Click `[ TEMP PROBE ]`.',
+      desc: 'Cold deliveries (`C` Chilled / `F` Frozen) require a **Temp Probe check** first:\n- Open V#201\'s **Paper Invoice** [[key:E]] if closed\n- Click **[ TEMP PROBE ]** (`<= 40°F` Chilled, `<= 10°F` Frozen) before creating a receipt',
       hudSpotlights: () => [{ selector: '#btn-inv-temp', label: 'VERIFY COLD TEMP FIRST', role: 'target' }],
       worldTarget: (rt) => {
         const sess = (rt.sessions || []).find((s) => s.deliveryId === 'tut_ch4_vt');
@@ -708,7 +966,7 @@
       id: 'tz_plu_complete',
       chapter: 4,
       title: '4.3 Key Non-Scannable PLU Produce & Finish Delivery',
-      desc: 'Create the receipt on Scanner (`1`), then key in the **PLU code** (`4011` for Bananas) manually since produce lacks a scannable UPC barcode. Finalize, print, hand slip, and close Bay 2.',
+      desc: 'Receive produce items that lack a scannable UPC barcode:\n- Create the receipt on Scanner ([[key:1]]), then key **PLU code** `4011` manually for Bananas\n- Finalize, print, hand slip to driver, and close **Dock 2**',
       hudSpotlights: (rt) => {
         const sc = global.DSDReceipts && global.DSDReceipts.getScannerState ? global.DSDReceipts.getScannerState() : null;
         if (rt.modals.scannerOpen && sc && sc.screen === 'scanning') {
@@ -732,7 +990,7 @@
         const bay2 = (rt.doors || []).find((d2) => d2.id === 2);
         return [
           { label: 'Create receipt & scan/key Chilled + PLU items', done: Boolean(d && d.isFinalized) },
-          { label: 'Print, hand slip & close Bay 2 [E]', done: Boolean(d && d.completed && bay2 && !bay2.isOpen) }
+          { label: 'Print, hand slip & close Dock 2 [E]', done: Boolean(d && d.completed && bay2 && !bay2.isOpen) }
         ];
       },
       isComplete: (rt) => {
@@ -747,7 +1005,7 @@
       id: 'dc_shortage',
       chapter: 5,
       title: '5.1 Stamp Shortage & Flag Overage Case',
-      desc: 'Admit vendor **V#154**, open their Paper Invoice, and audit physical cases: click **`- SHORT`** to stamp the 1 shorted case on line 1, then click **`+ OVER`** and flag the 1 extra physical box.',
+      desc: 'Admit vendor **V#154**, open their **Paper Invoice**, and audit physical cases:\n- Click **`- SHORT`** to stamp the 1 shorted case on line 1\n- Click **`+ OVER`** and flag the 1 extra physical box on the cart',
       hudSpotlights: (rt) => rt.modals.invoiceOpen
         ? [
           { selector: '#btn-inv-short', label: 'STAMP SHORTAGE', role: 'source' },
@@ -779,7 +1037,7 @@
       id: 'dc_credit_memo',
       chapter: 5,
       title: '5.2 Scan Invoice Receipt & Minus [-] Credit Memo',
-      desc: 'Switch to the **CREDIT** tab on the invoice, finalize the regular receipt, then create & finalize a Credit Receipt using the `-` key for negative quantities before printing and handing both slips.',
+      desc: 'Handle returns cleanly on the **CREDIT** tab:\n- Finalize the regular receipt, then switch to the **CREDIT** tab on the invoice\n- Create & finalize a Credit Receipt using [[key:-]] for negative quantities\n- Print and hand both slips to the driver',
       hudSpotlights: (rt) => {
         const sc = global.DSDReceipts && global.DSDReceipts.getScannerState ? global.DSDReceipts.getScannerState() : null;
         if (rt.modals.scannerOpen && sc && sc.screen === 'scanning') {
@@ -811,7 +1069,7 @@
       id: 'desk_night_drop',
       chapter: 6,
       title: '6.1 Night Drop Tray & Terminal [1] Create Receipt',
-      desc: 'Inspect **Overnight / Night Drop** invoices on the desk (`[E]`), then log into the **CRT Terminal** `[E]` -> **`[1] CREATE MANUAL RECEIPT`** to key & finalize the Night Drop.',
+      desc: 'Process **Overnight / Night Drop** paperwork on the **East Desk**:\n- Inspect Night Drop invoices on the desk ([[key:E]])\n- Log into the **CRT Terminal** [[key:E]] -> `1. CREATE MANUAL RECEIPT` to key & finalize',
       hudSpotlights: (rt) => {
         const ts = global.DSDReceipts && global.DSDReceipts.getTerminalState ? global.DSDReceipts.getTerminalState() : null;
         if (rt.modals.terminalOpen && ts && ts.screen === 'menu') {
@@ -838,7 +1096,7 @@
       id: 'desk_archive_ho',
       chapter: 6,
       title: '6.2 File Cabinet Archive & Home Office Tasks [4]',
-      desc: 'Open the **File Cabinet Drawer** `[E]` to verify past paperwork (check for a red `SHORT` stamp), then resolve the open task under Terminal **`[4] RECEIVING TASKS & RECALLS`**.',
+      desc: 'Audit past receipts for a Home Office inquiry:\n- Open the **File Cabinet Drawer** [[key:E]] and check for a red `SHORT` stamp\n- Resolve the open task under Terminal `4. RECEIVING TASKS & RECALLS`',
       hudSpotlights: (rt) => {
         const ts = global.DSDReceipts && global.DSDReceipts.getTerminalState ? global.DSDReceipts.getTerminalState() : null;
         if (rt.modals.terminalOpen && ts && ts.screen === 'menu') {
@@ -871,7 +1129,7 @@
       id: 'cl_supplies',
       chapter: 7,
       title: '7.1 Slot Dept 60 Supplies & Order on Scanner [2]',
-      desc: 'Pick up the floor **Dept 60 Supply cases** `[E]` and slot them onto **Claims & Supplies Steel**, then open Scanner `[F]` -> **`2. SUPPLY ORDERS`** to submit a sample replenishment order.',
+      desc: 'Restock store supplies:\n- Pick up floor **Dept 60 Supply cases** [[key:E]] and slot onto **Claims & Supplies Steel**\n- Open Scanner [[key:F]] -> `2. SUPPLY ORDERS` to submit a sample replenishment order',
       hudSpotlights: (rt) => {
         const sc = global.DSDReceipts && global.DSDReceipts.getScannerState ? global.DSDReceipts.getScannerState() : null;
         if (rt.modals.scannerOpen && sc) {
@@ -907,7 +1165,7 @@
       id: 'cl_totes',
       chapter: 7,
       title: '7.2 Sort Damaged Claims Totes via Scanner [4]',
-      desc: 'Open gray shelf totes `[E]`, switch Scanner `[F]` -> **`4. MARKDOWN CLAIMS`**, scan each damaged item to confirm condition & disposition, then drop it in the matching receptacle.',
+      desc: 'Process damaged merchandise:\n- Open gray shelf totes [[key:E]] and open Scanner [[key:F]] -> `4. MARKDOWN CLAIMS`\n- Scan each item for disposition, then drop it in the matching receptacle',
       hudSpotlights: (rt) => {
         const sc = global.DSDReceipts && global.DSDReceipts.getScannerState ? global.DSDReceipts.getScannerState() : null;
         if (rt.modals.scannerOpen && sc) {
@@ -936,7 +1194,7 @@
       id: 'cl_recall',
       chapter: 7,
       title: '7.3 Sort Triggered Product Recall & Submit Count',
-      desc: 'Collect recalled units from the **Recall Cart**, dump the tote into its designated receptacle, then submit the exact count in CRT Terminal **`[4] RECEIVING TASKS & RECALLS`**.',
+      desc: 'Close out the active product recall:\n- Collect recalled units from the **Recall Cart** and dump the tote into its receptacle\n- Submit the exact count in CRT Terminal `4. RECEIVING TASKS & RECALLS`',
       onEnter: () => {
         const ct = global.ClaimsTotes;
         if (ct && typeof ct.getRecallState === 'function' && typeof ct.triggerDailyRecall === 'function') {
@@ -972,7 +1230,7 @@
       id: 'bk_label_cases',
       chapter: 8,
       title: '8.1 Label Backstock Cases on Scanner [3 -> 1]',
-      desc: 'Open Scanner `[F]` -> **`3. BACKROOM INVENTORY`** -> **`1. LABEL CASES`**, scan/key floor backstock cases, and press `[F6]` to apply case labels.',
+      desc: 'Prepare overstock for steel binning:\n- Open Scanner [[key:F]] -> `3. BACKROOM INVENTORY` -> `1. LABEL CASES`\n- Scan/key floor backstock cases and press [[key:F6]] to apply labels',
       hudSpotlights: (rt) => {
         const sc = global.DSDReceipts && global.DSDReceipts.getScannerState ? global.DSDReceipts.getScannerState() : null;
         if (rt.modals.scannerOpen && sc) {
@@ -1002,7 +1260,7 @@
       id: 'bk_slot_audit',
       chapter: 8,
       title: '8.2 Slot Steel Bins & Audit Backroom [3 -> 2]',
-      desc: 'Pick up `[E]` and slot backstock cases onto **Dry / Cooler Steel**, then finalize **`2. AUDIT BACKROOM`** (`[F5]`) on your Scanner.',
+      desc: 'Bin overstock and audit backroom totals:\n- Pick up [[key:E]] and slot cases onto **Dry / Cooler Steel**\n- Open Scanner -> `2. AUDIT BACKROOM` and press [[key:F5]] to finalize',
       hudSpotlights: (rt) => {
         const sc = global.DSDReceipts && global.DSDReceipts.getScannerState ? global.DSDReceipts.getScannerState() : null;
         if (rt.modals.scannerOpen && sc && sc.screen === 'inventory') {
@@ -1042,7 +1300,7 @@
       id: 'bk_closeout_punchout',
       chapter: 8,
       title: '8.3 Clear Closeout Tasks, Dock Jack & Punch Out',
-      desc: 'Clear remaining Home Office tasks on Terminal `[4]`, return the Electric Jack to its charger, verify all dock doors are closed, and walk to the **Hallway Timeclock** (`12:00 PM` unlocked!) `[E]` to finish the Tutorial!',
+      desc: 'Complete end-of-shift closeout:\n- Clear remaining Home Office tasks on Terminal `4. RECEIVING TASKS`\n- Return the Electric Jack to its charger and verify all dock doors are closed\n- Walk to the **Hallway Timeclock** (`12:00 PM` unlocked!) [[key:E]] to punch out',
       hudSpotlights: () => [{ selector: '#hud-remaining-tracker', label: 'VERIFY REMAINING WORK', role: 'target' }],
       worldTarget: (rt) => {
         const pendingHo = global.DSDReceipts && global.DSDReceipts.getPendingHomeOfficeTaskCount
@@ -1085,6 +1343,7 @@
     autoAdvanceLockStepId: null,
     seenActions: {},
     stepInitialOpen: {},
+    stepInitialPlayer: null,
     interactBound: false,
     renderCache: {},
     rootEl: null,
@@ -1162,7 +1421,7 @@
       </div>
     `;
 
-    document.body.appendChild(root);
+    (document.getElementById('ui-stage') || document.body).appendChild(root);
     state.rootEl = root;
     state.dom = {
       spotlightLayer: document.getElementById('tutorial-spotlight-layer'),
@@ -1209,12 +1468,19 @@
       syncCollapseButton();
       state.dom.btnCollapse.addEventListener('click', () => {
         state.collapsed = !state.collapsed;
-        if (state.dom.hudCard) {
-          state.dom.hudCard.classList.toggle('is-collapsed', state.collapsed);
-        }
-        syncCollapseButton();
-        syncBottomDockLayout();
+        render();
       });
+    }
+    if (state.dom.hudCard) {
+      const hdrEl = state.dom.hudCard.querySelector('.tut-card-hdr');
+      if (hdrEl) {
+        hdrEl.addEventListener('click', (e) => {
+          if (!state.collapsed) return;
+          if (e && e.target && e.target.closest && e.target.closest('#tut-btn-collapse')) return;
+          state.collapsed = false;
+          render();
+        });
+      }
     }
     if (state.dom.hubPlay) {
       state.dom.hubPlay.innerHTML = fmtIco('play') + ' START FULL TUTORIAL';
@@ -1245,6 +1511,119 @@
     return root;
   }
 
+  function getUiViewport() {
+    if (global.DSDUIScale && typeof global.DSDUIScale.getViewport === 'function') {
+      return global.DSDUIScale.getViewport();
+    }
+    return {
+      width: global.innerWidth || 1280,
+      height: global.innerHeight || 800,
+      scale: 1
+    };
+  }
+
+  function getUiRect(el) {
+    const r = el.getBoundingClientRect();
+    if (global.DSDUIScale && typeof global.DSDUIScale.toUiRect === 'function') {
+      return global.DSDUIScale.toUiRect(r);
+    }
+    return r;
+  }
+
+  function buildMinimapBlueprintCallouts(step, vw, vh) {
+    if (!step || typeof step.minimapCallouts !== 'function' || typeof document === 'undefined') {
+      return { ringsHtml: '', badgesHtml: '' };
+    }
+    const items = step.minimapCallouts() || [];
+    if (!items.length) return { ringsHtml: '', badgesHtml: '' };
+
+    const containerEl = document.querySelector('#minimap-container');
+    if (!isElementVisible(containerEl)) return { ringsHtml: '', badgesHtml: '' };
+    const canvasEl = document.querySelector('#minimap-canvas');
+    const cRect = getUiRect(containerEl);
+    const mRect = isElementVisible(canvasEl) ? getUiRect(canvasEl) : cRect;
+
+    // Place drafting callouts to the left of the right-docked minimap (or right if space on left is constrained).
+    const projectLeft = cRect.left >= 180;
+    const exitX = Math.round(projectLeft ? (cRect.left - 8) : (cRect.right + 8));
+    const shelfX = projectLeft
+      ? Math.max(96, Math.round(cRect.left - 34))
+      : Math.min(vw - 96, Math.round(cRect.right + 34));
+    const chamferX = Math.round((exitX + shelfX) * 0.5);
+
+    const leftItems = items.filter((it) => it && it.side !== 'south');
+    const southItems = items.filter((it) => it && it.side === 'south');
+
+    const startY = Math.round(cRect.top + 8);
+    const maxSpan = Math.max(cRect.height, Math.min(288, (vh || 800) - startY - 26));
+    const stepY = leftItems.length > 1 ? Math.max(26, Math.min(48, Math.round(maxSpan / (leftItems.length - 1)))) : 0;
+
+    let ringsHtml = '';
+    let badgesHtml = '';
+
+    leftItems.forEach((item, idx) => {
+      const col = item.color || '#4ade80';
+      const tx = Math.round(mRect.left + item.u * mRect.width);
+      const ty = Math.round(mRect.top + item.v * mRect.height);
+      const ly = Math.round(startY + idx * stepY);
+
+      if (Array.isArray(item.dropUs) && item.dropUs.length > 0 && Number.isFinite(item.dropV)) {
+        const dropY = Math.round(mRect.top + item.dropV * mRect.height);
+        const dropXs = item.dropUs.map((du) => Math.round(mRect.left + du * mRect.width));
+        const busMinX = Math.min.apply(null, dropXs);
+        const busMaxX = Math.max.apply(null, dropXs);
+        if (busMaxX > busMinX) {
+          const busLine = `M ${busMinX} ${ty} L ${busMaxX} ${ty}`;
+          ringsHtml += `<path d="${busLine}" class="tut-bp-halo"></path>`;
+          ringsHtml += `<path d="${busLine}" class="tut-bp-bracket" stroke="${col}"></path>`;
+        }
+        dropXs.forEach((dx) => {
+          const dropLine = `M ${dx} ${ty} L ${dx} ${dropY}`;
+          ringsHtml += `<path d="${dropLine}" class="tut-bp-halo"></path>`;
+          ringsHtml += `<path d="${dropLine}" class="tut-bp-dock-drop" stroke="${col}"></path>`;
+          ringsHtml += `<circle cx="${dx}" cy="${dropY}" r="4" class="tut-bp-ring" stroke="${col}"></circle>`;
+          ringsHtml += `<circle cx="${dx}" cy="${dropY}" r="2.2" fill="${col}"></circle>`;
+        });
+      }
+
+      const pts = `${tx},${ty} ${exitX},${ty} ${chamferX},${ly} ${shelfX},${ly}`;
+      ringsHtml += `<polyline points="${pts}" class="tut-bp-halo"></polyline>`;
+      ringsHtml += `<polyline points="${pts}" class="tut-bp-leader" stroke="${col}"></polyline>`;
+      if (!Array.isArray(item.dropUs) || item.dropUs.length === 0) {
+        ringsHtml += `<circle cx="${tx}" cy="${ty}" r="5" class="tut-bp-ring" stroke="${col}"></circle>`;
+        ringsHtml += `<circle cx="${tx}" cy="${ty}" r="2.6" fill="${col}"></circle>`;
+      }
+
+      const tagBg = item.label === 'COOLER' ? 'background:rgba(6,78,75,0.96);' : '';
+      const tagCol = item.label === 'COOLER' ? '#6ee7b7' : col;
+      const posStyle = projectLeft
+        ? `right:${Math.max(6, vw - shelfX)}px;top:${ly}px;border-left:1px solid #475569;border-right:3px solid ${col};`
+        : `left:${shelfX}px;top:${ly}px;border-right:1px solid #475569;border-left:3px solid ${col};`;
+      badgesHtml += `<div class="tut-blueprint-tag" style="${posStyle}${tagBg}color:${tagCol};">${escapeHtml(item.label)}</div>`;
+    });
+
+    const exitY = Math.round(cRect.bottom + 8);
+    const shelfY = Math.min((vh || 800) - 24, Math.round(cRect.bottom + 26));
+    const chamferY = Math.round((exitY + shelfY) * 0.5);
+
+    southItems.forEach((item) => {
+      const col = item.color || '#fb923c';
+      const tx = Math.round(mRect.left + item.u * mRect.width);
+      const ty = Math.round(mRect.top + item.v * mRect.height);
+      const lx = Math.min(vw - 44, Math.max(48, Math.round(tx - 16)));
+      const pts = `${tx},${ty} ${tx},${exitY} ${lx},${chamferY} ${lx},${shelfY}`;
+      ringsHtml += `<polyline points="${pts}" class="tut-bp-halo"></polyline>`;
+      ringsHtml += `<polyline points="${pts}" class="tut-bp-leader" stroke="${col}"></polyline>`;
+      ringsHtml += `<circle cx="${tx}" cy="${ty}" r="5" class="tut-bp-ring" stroke="${col}"></circle>`;
+      ringsHtml += `<circle cx="${tx}" cy="${ty}" r="2.6" fill="${col}"></circle>`;
+
+      const posStyle = `left:${lx}px;top:${shelfY}px;transform:translateX(-50%);border:1px solid #475569;border-top:3px solid ${col};`;
+      badgesHtml += `<div class="tut-blueprint-tag is-south" style="${posStyle}color:${col};">${escapeHtml(item.label)}</div>`;
+    });
+
+    return { ringsHtml, badgesHtml };
+  }
+
   function updateSpotlights(step, rtSnapshot) {
     const d = state.dom;
     if (!d.spotlightLayer || !d.spotlightMask || !d.spotlightRings || !d.calloutBadges) return;
@@ -1258,14 +1637,15 @@
       ? (step.hudSpotlights(rtSnapshot) || [])
       : [];
 
-    const vw = global.innerWidth || 1280;
-    const vh = global.innerHeight || 800;
+    const uiVp = getUiViewport();
+    const vw = uiVp.width || 1280;
+    const vh = uiVp.height || 800;
     const rects = [];
     specs.forEach((sp) => {
       if (!sp || !sp.selector || typeof document === 'undefined') return;
       const el = document.querySelector(sp.selector);
       if (!isElementVisible(el)) return;
-      const r = el.getBoundingClientRect();
+      const r = getUiRect(el);
       const pad = Number.isFinite(sp.padding) ? sp.padding : 4;
       const x = Math.max(3, Math.round(r.left - pad));
       const y = Math.max(3, Math.round(r.top - pad));
@@ -1306,11 +1686,15 @@
       ringsHtml += `<rect x="${box.x}" y="${box.y}" width="${box.w}" height="${box.h}" rx="7" class="${cls}"></rect>`;
       if (box.label) {
         const badgeTop = box.y > 28 ? (box.y - 24) : (box.y + box.h + 6);
-        const badgeLeft = Math.max(6, Math.min((global.innerWidth || 1000) - 210, box.x));
+        const badgeLeft = Math.max(6, Math.min(vw - 210, box.x));
         const icoHtml = box.role === 'source' ? fmtIco('receipt') : '';
         badgesHtml += `<div class="tut-callout-tag ${box.role === 'source' ? 'is-source' : ''}" style="left:${badgeLeft}px;top:${badgeTop}px;">${icoHtml}${escapeHtml(box.label)}</div>`;
       }
     });
+
+    const bp = buildMinimapBlueprintCallouts(step, vw, vh);
+    ringsHtml += bp.ringsHtml;
+    badgesHtml += bp.badgesHtml;
 
     if (state.renderCache.maskHtml !== maskHtml) {
       state.renderCache.maskHtml = maskHtml;
@@ -1425,10 +1809,28 @@
       tutEl.classList.contains('active') &&
       (tutEl.classList.contains('is-collapsed') || tutEl.classList.contains('dock-bottom'))
     );
+    if (!tutAtBottom && state.active && !state.hubOpen && !isSystemOverlayBlockingTutorial() && tutEl) {
+      const curStep = getStep(state.currentStepIdx);
+      const mapEl = document.getElementById('minimap-container');
+      if (curStep && typeof curStep.minimapCallouts === 'function' && isElementVisible(mapEl)) {
+        const cRect = getUiRect(mapEl);
+        if (cRect.left >= 180) {
+          const vwNow = getUiViewport().width || 1280;
+          const tutWNow = Math.ceil(getUiRect(tutEl).width) || 530;
+          const calloutReserveLeft = cRect.left - 164;
+          const centeredRight = (vwNow + tutWNow) * 0.5;
+          if (centeredRight > calloutReserveLeft - 14) {
+            const shiftedLeft = Math.max(12, Math.round(calloutReserveLeft - 14 - tutWNow));
+            tutEl.style.left = shiftedLeft + 'px';
+            tutEl.style.transform = 'translateY(-50%)';
+          }
+        }
+      }
+    }
     const prhVisible = Boolean(prhEl && prhEl.style.display !== 'none' && isElementVisible(prhEl));
     if (!tutAtBottom || !prhVisible) return;
 
-    const vw = global.innerWidth || 1280;
+    const vw = getUiViewport().width || 1280;
     const gap = 14;
     const containerEl = document.getElementById('game-container');
     const scannerReserve = (containerEl && containerEl.classList.contains('scanner-open') && vw >= 820 && vw <= 1220) ? 352 : 12;
@@ -1436,8 +1838,8 @@
     const safeRight = Math.max(safeLeft + 260, vw - scannerReserve);
     const avail = safeRight - safeLeft;
 
-    const prhRawW = Math.ceil(prhEl.getBoundingClientRect().width) || 318;
-    const tutRawW = Math.ceil(tutEl.getBoundingClientRect().width) || (tutEl.classList.contains('is-collapsed') ? 340 : 470);
+    const prhRawW = Math.ceil(getUiRect(prhEl).width) || 318;
+    const tutRawW = Math.ceil(getUiRect(tutEl).width) || (tutEl.classList.contains('is-collapsed') ? 340 : 470);
     let tutW = tutRawW;
     let prhW = prhRawW;
 
@@ -1446,8 +1848,8 @@
       tutW = Math.max(180, avail - gap - prhW);
       tutEl.style.maxWidth = tutW + 'px';
       prhEl.style.maxWidth = prhW + 'px';
-      tutW = Math.min(tutW, Math.ceil(tutEl.getBoundingClientRect().width) || tutW);
-      prhW = Math.min(prhW, Math.ceil(prhEl.getBoundingClientRect().width) || prhW);
+      tutW = Math.min(tutW, Math.ceil(getUiRect(tutEl).width) || tutW);
+      prhW = Math.min(prhW, Math.ceil(getUiRect(prhEl).width) || prhW);
     }
 
     const totalW = tutW + gap + prhW;
@@ -1500,11 +1902,17 @@
       ? global.DSDRuntime.getTutorialSnapshot()
       : { player: {}, modals: {}, doors: [], sideDoor: {}, jack: {}, pallets: [], sessions: [], stations: {} };
 
+    if (typeof step.onTick === 'function') {
+      try { step.onTick(rt); } catch (_) { }
+    }
+
     d.hudCard.classList.toggle('dock-bottom', hasBlockingGameplayModalOpen(rt));
     d.hudCard.classList.toggle('is-collapsed', Boolean(state.collapsed));
     syncCollapseButton();
     syncBottomDockLayout();
-    const chText = 'CHAPTER ' + ch.num + ' OF ' + CHAPTERS.length + ' · ' + ch.label;
+    const chText = state.collapsed
+      ? 'TUTORIAL MINIMIZED AT BOTTOM · CLICK \u25B2 TO REOPEN'
+      : ('CHAPTER ' + ch.num + ' OF ' + CHAPTERS.length + ' · ' + ch.label);
     if (state.renderCache.chLabel !== chText) {
       state.renderCache.chLabel = chText;
       d.chLabel.textContent = chText;
@@ -1574,8 +1982,23 @@
 
   function applyStepEnter(step) {
     clearAutoAdvanceTimer();
+    state.collapsed = false;
     state.seenActions = {};
     state.stepInitialOpen = {};
+    state.stepInitialPlayer = null;
+    if (global.DSDRuntime && typeof global.DSDRuntime.getTutorialSnapshot === 'function') {
+      try {
+        const rt = global.DSDRuntime.getTutorialSnapshot();
+        if (rt && rt.player && Number.isFinite(Number(rt.player.x)) && Number.isFinite(Number(rt.player.z))) {
+          state.stepInitialPlayer = {
+            x: Number(rt.player.x) || 0,
+            z: Number(rt.player.z) || 0,
+            yaw: Number(rt.player.yaw) || 0,
+            pitch: Number(rt.player.pitch) || 0
+          };
+        }
+      } catch (_) { }
+    }
     if (step && step.id && STEP_INTERACT_CONFIG[step.id] && typeof document !== 'undefined') {
       const openSel = STEP_INTERACT_CONFIG[step.id].openSel;
       if (openSel) {
@@ -1591,7 +2014,8 @@
     }
   }
 
-  function jumpToChapter(chapterNum) {
+  function jumpToChapter(chapterNum, jumpOpts) {
+    const jOpts = jumpOpts || {};
     const chNum = Math.max(0, Math.min(CHAPTERS.length, parseInt(chapterNum, 10) || 0));
     if (!state.active) {
       start({ chapter: chNum });
@@ -1605,12 +2029,16 @@
     const chCfg = getChapterConfig(chNum);
     const setup = CHAPTER_SETUPS[chCfg.num] || CHAPTER_SETUPS[1];
     state.hubOpen = false;
+    state.collapsed = false;
     state.currentChapter = chCfg.num;
     const stepIdx = STEPS.findIndex((s) => s.chapter === chCfg.num);
     state.currentStepIdx = stepIdx >= 0 ? stepIdx : 0;
 
     if (global.DSDRuntime && typeof global.DSDRuntime.resetTutorialChapterState === 'function') {
-      global.DSDRuntime.resetTutorialChapterState(setup);
+      const resetOpts = Object.assign({}, setup, {
+        preservePlayerPos: Boolean(jOpts.preservePlayerPos)
+      });
+      global.DSDRuntime.resetTutorialChapterState(resetOpts);
     }
     if (chCfg.num === 1) {
       seedSampleMessages();
@@ -1630,7 +2058,7 @@
     const nextIdx = state.currentStepIdx + 1;
     const nextSt = getStep(nextIdx);
     if (nextSt.chapter !== prevChapter) {
-      return jumpToChapter(nextSt.chapter);
+      return jumpToChapter(nextSt.chapter, { preservePlayerPos: true });
     }
     state.currentStepIdx = nextIdx;
     applyStepEnter(nextSt);
@@ -1734,11 +2162,51 @@
       scheduleFastCommandBarRender();
     }, true);
     document.addEventListener('keydown', (e) => {
-      markCurrentStepInteracted(null, e && e.key ? String(e.key).toLowerCase() : '', false);
+      const k = e && e.key ? String(e.key).toLowerCase() : '';
+      markCurrentStepInteracted(null, k, false);
+      const curId = (state.active && !state.hubOpen) ? getStep(state.currentStepIdx).id : '';
+      const isMoveKey = ['w', 'a', 's', 'd', 'arrowup', 'arrowdown', 'arrowleft', 'arrowright'].includes(k);
+      if (curId === 'gui_controls' && !state.seenActions.gui_controls_move && isMoveKey) {
+        state.seenActions.gui_controls_move = true;
+        render();
+      } else if (
+        curId === 'gui_stations_look' &&
+        isMoveKey &&
+        !state.seenActions.gui_stations_hidThisLeg &&
+        !(state.seenActions.gui_stations_desk && state.seenActions.gui_stations_side)
+      ) {
+        state.seenActions.gui_stations_hidThisLeg = true;
+        state.collapsed = true;
+        if (!state.seenActions.gui_stations_notifiedHide) {
+          state.seenActions.gui_stations_notifiedHide = true;
+          if (global.DSDMessages && typeof global.DSDMessages.push === 'function') {
+            global.DSDMessages.push('[[ico:book]] Tutorial docked to bottom-center while moving — click ▲ below anytime to reopen (auto-reopens at destination).', 'status', { silent: true });
+          }
+        }
+        render();
+      }
       scheduleFastCommandBarRender();
     }, true);
+    document.addEventListener('pointerlockchange', () => {
+      if (
+        state.active &&
+        !state.hubOpen &&
+        document.pointerLockElement &&
+        getStep(state.currentStepIdx).id === 'gui_controls' &&
+        !state.seenActions.gui_controls_look
+      ) {
+        state.seenActions.gui_controls_look = true;
+        render();
+      }
+    });
     global.addEventListener('resize', () => {
-      if (state.active) syncBottomDockLayout();
+      if (state.active) {
+        syncBottomDockLayout();
+        scheduleFastCommandBarRender();
+      }
+    });
+    global.addEventListener('dsd-ui-scale-change', () => {
+      if (state.active) render();
     });
   }
 

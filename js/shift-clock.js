@@ -252,7 +252,7 @@
   }
 
   function update(dtSeconds, externalPaused) {
-    if (state.paused || state.systemPaused || externalPaused || state.shiftEnded || state.campaignComplete) {
+    if (state.tutorialMode || state.paused || state.systemPaused || externalPaused || state.shiftEnded || state.campaignComplete) {
       return;
     }
     const cfg = getConfig();

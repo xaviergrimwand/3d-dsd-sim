@@ -1001,6 +1001,8 @@
       return Math.min(dpr, 1.25);
     }
 
+    const worldStage = document.getElementById('world-stage');
+    const uiStage = document.getElementById('ui-stage');
     const renderer = new THREE.WebGLRenderer({
       antialias: gfxSettings.quality !== 'fast',
       powerPreference: 'high-performance'
@@ -1008,12 +1010,12 @@
     renderer.setPixelRatio(getTargetPixelRatio());
     renderer.setSize(window.innerWidth, window.innerHeight);
     renderer.shadowMap.enabled = false;
-    container.appendChild(renderer.domElement);
+    (worldStage || container).appendChild(renderer.domElement);
 
     const liveFpsEl = document.createElement('div');
     liveFpsEl.id = 'live-fps-hud';
     liveFpsEl.style.display = gfxSettings.showFps ? 'block' : 'none';
-    container.appendChild(liveFpsEl);
+    (uiStage || container).appendChild(liveFpsEl);
 
     const fpsMetrics = { fps: 0, avgMs: 16.7 };
     let fpsFrameCount = 0;
@@ -2582,23 +2584,26 @@
       if (joystickTouchId !== null) return;
       const touch = e.changedTouches[0];
       joystickTouchId = touch.identifier;
+      const uiScale = (window.DSDUIScale && typeof window.DSDUIScale.getScale === 'function')
+        ? window.DSDUIScale.getScale()
+        : 1;
 
       const rect = joystickZone.getBoundingClientRect();
       const centerX = rect.left + rect.width / 2;
       const centerY = rect.top + rect.height / 2;
       const distToDefaultCenter = Math.hypot(touch.clientX - centerX, touch.clientY - centerY);
 
-      if (distToDefaultCenter <= joystickMaxRadius * 1.5) {
+      if (distToDefaultCenter <= joystickMaxRadius * 1.5 * uiScale) {
         joystickOrigin.x = centerX;
         joystickOrigin.y = centerY;
       } else {
         // Floating joystick repositioning to touch location within walk quadrant
-        const clampedX = Math.max(70, Math.min(touch.clientX, window.innerWidth * 0.45));
-        const clampedY = Math.max(window.innerHeight * 0.35, Math.min(touch.clientY, window.innerHeight - 70));
+        const clampedX = Math.max(70 * uiScale, Math.min(touch.clientX, window.innerWidth * 0.45));
+        const clampedY = Math.max(window.innerHeight * 0.35, Math.min(touch.clientY, window.innerHeight - 70 * uiScale));
         joystickOrigin.x = clampedX;
         joystickOrigin.y = clampedY;
-        joystickZone.style.left = `${clampedX - 65}px`;
-        joystickZone.style.top = `${clampedY - 65}px`;
+        joystickZone.style.left = `${(clampedX / uiScale) - 65}px`;
+        joystickZone.style.top = `${(clampedY / uiScale) - 65}px`;
         joystickZone.style.bottom = 'auto';
       }
 
@@ -2628,18 +2633,22 @@
     }
 
     function updateJoystick(clientX, clientY) {
+      const uiScale = (window.DSDUIScale && typeof window.DSDUIScale.getScale === 'function')
+        ? window.DSDUIScale.getScale()
+        : 1;
+      const maxClientRadius = joystickMaxRadius * uiScale;
       const dx = clientX - joystickOrigin.x;
       const dy = clientY - joystickOrigin.y;
       const dist = Math.sqrt(dx * dx + dy * dy);
       const angle = Math.atan2(dy, dx);
 
-      const clampedDist = Math.min(dist, joystickMaxRadius);
+      const clampedDist = Math.min(dist, maxClientRadius);
       const knobX = Math.cos(angle) * clampedDist;
       const knobY = Math.sin(angle) * clampedDist;
 
-      joystickKnob.style.transform = `translate3d(${knobX}px, ${knobY}px, 0)`;
-      joystickDelta.x = knobX / joystickMaxRadius;
-      joystickDelta.y = knobY / joystickMaxRadius;
+      joystickKnob.style.transform = `translate3d(${knobX / uiScale}px, ${knobY / uiScale}px, 0)`;
+      joystickDelta.x = knobX / Math.max(1, maxClientRadius);
+      joystickDelta.y = knobY / Math.max(1, maxClientRadius);
     }
 
     // Camera Look Touch Handling & Tap-to-Scan on Mobile/Tablet
@@ -5391,7 +5400,10 @@
         if (isOpen) {
           window.DSDReceipts.closeNightDropPanel();
         } else {
-          window.DSDReceipts.openNightDropPanel(window.innerWidth >= 1080);
+          const uiWidth = (window.DSDUIScale && typeof window.DSDUIScale.getViewport === 'function')
+            ? window.DSDUIScale.getViewport().width
+            : window.innerWidth;
+          window.DSDReceipts.openNightDropPanel(uiWidth >= 1080);
         }
       });
     }
@@ -6209,10 +6221,11 @@
       minimapCtx.restore();
     }
 
-    function mapBeaconToPanelColor(beaconColor) {
-      if (beaconColor === '#f59e0b') return '#facc15';
-      if (beaconColor === '#334155') return '#27272a';
-      return beaconColor || '#22c55e';
+    function resolveBeaconPanelState(beaconColor) {
+      if (beaconColor === '#334155' || beaconColor === '#27272a') return 'off';
+      if (beaconColor === '#f59e0b' || beaconColor === '#facc15') return 'amber';
+      if (beaconColor === '#ef4444') return 'red';
+      return 'green';
     }
 
     const doorLightsPanelEl = document.getElementById('door-lights-panel');
@@ -6305,22 +6318,23 @@
       window.DSDGame.bindCommandBarPopover(doorLightsPanelEl, doorLightsPopupEl, 'beacons-open', '#hud-door-lights-popup', setDoorLightsPopupOpen);
     }
 
+    function syncDoorBadgeBeacon(idx, rawColor) {
+      const el = doorLightEls[idx];
+      const nextState = resolveBeaconPanelState(rawColor);
+      if (el && lastDoorLightColors[idx] !== nextState) {
+        lastDoorLightColors[idx] = nextState;
+        el.dataset.beacon = nextState;
+      }
+    }
+
     function renderDoorLightsPanel() {
       for (let i = 0; i < 4; i++) {
         const dd = dockDoors[i];
         const rawColor = dd ? (dd.beaconColor || (dd.isOpen ? '#f59e0b' : '#22c55e')) : '#22c55e';
-        const color = mapBeaconToPanelColor(rawColor);
-        if (doorLightEls[i] && lastDoorLightColors[i] !== color) {
-          lastDoorLightColors[i] = color;
-          doorLightEls[i].style.backgroundColor = color;
-        }
+        syncDoorBadgeBeacon(i, rawColor);
       }
       const sdRaw = sideRollupDoor ? (sideRollupDoor.beaconColor || (sideRollupDoor.isOpen ? '#f59e0b' : '#22c55e')) : '#22c55e';
-      const sdColor = mapBeaconToPanelColor(sdRaw);
-      if (doorLightEls[4] && lastDoorLightColors[4] !== sdColor) {
-        lastDoorLightColors[4] = sdColor;
-        doorLightEls[4].style.backgroundColor = sdColor;
-      }
+      syncDoorBadgeBeacon(4, sdRaw);
 
       if (sdQueueTxtEl || whDriverTagEl || vtDriverTagEl || sdVendorTagEl) {
         const sessions = (typeof DeliverySystem !== 'undefined' && DeliverySystem && Array.isArray(DeliverySystem.sessions))
@@ -7219,16 +7233,70 @@
 
     const _fwdTmp = new THREE.Vector3();
 
+    function resolveSafeTutorialSpawn(spawnSpec, stations) {
+      if (!spawnSpec || spawnSpec.defaultSpawn) {
+        return { x: PLAYER_SPAWN.x, y: PLAYER_SPAWN.y, z: PLAYER_SPAWN.z, yaw: PLAYER_SPAWN.yaw };
+      }
+      const base = (spawnSpec.station && stations && stations[spawnSpec.station]) ? stations[spawnSpec.station] : null;
+      if (!base) {
+        return { x: PLAYER_SPAWN.x, y: PLAYER_SPAWN.y, z: PLAYER_SPAWN.z, yaw: PLAYER_SPAWN.yaw };
+      }
+      const offX = Number(spawnSpec.offsetX) || 0;
+      const offZ = Number(spawnSpec.offsetZ) || 0;
+      const lookTarget = (spawnSpec.lookAtStation && stations && stations[spawnSpec.lookAtStation])
+        ? stations[spawnSpec.lookAtStation]
+        : base;
+      const candidates = [
+        { x: base.x + offX, z: base.z + offZ },
+        { x: base.x + offX * 1.35, z: base.z + offZ * 1.35 },
+        { x: base.x + offX * 0.75, z: base.z + offZ * 0.75 }
+      ];
+      let chosen = candidates[0];
+      for (let i = 0; i < candidates.length; i++) {
+        const c = candidates[i];
+        const yawTest = Math.atan2(-(lookTarget.x - c.x), -(lookTarget.z - c.z));
+        if (!checkCollision(c.x, c.z, yawTest, null, false)) {
+          chosen = c;
+          break;
+        }
+      }
+      const yaw = Math.atan2(-(lookTarget.x - chosen.x), -(lookTarget.z - chosen.z));
+      return { x: chosen.x, y: PLAYER_SPAWN.y, z: chosen.z, yaw: yaw };
+    }
+
     global.DSDRuntime = {
       closeAllGameplayModals: closeAllGameplayModals,
       resetTutorialChapterState: function (opts) {
         const o = opts || {};
+        const prevPlayer = {
+          x: player.position.x,
+          y: player.position.y,
+          z: player.position.z,
+          yaw: player.yaw,
+          pitch: player.pitch
+        };
         closeAllGameplayModals(true);
         campaignStarted = true;
         resetAllForFreshCampaign({
           tutorialMode: true,
           tutorialScript: o.tutorialScript !== undefined ? o.tutorialScript : null
         });
+        const keepPrev = Boolean(
+          o.preservePlayerPos &&
+          prevPlayer.z >= 0.45 &&
+          !checkCollision(prevPlayer.x, prevPlayer.z, prevPlayer.yaw, null, false)
+        );
+        if (keepPrev) {
+          player.position.set(prevPlayer.x, prevPlayer.y, prevPlayer.z);
+          player.yaw = prevPlayer.yaw;
+          player.pitch = prevPlayer.pitch;
+        } else {
+          const spawnPose = resolveSafeTutorialSpawn(o.spawn, getTutorialStationsSnapshot());
+          player.position.set(spawnPose.x, spawnPose.y, spawnPose.z);
+          player.yaw = spawnPose.yaw;
+          player.pitch = 0;
+        }
+        syncCameraToPlayer();
         if (window.ShiftClock && o.time && typeof window.ShiftClock.setTutorialTime === 'function') {
           window.ShiftClock.setTutorialTime(o.time.hour || 6, o.time.minute || 0, { silent: true });
         }

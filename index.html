@@ -7,14 +7,15 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.32/Tone.min.js"></script>
+  <script src="./js/ui-scale.js?v=20261127a"></script>
   <script src="./js/svg-icons.js?v=20261126f"></script>
-  <script src="./js/dsd-catalog.js?v=20261126e"></script>
-  <script src="./js/shift-clock.js?v=20261126c"></script>
+  <script src="./js/dsd-catalog.js?v=20261127a"></script>
+  <script src="./js/shift-clock.js?v=20261127a"></script>
   <script src="./js/shift-stats.js?v=20261126b"></script>
   <script src="./js/hud-messages.js?v=20261126m"></script>
   <script src="./js/dsd-receipts.js?v=20261126f"></script>
   <script src="./js/dsd-scanner.js?v=20261126d"></script>
-  <script src="./js/dsd-terminal.js?v=20261126d"></script>
+  <script src="./js/dsd-terminal.js?v=20261127a"></script>
   <script src="./js/warehouse-trucks.js?v=20261126c"></script>
   <script src="./js/backstock-racks.js?v=20261126c"></script>
   <script src="./js/claims-totes.js?v=20261126b"></script>
@@ -25,18 +26,20 @@
   <script src="./js/warehouse-models.js?v=20261125g"></script>
   <script src="./js/delivery-system.js?v=20261126h"></script>
   <script src="./js/save-system.js?v=20261126b"></script>
-  <script src="./js/menu-ui.js?v=20261126j"></script>
-  <script src="./game.js?v=20261126j"></script>
+  <script src="./js/menu-ui.js?v=20261127b"></script>
+  <script src="./game.js?v=20261127a"></script>
   <script src="./js/infotip-renderer.js?v=20261125c"></script>
   <script src="./js/infotip-adapters.js?v=20261126c"></script>
-  <script src="./js/dock-runtime.js?v=20261126m"></script>
-  <script src="./js/tutorial-system.js?v=20261126p"></script>
-  <link rel="stylesheet" href="./css/styles.css?v=20261126k">
-  <link rel="stylesheet" href="./css/tutorial-overlay.css?v=20261126m">
+  <script src="./js/dock-runtime.js?v=20261127c"></script>
+  <script src="./js/tutorial-system.js?v=20261127o"></script>
+  <link rel="stylesheet" href="./css/styles.css?v=20261127d">
+  <link rel="stylesheet" href="./css/tutorial-overlay.css?v=20261127f">
 </head>
 
 <body>
   <div id="game-container" class="main-menu-open">
+    <div id="world-stage"></div>
+    <div id="ui-stage">
     <div id="command-ribbon-bg" aria-hidden="true"></div>
     <div id="reticle"></div>
 
@@ -57,40 +60,35 @@
           aria-label="Live door beacon lights and door status" aria-expanded="false"
           aria-controls="hud-door-lights-popup">
           <div class="dlp-lights-row">
-            <div class="dlp-item" title="Dock Bay 1">
-              <span class="dlp-label dlp-door-badge" aria-label="Dock Bay 1">
+            <div class="dlp-item" title="Dock 1">
+              <span class="dlp-label dlp-door-badge" id="door-light-1" data-beacon="green" aria-label="Dock 1">
                 <span data-svg-ico="rollupDoor" aria-hidden="true"></span>
                 <span class="dlp-door-code">1</span>
               </span>
-              <span class="dlp-light" id="door-light-1"></span>
             </div>
-            <div class="dlp-item" title="Dock Bay 2">
-              <span class="dlp-label dlp-door-badge" aria-label="Dock Bay 2">
+            <div class="dlp-item" title="Dock 2">
+              <span class="dlp-label dlp-door-badge" id="door-light-2" data-beacon="green" aria-label="Dock 2">
                 <span data-svg-ico="rollupDoor" aria-hidden="true"></span>
                 <span class="dlp-door-code">2</span>
               </span>
-              <span class="dlp-light" id="door-light-2"></span>
             </div>
-            <div class="dlp-item" title="Dock Bay 3">
-              <span class="dlp-label dlp-door-badge" aria-label="Dock Bay 3">
+            <div class="dlp-item" title="Dock 3">
+              <span class="dlp-label dlp-door-badge" id="door-light-3" data-beacon="green" aria-label="Dock 3">
                 <span data-svg-ico="rollupDoor" aria-hidden="true"></span>
                 <span class="dlp-door-code">3</span>
               </span>
-              <span class="dlp-light" id="door-light-3"></span>
             </div>
-            <div class="dlp-item" title="Dock Bay 4">
-              <span class="dlp-label dlp-door-badge" aria-label="Dock Bay 4">
+            <div class="dlp-item" title="Dock 4">
+              <span class="dlp-label dlp-door-badge" id="door-light-4" data-beacon="green" aria-label="Dock 4">
                 <span data-svg-ico="rollupDoor" aria-hidden="true"></span>
                 <span class="dlp-door-code">4</span>
               </span>
-              <span class="dlp-light" id="door-light-4"></span>
             </div>
             <div class="dlp-item" title="Side Door">
-              <span class="dlp-label dlp-door-badge" aria-label="Side Door">
+              <span class="dlp-label dlp-door-badge" id="door-light-sd" data-beacon="green" aria-label="Side Door">
                 <span data-svg-ico="rollupDoor" aria-hidden="true"></span>
                 <span class="dlp-door-code">S</span>
               </span>
-              <span class="dlp-light" id="door-light-sd"></span>
             </div>
           </div>
           <div class="dlp-sd-queue-row">
@@ -116,11 +114,11 @@
             <div class="dlp-pop-rows" id="hud-door-lights-rows"></div>
             <div class="dlp-pop-leg-hdr">LIGHT &amp; PANEL KEY</div>
             <div class="dlp-pop-key">
-              <span class="dlp-key-item"><span class="dlp-key-dot is-ok"></span>Closed / Empty</span>
-              <span class="dlp-key-item"><span class="dlp-key-dot is-warn"></span>Open · Active</span>
-              <span class="dlp-key-item"><span class="dlp-key-dot is-warn-flash"></span>Wait In / Out</span>
-              <span class="dlp-key-item"><span class="dlp-key-dot is-crit"></span>Open Empty</span>
-              <span class="dlp-key-item"><span class="dlp-key-dot is-crit-flash"></span>5m+ Alarm</span>
+              <span class="dlp-key-item"><span class="dlp-key-door is-ok" data-svg-ico="rollupDoor" aria-hidden="true"></span>Closed / Empty</span>
+              <span class="dlp-key-item"><span class="dlp-key-door is-warn" data-svg-ico="rollupDoor" aria-hidden="true"></span>Open · Active</span>
+              <span class="dlp-key-item"><span class="dlp-key-door is-warn-flash" data-svg-ico="rollupDoor" aria-hidden="true"></span>Wait In / Out</span>
+              <span class="dlp-key-item"><span class="dlp-key-door is-crit" data-svg-ico="rollupDoor" aria-hidden="true"></span>Open Empty</span>
+              <span class="dlp-key-item"><span class="dlp-key-door is-crit-flash" data-svg-ico="rollupDoor" aria-hidden="true"></span>5m+ Alarm</span>
               <span class="dlp-key-item"><span class="dlp-key-tag dlp-key-wh">WH</span>WH Truck</span>
               <span class="dlp-key-item"><span class="dlp-key-tag dlp-key-vt">VT</span>Vendor Truck</span>
               <span class="dlp-key-item"><span class="dlp-key-tag dlp-key-sd">SD</span>SD Vendor</span>
@@ -965,7 +963,7 @@
           </button>
         </nav>
 
-        <div class="menu-footer-note" id="menu-version-footer" aria-label="Game Version">v0.1.04-0001</div>
+        <div class="menu-footer-note" id="menu-version-footer" aria-label="Game Version">v0.1.05-0001</div>
       </div>
     </div>
 
@@ -1034,6 +1032,10 @@
                 <span id="pause-fps-val" class="pause-fps-pill">-- FPS</span>
                 <button id="btn-pause-fps-hud" class="pause-mini-btn" type="button">FPS HUD: OFF</button>
               </div>
+            </div>
+            <div class="pause-audio-row pause-scale-row" aria-label="Interface Scale">
+              <button id="btn-pause-ui-scale" class="pause-audio-btn" type="button"><span data-svg-ico="target"></span> SCALE: AUTO</button>
+              <span id="pause-ui-scale-info" class="pause-fps-pill">100% · DESKTOP</span>
             </div>
           </div>
           <button id="btn-pause-settings-back" class="menu-btn pause-settings-back-btn" type="button">
@@ -1116,6 +1118,7 @@
         <ul id="summary-unfinished-list"></ul>
         <button id="btn-next-shift" type="button">START NEXT SHIFT</button>
       </div>
+    </div>
     </div>
   </div>
 

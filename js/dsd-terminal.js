@@ -2862,6 +2862,7 @@
             vendorNo: padDigits(v.vendorNo, 3),
             vendorName: v.name,
             vendorType: v.type || 'side_door',
+            givesCredit: v.givesCredit !== false && !['12', '22'].includes(dNo),
             products: v.products
           });
         }
@@ -2887,6 +2888,7 @@
             vendorNo: padDigits(rawVendorNo, 3),
             vendorName: v.name,
             vendorType: v.type || 'side_door',
+            givesCredit: v.givesCredit !== false && !['12', '22'].includes(dNo),
             products: products
           });
         }
@@ -2904,6 +2906,7 @@
       const ndSpecs = Array.isArray(script.nightDrops) ? script.nightDrops : [];
       ndSpecs.forEach((spec, idx) => {
         if (!spec || typeof spec !== 'object') return;
+        const isCreditSpec = Boolean(spec.type === 'credit' || spec.isCredit);
         const catalog = getCatalog();
         const catVendor = (spec.vendorNo && catalog && typeof catalog.getVendor === 'function')
           ? catalog.getVendor(String(spec.vendorNo))
@@ -2912,14 +2915,15 @@
           ? spec.items
           : ((catVendor && Array.isArray(catVendor.products) ? catVendor.products.slice(0, 2) : [{ code: '14301', name: 'Tutorial Baked Bread', price: 3.49, unitsPerCase: 8 }]));
         const items = rawItems.map((p) => {
-          const upc = getItemUnitsPerCase(p, 'sidedoor');
+          const upc = isCreditSpec ? 1 : getItemUnitsPerCase(p, 'sidedoor');
           const cases = Math.max(1, Math.round(Number(p.cases || 2)));
-          const qty = p.qty !== undefined ? Number(p.qty) : (cases * upc);
+          const rawQty = p.qty !== undefined ? Number(p.qty) : (cases * upc);
+          const signedQty = isCreditSpec ? -Math.max(1, Math.abs(rawQty || 1)) : rawQty;
           return {
             code: String(p.code),
             name: p.name || 'Night Drop Item',
-            qty: qty,
-            cases: Math.max(1, Math.round(qty / Math.max(1, upc))),
+            qty: signedQty,
+            cases: Math.max(1, Math.round(Math.abs(signedQty) / Math.max(1, upc))),
             unitsPerCase: upc,
             price: Number(p.price) || 3.49,
             notScannable: Boolean(p.notScannable),
@@ -2930,6 +2934,7 @@
         const totalAmount = items.reduce((s, it) => s + it.qty * it.price, 0);
         state.nightDropInvoices.push({
           id: spec.id || ('nd_tut_' + invNo),
+          type: isCreditSpec ? 'credit' : 'invoice',
           vendorNo: padDigits(spec.vendorNo || (catVendor && catVendor.vendorNo) || '143', 3),
           deptNo: padDigits(spec.deptNo || (catVendor && catVendor.deptNo) || '14', 2),
           vendorName: spec.vendorName || (catVendor && catVendor.name) || 'SUNRISE BAKERY',
@@ -2946,16 +2951,30 @@
 
     if (pool.length === 0) return;
 
+    const catalog = getCatalog();
+    const shiftCfg = (catalog && catalog.SHIFT_CONFIG) || {};
+    const creditChance = Number.isFinite(Number(shiftCfg.nightDropCreditChance))
+      ? Number(shiftCfg.nightDropCreditChance)
+      : 0.35;
+    const creditPool = pool.filter((v) => v.givesCredit !== false && !['12', '22'].includes(v.deptNo));
+
     const maxNd = getWorkdayIndex() === 1 ? 1 : 2;
-    const count = Math.min(pool.length, 1 + Math.floor(Math.random() * maxNd)); // Day 1: max 1; Day 2+: 1 to 2 overnight vendor invoices
+    const count = Math.min(pool.length, 1 + Math.floor(Math.random() * maxNd)); // Day 1: max 1; Day 2+: 1 to 2 overnight vendor documents
     const usedVendorKeys = new Set();
     const usedInvNos = new Set();
 
     while (state.nightDropInvoices.length < count && usedVendorKeys.size < pool.length) {
-      const pick = pool[Math.floor(Math.random() * pool.length)];
+      const wantCredit = creditPool.length > 0 && Math.random() < creditChance;
+      const availCredit = wantCredit
+        ? creditPool.filter((v) => !usedVendorKeys.has(v.deptNo + '-' + v.vendorNo))
+        : [];
+      const candidatePool = availCredit.length > 0 ? availCredit : pool;
+      const pick = candidatePool[Math.floor(Math.random() * candidatePool.length)];
       const vKey = pick.deptNo + '-' + pick.vendorNo;
       if (usedVendorKeys.has(vKey)) continue;
       usedVendorKeys.add(vKey);
+
+      const isCreditMemo = Boolean(wantCredit && pick.givesCredit !== false && !['12', '22'].includes(pick.deptNo));
 
       let invNo;
       do {
@@ -2963,9 +2982,24 @@
       } while (usedInvNos.has(invNo));
       usedInvNos.add(invNo);
 
-      const lineCount = Math.min(pick.products.length, 2 + Math.floor(Math.random() * 3));
+      const lineCount = isCreditMemo
+        ? Math.min(pick.products.length, 1 + Math.floor(Math.random() * 3))
+        : Math.min(pick.products.length, 2 + Math.floor(Math.random() * 3));
       const shuffled = pick.products.slice().sort(() => Math.random() - 0.5);
       const items = shuffled.slice(0, lineCount).map((p) => {
+        if (isCreditMemo) {
+          const units = 1 + Math.floor(Math.random() * 3);
+          return {
+            code: String(p.code),
+            name: p.name,
+            qty: -units,
+            cases: units,
+            unitsPerCase: 1,
+            price: Number(p.price) || 0,
+            notScannable: Boolean(p.notScannable),
+            type: p.type || 'ambient'
+          };
+        }
         const upc = getItemUnitsPerCase(p, pick.deptNo === '01' ? 'warehouse' : 'sidedoor');
         const cases = 1 + Math.floor(Math.random() * 4);
         return {
@@ -2983,6 +3017,7 @@
 
       state.nightDropInvoices.push({
         id: 'nd_' + invNo,
+        type: isCreditMemo ? 'credit' : 'invoice',
         vendorNo: pick.vendorNo,
         deptNo: pick.deptNo,
         vendorName: pick.vendorName,
@@ -3001,6 +3036,20 @@
     const idx = state.nightDropInvoices.findIndex((nd) => nd.invoiceNo === cleanInv);
     if (idx === -1) return false;
 
+    const target = state.nightDropInvoices[idx];
+    const rec = receiptNumber ? findReceipt(receiptNumber) : null;
+    if (rec && ((target.type === 'credit') !== (rec.type === 'credit'))) {
+      playError();
+      const targetKind = target.type === 'credit' ? 'CREDIT MEMO (-)' : 'REGULAR INVOICE (+)';
+      const expectedUnitsHint = target.type === 'credit' ? 'negative credit units' : 'positive invoice units';
+      notify(
+        '[[ico:claim]] Night Drop #' + target.invoiceNo + ' is a ' + targetKind +
+        ' — void #' + receiptNumber + ' and re-key with ' + expectedUnitsHint + '!',
+        'high'
+      );
+      return false;
+    }
+
     const resolved = state.nightDropInvoices.splice(idx, 1)[0];
     if (!state.resolvedNightDrops.some((nd) => nd.invoiceNo === resolved.invoiceNo)) {
       state.resolvedNightDrops.push(resolved);
@@ -3013,7 +3062,8 @@
     }
 
     playSuccess();
-    notify('[[ico:document]] Night Drop Invoice #' + resolved.invoiceNo + ' matched & cleared (' + receiptNumber + ')!', 4000);
+    const docLabel = resolved.type === 'credit' ? 'Credit Memo' : 'Invoice';
+    notify('[[ico:document]] Night Drop ' + docLabel + ' #' + resolved.invoiceNo + ' matched & cleared (' + receiptNumber + ')!', 4000);
     if (state.nightDropPanelOpen) renderNightDropPanel();
     if (state.filingOpen) populateFilingCards();
     notifyDeskStateChanged();
@@ -3059,7 +3109,7 @@
     const totalEntries = state.nightDropInvoices.length + state.pinnedArchiveItems.length;
     if (totalEntries === 0) {
       tabsEl.innerHTML = '';
-      contentEl.innerHTML = '<div style="padding:18px;text-align:center;color:#64748b;font-weight:700;">ALL NIGHT DROP INVOICES KEYED & CLEAR</div>';
+      contentEl.innerHTML = '<div style="padding:18px;text-align:center;color:#64748b;font-weight:700;">ALL NIGHT DROP DOCUMENTS KEYED & CLEAR</div>';
       return;
     }
 
@@ -3070,7 +3120,9 @@
     let tabsHtml = '';
     state.nightDropInvoices.forEach((nd, i) => {
       const active = i === state.activeNightDropTab;
-      tabsHtml += '<button type="button" class="nd-tab ' + (active ? 'active' : '') + '" data-nd-tab="' + i + '">NIGHT DROP #' + escapeHtml(nd.invoiceNo) + '</button>';
+      const isCred = nd.type === 'credit';
+      const tabLbl = isCred ? 'ND CREDIT #' : 'NIGHT DROP #';
+      tabsHtml += '<button type="button" class="nd-tab ' + (isCred ? 'credit ' : '') + (active ? 'active' : '') + '" data-nd-tab="' + i + '">' + tabLbl + escapeHtml(nd.invoiceNo) + '</button>';
     });
     state.pinnedArchiveItems.forEach((pin, j) => {
       const idx = state.nightDropInvoices.length + j;
@@ -3094,7 +3146,7 @@
 
     if (!doc) return;
 
-    const isCreditDoc = isPinned && doc.type === 'credit';
+    const isCreditDoc = doc.type === 'credit';
     let totalUnits = 0;
     let totalCost = 0;
     const rowsHtml = (doc.items || []).map((it) => {
@@ -3278,35 +3330,41 @@
       }
     });
 
-    // Include resolved Night Drops with their true original paper invoice items (whether keyed on Scanner or Terminal)
+    // Include resolved Night Drops with their true original paper invoice/credit items (whether keyed on Scanner or Terminal)
     state.resolvedNightDrops.forEach((nd) => {
+      const isCred = nd.type === 'credit';
       docs.push({
-        key: 'nd_resolved_' + nd.invoiceNo + '_' + nd.vendorNo,
-        docType: 'invoice',
+        key: 'nd_resolved_' + (isCred ? 'crd_' : 'inv_') + nd.invoiceNo + '_' + nd.vendorNo,
+        docType: isCred ? 'credit' : 'invoice',
         isNightDrop: true,
         pendingNightDrop: false,
         vendorNo: nd.vendorNo,
         deptNo: nd.deptNo,
         vendorName: nd.vendorName,
         docNo: nd.invoiceNo,
-        items: (nd.items || []).map((it) => Object.assign({}, it)),
-        totalAmount: nd.totalAmount
+        items: (nd.items || []).map((it) => Object.assign({}, it, {
+          qty: isCred ? -Math.abs(Number(it.qty) || 0) : (Number(it.qty) || 0)
+        })),
+        totalAmount: isCred ? -Math.abs(Number(nd.totalAmount) || 0) : Number(nd.totalAmount || 0)
       });
     });
 
     // Include remaining unresolved Night Drops (cannot finish filing while unresolved)
     state.nightDropInvoices.forEach((nd) => {
+      const isCred = nd.type === 'credit';
       docs.push({
-        key: 'nd_pending_' + nd.invoiceNo,
-        docType: 'invoice',
+        key: 'nd_pending_' + (isCred ? 'crd_' : 'inv_') + nd.invoiceNo,
+        docType: isCred ? 'credit' : 'invoice',
         isNightDrop: true,
         pendingNightDrop: true,
         vendorNo: nd.vendorNo,
         deptNo: nd.deptNo,
         vendorName: nd.vendorName,
         docNo: nd.invoiceNo,
-        items: (nd.items || []).map((it) => Object.assign({}, it)),
-        totalAmount: nd.totalAmount
+        items: (nd.items || []).map((it) => Object.assign({}, it, {
+          qty: isCred ? -Math.abs(Number(it.qty) || 0) : (Number(it.qty) || 0)
+        })),
+        totalAmount: isCred ? -Math.abs(Number(nd.totalAmount) || 0) : Number(nd.totalAmount || 0)
       });
     });
 
@@ -3519,18 +3577,20 @@
       });
     });
 
+    const isCreditInv = inv.docType === 'credit';
     let remaining = 0;
     let overage = 0;
     const allCodes = new Set(Object.keys(expectedMap).concat(Object.keys(receivedMap)));
     allCodes.forEach((code) => {
-      const exp = expectedMap[code] || 0;
-      const got = receivedMap[code] || 0;
+      const exp = isCreditInv ? Math.abs(expectedMap[code] || 0) : (expectedMap[code] || 0);
+      const got = isCreditInv ? Math.abs(receivedMap[code] || 0) : (receivedMap[code] || 0);
       if (got < exp) remaining += (exp - got);
       if (got > exp) overage += (got - exp);
     });
 
+    const diffUnit = isCreditInv ? 'UNITS' : 'CASES';
     if (remaining > 0) {
-      return { status: 'remaining', label: '[[ico:claim]] REMAINING (' + remaining + ' CASES SHORT)', qtyDiff: -remaining };
+      return { status: 'remaining', label: '[[ico:claim]] REMAINING (' + remaining + ' ' + diffUnit + ' SHORT)', qtyDiff: -remaining };
     }
     if (overage > 0) {
       return { status: 'overage', label: '[[ico:claim]] OVERAGE (+' + overage + ' EXCESS)', qtyDiff: overage };
@@ -3750,7 +3810,7 @@
     if (!afterNoon) {
       statusBar.innerHTML = '<span style="color:#fbbf24;font-weight:700;">' + fmtIco('lock') + ' DAILY FILING LOCKED UNTIL 12:00 PM NOON (Current: ' + escapeHtml(snap.formatted12h) + ') — Print Store Copies in Terminal [2] &amp; pre-clip paperwork now.</span>';
     } else if (state.nightDropInvoices.length > 0) {
-      statusBar.innerHTML = '<span style="color:#f87171;font-weight:700;">' + fmtIco('claim') + ' ' + state.nightDropInvoices.length + ' NIGHT DROP INVOICE(S) STILL UNKEYED — Key in Terminal [1] before filing.</span>';
+      statusBar.innerHTML = '<span style="color:#f87171;font-weight:700;">' + fmtIco('claim') + ' ' + state.nightDropInvoices.length + ' NIGHT DROP DOC(S) STILL UNKEYED — Key in Terminal [1] before filing.</span>';
     } else if (unprintedStoreCopies.length > 0) {
       statusBar.innerHTML = '<span style="color:#fbbf24;font-weight:700;">' + fmtIco('printer') + ' ' + unprintedStoreCopies.length + ' RECEIPT(S) NEED STORE COPIES PRINTED — Use Terminal [2] Receipt Ledger → Print All Store Copies.</span>';
     } else if (initialUnfinalized.length > 0) {

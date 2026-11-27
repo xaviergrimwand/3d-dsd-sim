@@ -5,6 +5,20 @@
   -webkit-touch-callout: none;
 }
 
+:root {
+  --ui-scale: 1;
+  --ui-vw: 1vw;
+  --ui-vh: 1vh;
+  --ui-w: calc(100 * var(--ui-vw));
+  --ui-h: calc(100 * var(--ui-vh));
+}
+
+@supports (height: 1dvh) {
+  :root {
+    --ui-vh: 1dvh;
+  }
+}
+
 html,
 body {
   margin: 0;
@@ -24,6 +38,31 @@ body {
   width: 100%;
   height: 100%;
   overflow: hidden;
+}
+
+#world-stage {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: auto;
+}
+
+#ui-stage {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 5;
+  pointer-events: none;
+}
+
+html.ui-scaled #ui-stage {
+  width: var(--ui-w);
+  height: var(--ui-h);
+  transform: scale(var(--ui-scale));
+  transform-origin: 0 0;
+  contain: layout;
 }
 
 canvas {
@@ -76,7 +115,7 @@ canvas {
 
 #hud-top-right-row {
   width: 292px;
-  max-width: calc(100vw - 28px);
+  max-width: calc(calc(100 * var(--ui-vw)) - 28px);
   display: flex;
   align-items: stretch;
   justify-content: space-between;
@@ -213,8 +252,8 @@ canvas {
 .scanner-device {
   position: relative;
   width: 320px;
-  max-width: 94vw;
-  max-height: 82vh;
+  max-width: calc(94 * var(--ui-vw));
+  max-height: calc(82 * var(--ui-vh));
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -659,8 +698,8 @@ canvas {
   left: 50%;
   transform: translate(-50%, -50%);
   width: 720px;
-  max-width: 95vw;
-  max-height: 92vh;
+  max-width: calc(95 * var(--ui-vw));
+  max-height: calc(92 * var(--ui-vh));
   overflow: visible;
   box-sizing: border-box;
   background: transparent;
@@ -675,7 +714,7 @@ canvas {
 #terminal-main-split {
   flex: 1 1 auto;
   min-height: 0;
-  max-height: 92vh;
+  max-height: calc(92 * var(--ui-vh));
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -685,7 +724,7 @@ canvas {
 #terminal-crt-unit {
   position: relative;
   width: 100%;
-  height: min(440px, calc(92vh - 245px));
+  height: min(440px, calc(calc(92 * var(--ui-vh)) - 245px));
   flex: 0 0 auto;
   min-height: 300px;
   display: flex;
@@ -1006,78 +1045,78 @@ canvas {
   color: #fef08a !important;
 }
 
-@media (max-width: 767px) {
-  #terminal-modal {
-    width: 96vw;
-    max-width: 96vw;
-    max-height: 94vh;
+
+  html.ui-w-le-767 #terminal-modal {
+    width: calc(96 * var(--ui-vw));
+    max-width: calc(96 * var(--ui-vw));
+    max-height: calc(94 * var(--ui-vh));
   }
 
-  #terminal-main-split {
-    max-height: 94vh;
+  html.ui-w-le-767 #terminal-main-split {
+    max-height: calc(94 * var(--ui-vh));
   }
 
-  #terminal-crt-unit {
-    height: min(380px, calc(94vh - 245px));
+  html.ui-w-le-767 #terminal-crt-unit {
+    height: min(380px, calc(calc(94 * var(--ui-vh)) - 245px));
     min-height: 240px;
     padding: 10px 12px;
   }
 
-  #terminal-modal h2 {
+  html.ui-w-le-767 #terminal-modal h2 {
     font-size: 13px;
     margin-bottom: 6px;
     padding-bottom: 6px;
   }
 
-  #terminal-keypad-section {
+  html.ui-w-le-767 #terminal-keypad-section {
     width: 100%;
     padding: 7px 8px 8px;
   }
 
-  #terminal-keypad-grid {
+  html.ui-w-le-767 #terminal-keypad-grid {
     grid-template-rows: repeat(4, 42px);
     gap: 5px;
   }
 
-  .term-key-btn.alpha {
+  html.ui-w-le-767 .term-key-btn.alpha {
     height: 34px;
     font-size: 11px;
   }
-}
 
-@media (max-height: 560px) {
-  #terminal-modal {
-    width: 96vw;
-    max-width: 96vw;
-    height: 94vh;
-    max-height: 94vh;
+
+
+  html.ui-h-le-560 #terminal-modal {
+    width: calc(96 * var(--ui-vw));
+    max-width: calc(96 * var(--ui-vw));
+    height: calc(94 * var(--ui-vh));
+    max-height: calc(94 * var(--ui-vh));
   }
 
-  #terminal-main-split {
-    height: 94vh;
-    max-height: 94vh;
+  html.ui-h-le-560 #terminal-main-split {
+    height: calc(94 * var(--ui-vh));
+    max-height: calc(94 * var(--ui-vh));
   }
 
-  #terminal-crt-unit {
+  html.ui-h-le-560 #terminal-crt-unit {
     height: 100%;
     flex: 1 1 auto;
     min-height: 0;
     padding: 8px 12px;
   }
 
-  #terminal-modal h2 {
+  html.ui-h-le-560 #terminal-modal h2 {
     font-size: 13px;
     margin-bottom: 6px;
     padding-bottom: 5px;
   }
 
-  #terminal-modal.has-keypad #terminal-main-split {
+  html.ui-h-le-560 #terminal-modal.has-keypad #terminal-main-split {
     flex-direction: row;
     align-items: stretch;
     gap: 0;
   }
 
-  #terminal-modal.has-keypad #terminal-keypad-cord {
+  html.ui-h-le-560 #terminal-modal.has-keypad #terminal-keypad-cord {
     width: 14px;
     height: 16px;
     align-self: center;
@@ -1092,29 +1131,29 @@ canvas {
     border-bottom: 1px solid #141517;
   }
 
-  #terminal-modal.has-keypad #terminal-keypad-section {
+  html.ui-h-le-560 #terminal-modal.has-keypad #terminal-keypad-section {
     flex: 0 0 245px;
     width: 245px;
     margin-top: 0;
     justify-content: center;
   }
 
-  #terminal-modal.has-keypad.alpha-keypad #terminal-keypad-section {
+  html.ui-h-le-560 #terminal-modal.has-keypad.alpha-keypad #terminal-keypad-section {
     flex: 0 0 320px;
     width: 320px;
   }
 
-  #terminal-keypad-grid {
+  html.ui-h-le-560 #terminal-keypad-grid {
     flex: 1;
     grid-template-rows: repeat(4, minmax(30px, 1fr));
     gap: 4px;
   }
 
-  .term-key-btn.alpha {
+  html.ui-h-le-560 .term-key-btn.alpha {
     height: 28px;
     font-size: 11px;
   }
-}
+
 
 #terminal-modal table {
   width: 100%;
@@ -1218,8 +1257,8 @@ canvas {
   top: 50%;
   left: 50%;
   transform: translate(-50%, -50%);
-  width: min(94vw, 660px);
-  max-height: 88vh;
+  width: min(calc(94 * var(--ui-vw)), 660px);
+  max-height: calc(88 * var(--ui-vh));
   background: linear-gradient(180deg, #0f172a 0%, #111827 100%);
   color: #e2e8f0;
   border: 2px solid #f59e0b;
@@ -1309,8 +1348,8 @@ canvas {
   top: calc(50% + 48px);
   left: 50%;
   transform: translate(-50%, -50%);
-  width: min(94vw, 680px);
-  max-height: calc(100vh - 116px);
+  width: min(calc(94 * var(--ui-vw)), 680px);
+  max-height: calc(calc(100 * var(--ui-vh)) - 116px);
   background: linear-gradient(180deg, #0f172a 0%, #111827 100%);
   color: #e2e8f0;
   border: 2px solid #38bdf8;
@@ -1990,8 +2029,8 @@ tr.inv-short-pickable:hover {
   left: 50%;
   transform: translate(-50%, -50%);
   width: 560px;
-  max-width: 94vw;
-  max-height: 84vh;
+  max-width: calc(94 * var(--ui-vw));
+  max-height: calc(84 * var(--ui-vh));
   background: #0f172a;
   border: 2px solid #38bdf8;
   border-radius: 10px;
@@ -2110,7 +2149,7 @@ tr.inv-short-pickable:hover {
   flex-direction: column;
   gap: 8px;
   overflow-y: auto;
-  max-height: 48vh;
+  max-height: calc(48 * var(--ui-vh));
   padding-right: 4px;
 }
 
@@ -2434,36 +2473,36 @@ tr.inv-short-pickable:hover {
   }
 }
 
-@media (max-width: 600px) {
-  .scanner-device {
+
+  html.ui-w-le-600 .scanner-device {
     width: 270px;
-    max-width: 86vw;
+    max-width: calc(86 * var(--ui-vw));
     padding: 6px 8px 10px 8px;
   }
 
-  .scanner-lcd-screen {
+  html.ui-w-le-600 .scanner-lcd-screen {
     height: 168px;
     min-height: 168px;
     max-height: 168px;
     padding: 5px 6px;
   }
 
-  .lcd-scr {
+  html.ui-w-le-600 .lcd-scr {
     font-size: 11px;
     line-height: 14px;
   }
 
-  .lcd-scr-line {
+  html.ui-w-le-600 .lcd-scr-line {
     height: 14px;
     line-height: 14px;
   }
 
-  .btn-ent,
-  .keypad-action-row .nav-btn,
-  .btn-pwr {
+  html.ui-w-le-600 .btn-ent,
+html.ui-w-le-600 .keypad-action-row .nav-btn,
+html.ui-w-le-600 .btn-pwr {
     height: 40px;
   }
-}
+
 
 /* Bottom-left controls: Mouse Lock & Test Receipt Seeder */
 #bottom-left-controls {
@@ -2849,78 +2888,92 @@ tr.inv-short-pickable:hover {
   font-variant-numeric: tabular-nums;
 }
 
-@media (max-width: 960px),
-(max-height: 560px) {
-  #top-clock-cluster {
+
+  html.ui-w-le-960 #top-clock-cluster,
+html.ui-h-le-560 #top-clock-cluster {
     top: 6px;
     left: 154px;
     gap: 6px;
   }
 
-  #retro-digital-clock {
+  html.ui-w-le-960 #retro-digital-clock,
+html.ui-h-le-560 #retro-digital-clock {
     width: 170px;
     padding: 4px 5px;
   }
 
-  #hud-stats-tracker {
+  html.ui-w-le-960 #hud-stats-tracker,
+html.ui-h-le-560 #hud-stats-tracker {
     min-width: 154px;
   }
 
-  .hst-top-tier {
+  html.ui-w-le-960 .hst-top-tier,
+html.ui-h-le-560 .hst-top-tier {
     padding: 4px 8px;
     gap: 8px;
   }
 
-  .hst-pts-lbl {
+  html.ui-w-le-960 .hst-pts-lbl,
+html.ui-h-le-560 .hst-pts-lbl {
     font-size: 10px;
   }
 
-  .hst-pts-val {
+  html.ui-w-le-960 .hst-pts-val,
+html.ui-h-le-560 .hst-pts-val {
     font-size: 17px;
   }
 
-  .hst-cell {
+  html.ui-w-le-960 .hst-cell,
+html.ui-h-le-560 .hst-cell {
     min-width: 28px;
     padding: 3px 3px 2px;
   }
 
-  .hst-lbl {
+  html.ui-w-le-960 .hst-lbl,
+html.ui-h-le-560 .hst-lbl {
     font-size: 8px;
   }
 
-  .hst-val {
+  html.ui-w-le-960 .hst-val,
+html.ui-h-le-560 .hst-val {
     font-size: 11px;
   }
 
-  #door-lights-panel {
+  html.ui-w-le-960 #door-lights-panel,
+html.ui-h-le-560 #door-lights-panel {
     padding: 4px 9px;
     gap: 8px;
   }
 
-  .dlp-label {
+  html.ui-w-le-960 .dlp-label,
+html.ui-h-le-560 .dlp-label {
     font-size: 10px;
   }
 
-  .dlp-light {
+  html.ui-w-le-960 .dlp-light,
+html.ui-h-le-560 .dlp-light {
     width: 10px;
     height: 10px;
   }
 
-  .rdc-digits-wrap {
+  html.ui-w-le-960 .rdc-digits-wrap,
+html.ui-h-le-560 .rdc-digits-wrap {
     font-size: 22px;
     letter-spacing: 1.5px;
   }
 
-  .rdc-ampm-col {
+  html.ui-w-le-960 .rdc-ampm-col,
+html.ui-h-le-560 .rdc-ampm-col {
     font-size: 8.5px;
     gap: 2px;
   }
 
-  .rdc-date-row {
+  html.ui-w-le-960 .rdc-date-row,
+html.ui-h-le-560 .rdc-date-row {
     font-size: 10.5px;
     letter-spacing: 0.6px;
   }
-}
+
 
 #shift-summary-modal {
   display: none;
@@ -2936,7 +2989,7 @@ tr.inv-short-pickable:hover {
 
 .shift-summary-card {
   width: 520px;
-  max-width: 95vw;
+  max-width: calc(95 * var(--ui-vw));
   background: #0f172a;
   border: 2px solid #334155;
   border-radius: 14px;
@@ -3600,35 +3653,35 @@ tr.inv-short-pickable:hover {
 }
 
 /* ---------------- PC WORKSPACE (>= 768px & >= 561px height) ---------------- */
-@media (min-width: 768px) and (min-height: 561px) {
+
 
   /* Wings Invoice Left + Compact Scanner Right, Center Clear for Boxes */
-  #game-container.invoice-open #invoice-modal.active {
+  html.ui-w-ge-768.ui-h-ge-561 #game-container.invoice-open #invoice-modal.active {
     top: 104px;
     left: 14px;
     right: auto;
     bottom: 12px;
     transform: none;
-    width: clamp(460px, 47vw, 650px);
-    max-width: calc(100vw - 320px);
-    max-height: calc(100vh - 116px);
+    width: clamp(460px, calc(47 * var(--ui-vw)), 650px);
+    max-width: calc(calc(100 * var(--ui-vw)) - 320px);
+    max-height: calc(calc(100 * var(--ui-vh)) - 116px);
     padding: 12px 14px;
   }
 
-  #game-container.invoice-open #scanner-modal-overlay {
+  html.ui-w-ge-768.ui-h-ge-561 #game-container.invoice-open #scanner-modal-overlay {
     left: auto;
     right: 14px;
     bottom: 0;
     transform: translateY(105%);
   }
 
-  #game-container.invoice-open #scanner-modal-overlay.active {
+  html.ui-w-ge-768.ui-h-ge-561 #game-container.invoice-open #scanner-modal-overlay.active {
     transform: translateY(0);
   }
-}
 
-@media (min-width: 768px) and (max-width: 1180px) {
-  #game-container.invoice-open .inv-paper-sheet {
+
+
+  html.ui-w-ge-768.ui-w-le-1180 #game-container.invoice-open .inv-paper-sheet {
     --inv-col-code: 64px;
     --inv-col-pack: 52px;
     --inv-pad-pack: 4px;
@@ -3641,43 +3694,52 @@ tr.inv-short-pickable:hover {
     --inv-short-left: -32px;
   }
 
-  #game-container.invoice-open .arch-short-hand {
+  html.ui-w-ge-768.ui-w-le-1180 #game-container.invoice-open .arch-short-hand {
     font-size: 10.5px;
     margin-left: 5px;
   }
 
-  #game-container.invoice-open .inv-paper-total-lbl {
+  html.ui-w-ge-768.ui-w-le-1180 #game-container.invoice-open .inv-paper-total-lbl {
     font-size: 9px;
     letter-spacing: 0.2px;
   }
-}
+
 
 /* ---------------- COMPACT HORIZONTAL 2-COL SCANNER (All Mobile Portrait & Landscape) ---------------- */
-@media (max-width: 960px),
-(max-height: 560px) {
 
-  #game-container.invoice-open #top-hud,
-  #game-container.scanner-open #top-hud {
+
+  html.ui-w-le-960 #game-container.invoice-open #top-hud,
+html.ui-w-le-960 #game-container.scanner-open #top-hud,
+html.ui-h-le-560 #game-container.invoice-open #top-hud,
+html.ui-h-le-560 #game-container.scanner-open #top-hud {
     gap: 4px;
     padding: 4px 6px;
   }
 
-  #game-container.invoice-open .hud-card,
-  #game-container.scanner-open .hud-card {
+  html.ui-w-le-960 #game-container.invoice-open .hud-card,
+html.ui-w-le-960 #game-container.scanner-open .hud-card,
+html.ui-h-le-560 #game-container.invoice-open .hud-card,
+html.ui-h-le-560 #game-container.scanner-open .hud-card {
     padding: 3px 6px;
     font-size: 9.5px;
   }
 
   /* Switch vertical handheld scanner to a sleek 2-column horizontal unit */
-  .scanner-top-bumper,
-  .scanner-head,
-  .scanner-side-bumper-l,
-  .scanner-side-bumper-r,
-  .pc-kb-hint {
+  html.ui-w-le-960 .scanner-top-bumper,
+html.ui-w-le-960 .scanner-head,
+html.ui-w-le-960 .scanner-side-bumper-l,
+html.ui-w-le-960 .scanner-side-bumper-r,
+html.ui-w-le-960 .pc-kb-hint,
+html.ui-h-le-560 .scanner-top-bumper,
+html.ui-h-le-560 .scanner-head,
+html.ui-h-le-560 .scanner-side-bumper-l,
+html.ui-h-le-560 .scanner-side-bumper-r,
+html.ui-h-le-560 .pc-kb-hint {
     display: none !important;
   }
 
-  .scanner-device {
+  html.ui-w-le-960 .scanner-device,
+html.ui-h-le-560 .scanner-device {
     display: grid !important;
     grid-template-columns: 1fr 1.06fr;
     gap: 6px;
@@ -3687,14 +3749,16 @@ tr.inv-short-pickable:hover {
     overflow: hidden !important;
   }
 
-  .scanner-lcd-bezel {
+  html.ui-w-le-960 .scanner-lcd-bezel,
+html.ui-h-le-560 .scanner-lcd-bezel {
     display: flex;
     flex-direction: column;
     padding: 4px !important;
     margin: 0 !important;
   }
 
-  .scanner-lcd-screen {
+  html.ui-w-le-960 .scanner-lcd-screen,
+html.ui-h-le-560 .scanner-lcd-screen {
     height: 162px !important;
     min-height: 162px !important;
     max-height: 162px !important;
@@ -3702,17 +3766,20 @@ tr.inv-short-pickable:hover {
     font-size: 9.5px;
   }
 
-  .lcd-scr {
+  html.ui-w-le-960 .lcd-scr,
+html.ui-h-le-560 .lcd-scr {
     font-size: 10.5px;
     line-height: 13.5px;
   }
 
-  .lcd-scr-line {
+  html.ui-w-le-960 .lcd-scr-line,
+html.ui-h-le-560 .lcd-scr-line {
     height: 13.5px;
     line-height: 13.5px;
   }
 
-  .scanner-keypad-bezel {
+  html.ui-w-le-960 .scanner-keypad-bezel,
+html.ui-h-le-560 .scanner-keypad-bezel {
     margin-top: 0 !important;
     padding: 4px !important;
     display: flex;
@@ -3721,63 +3788,80 @@ tr.inv-short-pickable:hover {
     gap: 3px;
   }
 
-  .keypad-action-row,
-  .keypad-fn-row,
-  .keypad-nav-row,
-  .keypad-grid-3x4 {
+  html.ui-w-le-960 .keypad-action-row,
+html.ui-w-le-960 .keypad-fn-row,
+html.ui-w-le-960 .keypad-nav-row,
+html.ui-w-le-960 .keypad-grid-3x4,
+html.ui-h-le-560 .keypad-action-row,
+html.ui-h-le-560 .keypad-fn-row,
+html.ui-h-le-560 .keypad-nav-row,
+html.ui-h-le-560 .keypad-grid-3x4 {
     gap: 3px !important;
     margin-bottom: 0 !important;
   }
 
-  .btn-ent,
-  .keypad-action-row .nav-btn,
-  .btn-pwr {
+  html.ui-w-le-960 .btn-ent,
+html.ui-w-le-960 .keypad-action-row .nav-btn,
+html.ui-w-le-960 .btn-pwr,
+html.ui-h-le-560 .btn-ent,
+html.ui-h-le-560 .keypad-action-row .nav-btn,
+html.ui-h-le-560 .btn-pwr {
     height: 24px !important;
     font-size: 9px !important;
   }
 
-  .fn-btn {
+  html.ui-w-le-960 .fn-btn,
+html.ui-h-le-560 .fn-btn {
     height: 22px !important;
   }
 
-  .fn-key-code {
+  html.ui-w-le-960 .fn-key-code,
+html.ui-h-le-560 .fn-key-code {
     font-size: 9.5px !important;
   }
 
-  .nav-btn {
+  html.ui-w-le-960 .nav-btn,
+html.ui-h-le-560 .nav-btn {
     height: 22px !important;
     font-size: 9px !important;
   }
 
-  .num-btn {
+  html.ui-w-le-960 .num-btn,
+html.ui-h-le-560 .num-btn {
     height: 21px !important;
     font-size: 10px !important;
   }
 
   /* Compact Invoice Typography on Mobile */
-  #game-container.invoice-open #invoice-modal {
+  html.ui-w-le-960 #game-container.invoice-open #invoice-modal,
+html.ui-h-le-560 #game-container.invoice-open #invoice-modal {
     padding: 8px 10px;
   }
 
-  #game-container.invoice-open .inv-ui-header {
+  html.ui-w-le-960 #game-container.invoice-open .inv-ui-header,
+html.ui-h-le-560 #game-container.invoice-open .inv-ui-header {
     padding-bottom: 5px;
     margin-bottom: 6px;
   }
 
-  #game-container.invoice-open .inv-gui-zones {
+  html.ui-w-le-960 #game-container.invoice-open .inv-gui-zones,
+html.ui-h-le-560 #game-container.invoice-open .inv-gui-zones {
     gap: 4px;
     margin-top: 6px;
   }
 
-  #game-container.invoice-open .inv-gui-zone {
+  html.ui-w-le-960 #game-container.invoice-open .inv-gui-zone,
+html.ui-h-le-560 #game-container.invoice-open .inv-gui-zone {
     padding: 4px 6px;
   }
 
-  #game-container.invoice-open .inv-scroll-wrap {
+  html.ui-w-le-960 #game-container.invoice-open .inv-scroll-wrap,
+html.ui-h-le-560 #game-container.invoice-open .inv-scroll-wrap {
     padding: 6px;
   }
 
-  #game-container.invoice-open .inv-paper-sheet {
+  html.ui-w-le-960 #game-container.invoice-open .inv-paper-sheet,
+html.ui-h-le-560 #game-container.invoice-open .inv-paper-sheet {
     --inv-col-code: 46px;
     --inv-col-pack: 40px;
     --inv-pad-pack: 3px;
@@ -3792,122 +3876,140 @@ tr.inv-short-pickable:hover {
     border-left-width: 10px;
   }
 
-  #game-container.invoice-open .inv-short-stamp {
+  html.ui-w-le-960 #game-container.invoice-open .inv-short-stamp,
+html.ui-h-le-560 #game-container.invoice-open .inv-short-stamp {
     font-size: 7.5px;
     padding: 1px 2.5px;
   }
 
-  #game-container.invoice-open .arch-short-hand {
+  html.ui-w-le-960 #game-container.invoice-open .arch-short-hand,
+html.ui-h-le-560 #game-container.invoice-open .arch-short-hand {
     font-size: 9.5px;
     margin-left: 4px;
   }
 
-  #game-container.invoice-open .inv-paper-total-lbl {
+  html.ui-w-le-960 #game-container.invoice-open .inv-paper-total-lbl,
+html.ui-h-le-560 #game-container.invoice-open .inv-paper-total-lbl {
     font-size: 8px;
     letter-spacing: 0;
   }
 
-  #game-container.invoice-open .inv-carrier-title {
+  html.ui-w-le-960 #game-container.invoice-open .inv-carrier-title,
+html.ui-h-le-560 #game-container.invoice-open .inv-carrier-title {
     font-size: 13px;
   }
 
-  #game-container.invoice-open .inv-meta-grid {
+  html.ui-w-le-960 #game-container.invoice-open .inv-meta-grid,
+html.ui-h-le-560 #game-container.invoice-open .inv-meta-grid {
     grid-template-columns: 1fr 1fr;
     margin-bottom: 6px;
     font-size: 10px;
   }
 
-  #game-container.invoice-open .inv-table {
+  html.ui-w-le-960 #game-container.invoice-open .inv-table,
+html.ui-h-le-560 #game-container.invoice-open .inv-table {
     margin-bottom: 6px;
     font-size: 9.5px;
   }
 
-  #game-container.invoice-open .inv-table th,
-  #game-container.invoice-open .inv-table td {
+  html.ui-w-le-960 #game-container.invoice-open .inv-table th,
+html.ui-w-le-960 #game-container.invoice-open .inv-table td,
+html.ui-h-le-560 #game-container.invoice-open .inv-table th,
+html.ui-h-le-560 #game-container.invoice-open .inv-table td {
     padding: 3px 3px;
   }
 
-  #game-container.invoice-open .inv-ui-pill,
-  #game-container.invoice-open .inv-gui-btn,
-  #game-container.invoice-open .inv-mod-btn,
-  #game-container.invoice-open .inv-sign-btn,
-  #game-container.invoice-open .inv-scanner-btn,
-  #game-container.invoice-open .inv-doc-tab {
+  html.ui-w-le-960 #game-container.invoice-open .inv-ui-pill,
+html.ui-w-le-960 #game-container.invoice-open .inv-gui-btn,
+html.ui-w-le-960 #game-container.invoice-open .inv-mod-btn,
+html.ui-w-le-960 #game-container.invoice-open .inv-sign-btn,
+html.ui-w-le-960 #game-container.invoice-open .inv-scanner-btn,
+html.ui-w-le-960 #game-container.invoice-open .inv-doc-tab,
+html.ui-h-le-560 #game-container.invoice-open .inv-ui-pill,
+html.ui-h-le-560 #game-container.invoice-open .inv-gui-btn,
+html.ui-h-le-560 #game-container.invoice-open .inv-mod-btn,
+html.ui-h-le-560 #game-container.invoice-open .inv-sign-btn,
+html.ui-h-le-560 #game-container.invoice-open .inv-scanner-btn,
+html.ui-h-le-560 #game-container.invoice-open .inv-doc-tab {
     height: 28px;
     padding: 0 8px;
     font-size: 10px;
   }
-}
+
 
 /* ---------------- MOBILE LANDSCAPE (Short Wide Viewport) ---------------- */
-@media (orientation: landscape) and ((max-height: 560px) or (max-width: 960px)) {
+
 
   /* Wings Invoice Left, Compact Scanner Right, Middle Open for Boxes */
-  #game-container.invoice-open #invoice-modal.active {
+  html.ui-landscape.ui-h-le-560 #game-container.invoice-open #invoice-modal.active,
+html.ui-landscape.ui-w-le-960 #game-container.invoice-open #invoice-modal.active {
     top: 80px;
     left: 6px;
     right: auto;
     bottom: 6px;
     transform: none;
-    width: clamp(360px, 52vw, 480px);
-    max-width: calc(100vw - 285px);
-    max-height: calc(100vh - 86px);
+    width: clamp(360px, calc(52 * var(--ui-vw)), 480px);
+    max-width: calc(calc(100 * var(--ui-vw)) - 285px);
+    max-height: calc(calc(100 * var(--ui-vh)) - 86px);
   }
 
-  #game-container.invoice-open #scanner-modal-overlay {
+  html.ui-landscape.ui-h-le-560 #game-container.invoice-open #scanner-modal-overlay,
+html.ui-landscape.ui-w-le-960 #game-container.invoice-open #scanner-modal-overlay {
     left: auto;
     right: 6px;
     bottom: 0;
     transform: translateY(105%);
   }
 
-  #game-container.invoice-open #scanner-modal-overlay.active {
+  html.ui-landscape.ui-h-le-560 #game-container.invoice-open #scanner-modal-overlay.active,
+html.ui-landscape.ui-w-le-960 #game-container.invoice-open #scanner-modal-overlay.active {
     transform: translateY(0);
   }
 
-  #game-container.invoice-open .scanner-device {
-    width: 35vw;
-    max-width: 38vw;
-    max-height: 60vh;
+  html.ui-landscape.ui-h-le-560 #game-container.invoice-open .scanner-device,
+html.ui-landscape.ui-w-le-960 #game-container.invoice-open .scanner-device {
+    width: calc(35 * var(--ui-vw));
+    max-width: calc(38 * var(--ui-vw));
+    max-height: calc(60 * var(--ui-vh));
     background: rgba(154, 52, 18, 0.92);
   }
-}
+
 
 /* ---------------- MOBILE PORTRAIT (Tall Narrow Viewport) ---------------- */
-@media (max-width: 767px) and (orientation: portrait) {
+
 
   /* Wings Top Clipboard | Clear Middle 3D Box Window | Bottom Compact 2-Col Scanner */
-  #game-container.invoice-open #invoice-modal.active {
+  html.ui-w-le-767.ui-portrait #game-container.invoice-open #invoice-modal.active {
     top: 80px;
     left: 6px;
     right: 6px;
     bottom: auto;
     transform: none;
     width: auto;
-    max-height: 27vh;
+    max-height: calc(27 * var(--ui-vh));
   }
 
-  #game-container.invoice-open #scanner-modal-overlay.active,
-  #game-container.scanner-open:not(.invoice-open) #scanner-modal-overlay.active {
+  html.ui-w-le-767.ui-portrait #game-container.invoice-open #scanner-modal-overlay.active,
+html.ui-w-le-767.ui-portrait #game-container.scanner-open:not(.invoice-open) #scanner-modal-overlay.active {
     left: auto;
     right: 6px;
     bottom: 0;
     transform: translateY(0);
   }
 
-  #game-container.invoice-open .scanner-device,
-  #game-container.scanner-open .scanner-device {
-    width: 92vw !important;
-    max-width: 92vw !important;
-    max-height: 34vh;
+  html.ui-w-le-767.ui-portrait #game-container.invoice-open .scanner-device,
+html.ui-w-le-767.ui-portrait #game-container.scanner-open .scanner-device {
+    width: calc(92 * var(--ui-vw)) !important;
+    max-width: calc(92 * var(--ui-vw)) !important;
+    max-height: calc(34 * var(--ui-vh));
     background: rgba(154, 52, 18, 0.92);
   }
 
-  #game-container.scanner-open #mobile-btn-dock {
+  html.ui-w-le-767.ui-portrait #game-container.scanner-open #mobile-btn-dock {
     right: 12px;
-    bottom: calc(34vh + 12px);
+    bottom: calc(calc(34 * var(--ui-vh)) + 12px);
   }
-}
+
 
 /* ============================================================
    PHASE 2: LIVE PENDING DELIVERIES HUD, NIGHT DROPS, FILING, ARCHIVE
@@ -3917,7 +4019,7 @@ tr.inv-short-pickable:hover {
   top: 66px;
   right: 16px;
   width: 292px;
-  max-width: calc(100vw - 28px);
+  max-width: calc(calc(100 * var(--ui-vw)) - 28px);
   background: rgba(9, 13, 22, 0.94);
   border: 1px solid rgba(56, 189, 248, 0.35);
   border-radius: 10px;
@@ -4087,19 +4189,19 @@ tr.inv-short-pickable:hover {
   }
 }
 
-@media (max-width: 640px) {
-  #top-hud {
+
+  html.ui-w-le-640 #top-hud {
     right: 8px;
   }
 
-  #hud-top-right-row {
+  html.ui-w-le-640 #hud-top-right-row {
     width: 245px;
-    max-width: calc(100vw - 16px);
+    max-width: calc(calc(100 * var(--ui-vw)) - 16px);
     min-width: 0;
     gap: 5px;
   }
 
-  #top-clock-cluster {
+  html.ui-w-le-640 #top-clock-cluster {
     left: 50%;
     transform: translateX(-50%);
     flex-direction: column;
@@ -4108,28 +4210,28 @@ tr.inv-short-pickable:hover {
     z-index: 16;
   }
 
-  #door-lights-panel {
+  html.ui-w-le-640 #door-lights-panel {
     padding: 4px 6px;
     gap: 5px;
   }
 
-  #hud-clock-card {
+  html.ui-w-le-640 #hud-clock-card {
     padding: 4px 7px;
     font-size: 11px;
     gap: 4px;
   }
 
-  #pending-deliveries-panel {
+  html.ui-w-le-640 #pending-deliveries-panel {
     top: 62px;
     right: 8px;
     width: 245px;
   }
 
-  .pd-row {
+  html.ui-w-le-640 .pd-row {
     grid-template-columns: 48px 18px 1fr 24px;
     font-size: 10px;
   }
-}
+
 
 /* Night Drop & Pinned Document Desk Tray Panel */
 #night-drop-panel {
@@ -4140,8 +4242,8 @@ tr.inv-short-pickable:hover {
   right: 0;
   margin: auto;
   height: fit-content;
-  width: min(94vw, 660px);
-  max-height: 88vh;
+  width: min(calc(94 * var(--ui-vw)), 660px);
+  max-height: calc(88 * var(--ui-vh));
   background: linear-gradient(180deg, #0f172a 0%, #111827 100%);
   border: 2px solid #f59e0b;
   border-radius: 10px;
@@ -4174,68 +4276,68 @@ tr.inv-short-pickable:hover {
   letter-spacing: 0;
 }
 
-@media (min-width: 1080px) {
-  #night-drop-panel.docked-terminal {
+
+  html.ui-w-ge-1080 #night-drop-panel.docked-terminal {
     top: 50%;
     bottom: auto;
     left: 16px;
     right: auto;
     margin: 0;
     transform: translateY(-50%);
-    width: min(460px, calc(100vw - 764px));
+    width: min(460px, calc(calc(100 * var(--ui-vw)) - 764px));
   }
 
-  #game-container.nightdrop-docked #terminal-modal {
+  html.ui-w-ge-1080 #game-container.nightdrop-docked #terminal-modal {
     left: auto;
     right: 16px;
     transform: translateY(-50%);
     width: 720px;
-    max-width: 95vw;
-    max-height: 92vh;
+    max-width: calc(95 * var(--ui-vw));
+    max-height: calc(92 * var(--ui-vh));
   }
-}
 
-@media (min-width: 820px) {
-  #night-drop-panel.docked-scanner {
+
+
+  html.ui-w-ge-820 #night-drop-panel.docked-scanner {
     top: 50%;
     bottom: auto;
     left: 16px;
     right: auto;
     margin: 0;
     transform: translateY(-50%);
-    width: min(460px, 46vw);
+    width: min(460px, calc(46 * var(--ui-vw)));
   }
 
-  #game-container.nightdrop-scanner-docked #scanner-modal-overlay.active {
+  html.ui-w-ge-820 #game-container.nightdrop-scanner-docked #scanner-modal-overlay.active {
     left: auto;
     right: 16px;
     bottom: 0;
     transform: translateY(0);
     z-index: 66;
   }
-}
 
-@media (max-width: 819px) {
-  #night-drop-panel.docked-scanner {
+
+
+  html.ui-w-le-819 #night-drop-panel.docked-scanner {
     top: 56px;
     bottom: auto;
     left: 50%;
     right: auto;
     margin: 0;
     transform: translateX(-50%);
-    max-height: 44vh;
+    max-height: calc(44 * var(--ui-vh));
   }
 
-  #game-container.nightdrop-scanner-docked #scanner-modal-overlay.active {
+  html.ui-w-le-819 #game-container.nightdrop-scanner-docked #scanner-modal-overlay.active {
     z-index: 66;
   }
-}
 
-@media (max-width: 1079px) {
-  #game-container.nightdrop-docked #night-drop-panel.docked-terminal {
+
+
+  html.ui-w-le-1079 #game-container.nightdrop-docked #night-drop-panel.docked-terminal {
     z-index: 64;
   }
-}
+
 
 .nd-btn-scanner.is-active,
 .nd-btn-terminal.is-active {
@@ -4330,6 +4432,15 @@ tr.inv-short-pickable:hover {
   color: #bae6fd;
   border-color: #38bdf8;
 }
+.nd-tab.credit {
+  color: #fca5a5;
+  border-color: rgba(239, 68, 68, 0.35);
+}
+.nd-tab.credit.active {
+  background: #3b0d14;
+  color: #fecaca;
+  border-color: #ef4444;
+}
 
 #night-drop-content {
   display: flex;
@@ -4416,8 +4527,8 @@ tr.inv-short-pickable:hover {
 
 .phase2-modal-card {
   width: 960px;
-  max-width: 96vw;
-  height: 86vh;
+  max-width: calc(96 * var(--ui-vw));
+  height: calc(86 * var(--ui-vh));
   max-height: 760px;
   background: #0f172a;
   border: 3px solid #38bdf8;
@@ -4463,12 +4574,12 @@ tr.inv-short-pickable:hover {
   min-height: 0;
 }
 
-@media (max-width: 720px) {
-  .filing-columns {
+
+  html.ui-w-le-720 .filing-columns {
     grid-template-columns: 1fr;
     overflow-y: auto;
   }
-}
+
 
 .filing-folder-shell {
   background: #17130e;
@@ -4982,12 +5093,12 @@ tr.inv-short-pickable:hover {
   min-height: 0;
 }
 
-@media (max-width: 720px) {
-  .archive-body {
+
+  html.ui-w-le-720 .archive-body {
     grid-template-columns: 1fr;
     grid-template-rows: 200px 1fr;
   }
-}
+
 
 #archive-sidebar {
   background: #0b1120;
@@ -5434,8 +5545,8 @@ tr.inv-short-pickable:hover {
   transform: translateX(-50%);
   z-index: 44;
   width: 318px;
-  max-width: 92vw;
-  max-height: 52vh;
+  max-width: calc(92 * var(--ui-vw));
+  max-height: calc(52 * var(--ui-vh));
   display: flex;
   flex-direction: column;
   pointer-events: auto;
@@ -5446,19 +5557,19 @@ tr.inv-short-pickable:hover {
   transition: left 0.22s ease, transform 0.22s ease;
 }
 
-@media (min-width: 820px) and (max-width: 1080px) {
-  #game-container.scanner-open #printed-receipt-hud {
+
+  html.ui-w-ge-820.ui-w-le-1080 #game-container.scanner-open #printed-receipt-hud {
     left: auto;
     right: 352px;
     transform: translateX(0);
   }
-}
+
 
 .prh-sheet {
   position: relative;
   display: flex;
   flex-direction: column;
-  max-height: 52vh;
+  max-height: calc(52 * var(--ui-vh));
   background: #f8fafc;
   border: 2px solid #94a3b8;
   border-bottom: none;
@@ -5672,19 +5783,19 @@ tr.inv-short-pickable:hover {
   border-color: #38bdf8;
 }
 
-@media (max-width: 600px) {
-  #hud-top-right-row {
+
+  html.ui-w-le-600 #hud-top-right-row {
     width: 245px;
-    max-width: calc(100vw - 16px);
+    max-width: calc(calc(100 * var(--ui-vw)) - 16px);
   }
 
-  #pause-menu-btn {
+  html.ui-w-le-600 #pause-menu-btn {
     min-width: 68px;
     padding: 5px 12px;
     border-radius: 8px;
     font-size: 10px;
   }
-}
+
 
 /* Hide active gameplay HUD cleanly while Splash Main Menu is active */
 #game-container.main-menu-open #top-hud,
@@ -5706,13 +5817,13 @@ tr.inv-short-pickable:hover {
   inset: 0;
   z-index: 80;
   width: 100%;
-  height: 100dvh;
-  min-height: 100vh;
+  height: calc(100 * var(--ui-vh));
+  min-height: calc(100 * var(--ui-vh));
   display: none;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  padding: clamp(14px, 3vw, 36px);
+  padding: clamp(14px, calc(3 * var(--ui-vw)), 36px);
   background: #070b14;
   overflow-y: auto;
   overflow-x: hidden;
@@ -5749,13 +5860,13 @@ tr.inv-short-pickable:hover {
   opacity: 0.92;
 }
 
-@media (max-aspect-ratio: 3/4) {
-  .splash-art {
+
+  html.ui-aspect-tall .splash-art {
     object-fit: contain;
     object-position: center 34%;
     opacity: 0.88;
   }
-}
+
 
 .splash-vignette {
   position: fixed;
@@ -5787,7 +5898,7 @@ tr.inv-short-pickable:hover {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: clamp(16px, 3vh, 28px);
+  gap: clamp(16px, calc(3 * var(--ui-vh)), 28px);
   margin: auto 0;
 }
 
@@ -5798,7 +5909,7 @@ tr.inv-short-pickable:hover {
   align-items: center;
   text-align: center;
   width: 100%;
-  padding: clamp(14px, 2.5vw, 22px) clamp(14px, 3vw, 26px);
+  padding: clamp(14px, calc(2.5 * var(--ui-vw)), 22px) clamp(14px, calc(3 * var(--ui-vw)), 26px);
   background: linear-gradient(180deg, rgba(10, 16, 28, 0.86) 0%, rgba(15, 23, 42, 0.78) 100%);
   border: 1.5px solid rgba(148, 163, 184, 0.28);
   border-top: 3px solid #f59e0b;
@@ -5816,7 +5927,7 @@ tr.inv-short-pickable:hover {
   align-items: center;
   gap: 7px;
   font-family: "Courier New", Courier, monospace;
-  font-size: clamp(10px, 1.8vw, 12px);
+  font-size: clamp(10px, calc(1.8 * var(--ui-vw)), 12px);
   font-weight: 800;
   letter-spacing: 1.8px;
   color: #86efac;
@@ -5824,7 +5935,7 @@ tr.inv-short-pickable:hover {
   border: 1px solid rgba(74, 222, 128, 0.45);
   padding: 3px 11px;
   border-radius: 999px;
-  margin-bottom: clamp(8px, 1.4vh, 12px);
+  margin-bottom: clamp(8px, calc(1.4 * var(--ui-vh)), 12px);
   text-shadow: 0 0 8px rgba(74, 222, 128, 0.5);
 }
 
@@ -5856,7 +5967,7 @@ tr.inv-short-pickable:hover {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: clamp(8px, 2vw, 14px);
+  gap: clamp(8px, calc(2 * var(--ui-vw)), 14px);
   line-height: 1;
 }
 
@@ -5864,11 +5975,11 @@ tr.inv-short-pickable:hover {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  padding: clamp(5px, 1vw, 8px) clamp(8px, 1.6vw, 13px);
+  padding: clamp(5px, calc(1 * var(--ui-vw)), 8px) clamp(8px, calc(1.6 * var(--ui-vw)), 13px);
   background: linear-gradient(180deg, #fbbf24 0%, #f59e0b 65%, #d97706 100%);
   color: #0f172a;
   font-weight: 900;
-  font-size: clamp(20px, 4.8vw, 34px);
+  font-size: clamp(20px, calc(4.8 * var(--ui-vw)), 34px);
   letter-spacing: 1px;
   border-radius: 7px;
   border: 2px solid #fef3c7;
@@ -5898,8 +6009,8 @@ tr.inv-short-pickable:hover {
 
 .logo-dsd-word {
   font-weight: 900;
-  font-size: clamp(44px, 11vw, 76px);
-  letter-spacing: clamp(4px, 1.2vw, 10px);
+  font-size: clamp(44px, calc(11 * var(--ui-vw)), 76px);
+  letter-spacing: clamp(4px, calc(1.2 * var(--ui-vw)), 10px);
   line-height: 0.92;
   color: #f8fafc;
   background: linear-gradient(180deg, #ffffff 0%, #e2e8f0 56%, #94a3b8 100%);
@@ -5916,7 +6027,7 @@ tr.inv-short-pickable:hover {
   width: 100%;
   max-width: 410px;
   height: 6px;
-  margin: clamp(8px, 1.5vh, 12px) 0;
+  margin: clamp(8px, calc(1.5 * var(--ui-vh)), 12px) 0;
   border-radius: 3px;
   background: #111827;
   border: 1px solid rgba(251, 191, 36, 0.45);
@@ -5955,8 +6066,8 @@ tr.inv-short-pickable:hover {
 .logo-subtitle {
   font-family: "Courier New", Courier, monospace;
   font-weight: 900;
-  font-size: clamp(13px, 3.2vw, 21px);
-  letter-spacing: clamp(2.2px, 0.8vw, 5.5px);
+  font-size: clamp(13px, calc(3.2 * var(--ui-vw)), 21px);
+  letter-spacing: clamp(2.2px, calc(0.8 * var(--ui-vw)), 5.5px);
   color: #4ade80;
   text-transform: uppercase;
   text-shadow:
@@ -6002,7 +6113,7 @@ tr.inv-short-pickable:hover {
 
 .logo-tagline {
   margin-top: 6px;
-  font-size: clamp(10px, 1.9vw, 12px);
+  font-size: clamp(10px, calc(1.9 * var(--ui-vw)), 12px);
   font-weight: 600;
   letter-spacing: 0.8px;
   color: #cbd5e1;
@@ -6015,7 +6126,7 @@ tr.inv-short-pickable:hover {
   background: rgba(11, 17, 30, 0.88);
   border: 1.5px solid rgba(148, 163, 184, 0.28);
   border-radius: 12px;
-  padding: clamp(12px, 2.4vw, 18px);
+  padding: clamp(12px, calc(2.4 * var(--ui-vw)), 18px);
   display: flex;
   flex-direction: column;
   gap: 10px;
@@ -6036,7 +6147,7 @@ tr.inv-short-pickable:hover {
   background: linear-gradient(180deg, #1e293b 0%, #0f172a 100%);
   color: #f8fafc;
   font-weight: 800;
-  font-size: clamp(13px, 2.4vw, 15px);
+  font-size: clamp(13px, calc(2.4 * var(--ui-vw)), 15px);
   letter-spacing: 1px;
   text-transform: uppercase;
   cursor: pointer;
@@ -6125,8 +6236,8 @@ tr.inv-short-pickable:hover {
   pointer-events: none;
 }
 
-@media (max-height: 540px) and (orientation: landscape) {
-  .menu-shell {
+
+  html.ui-h-le-540.ui-landscape .menu-shell {
     flex-direction: row;
     max-width: 820px;
     align-items: center;
@@ -6134,15 +6245,15 @@ tr.inv-short-pickable:hover {
     gap: 20px;
   }
 
-  .game-logo {
+  html.ui-h-le-540.ui-landscape .game-logo {
     flex: 1 1 auto;
   }
 
-  .menu-card {
+  html.ui-h-le-540.ui-landscape .menu-card {
     flex: 0 0 270px;
   }
 
-  .menu-footer-note {
+  html.ui-h-le-540.ui-landscape .menu-footer-note {
     position: fixed;
     bottom: 8px;
     left: 50%;
@@ -6150,7 +6261,7 @@ tr.inv-short-pickable:hover {
     font-size: 10.5px;
     padding: 3px 12px;
   }
-}
+
 
 /* In-Game Pause Menu Overlay */
 #pause-menu-overlay {
@@ -6174,7 +6285,7 @@ tr.inv-short-pickable:hover {
 .pause-card {
   width: 100%;
   max-width: 380px;
-  max-height: calc(100dvh - 32px);
+  max-height: calc(calc(100 * var(--ui-vh)) - 32px);
   overflow-y: auto;
   display: flex;
   flex-direction: column;
@@ -6220,12 +6331,12 @@ tr.inv-short-pickable:hover {
 }
 
 .pause-game-logo .logo-main-row {
-  gap: clamp(4px, 1vw, 7px);
+  gap: clamp(4px, calc(1 * var(--ui-vw)), 7px);
 }
 
 .pause-game-logo .logo-3d-stamp {
-  padding: clamp(2px, 0.5vw, 4px) clamp(4px, 0.8vw, 7px);
-  font-size: clamp(10px, 2.4vw, 17px);
+  padding: clamp(2px, calc(0.5 * var(--ui-vw)), 4px) clamp(4px, calc(0.8 * var(--ui-vw)), 7px);
+  font-size: clamp(10px, calc(2.4 * var(--ui-vw)), 17px);
   letter-spacing: 0.5px;
   border-radius: 4px;
   border-width: 1.5px;
@@ -6235,8 +6346,8 @@ tr.inv-short-pickable:hover {
 }
 
 .pause-game-logo .logo-dsd-word {
-  font-size: clamp(22px, 5.5vw, 38px);
-  letter-spacing: clamp(2px, 0.6vw, 5px);
+  font-size: clamp(22px, calc(5.5 * var(--ui-vw)), 38px);
+  letter-spacing: clamp(2px, calc(0.6 * var(--ui-vw)), 5px);
   filter:
     drop-shadow(0 1.5px 0 #1e293b) drop-shadow(0 3px 7px rgba(0, 0, 0, 0.85));
 }
@@ -6244,13 +6355,13 @@ tr.inv-short-pickable:hover {
 .pause-game-logo .logo-hazard-divider {
   max-width: 205px;
   height: 3px;
-  margin: clamp(4px, 0.8vh, 6px) auto;
+  margin: clamp(4px, calc(0.8 * var(--ui-vh)), 6px) auto;
   border-radius: 2px;
 }
 
 .pause-game-logo .logo-subtitle {
-  font-size: clamp(8.5px, 1.6vw, 10.5px);
-  letter-spacing: clamp(1.1px, 0.4vw, 2.75px);
+  font-size: clamp(8.5px, calc(1.6 * var(--ui-vw)), 10.5px);
+  letter-spacing: clamp(1.1px, calc(0.4 * var(--ui-vw)), 2.75px);
 }
 
 .pause-shift-meta {
@@ -6459,7 +6570,7 @@ tr.inv-short-pickable:hover {
 .gam-card {
   width: 100%;
   max-width: 470px;
-  max-height: min(85dvh, 520px);
+  max-height: min(calc(85 * var(--ui-vh)), 520px);
   background: linear-gradient(180deg, #0f172a 0%, #0b1120 100%);
   border: 1.5px solid rgba(245, 158, 11, 0.55);
   border-radius: 12px;
@@ -6553,7 +6664,7 @@ tr.inv-short-pickable:hover {
 .mim-card {
   width: 100%;
   max-width: 560px;
-  max-height: min(88dvh, 660px);
+  max-height: min(calc(88 * var(--ui-vh)), 660px);
   background: linear-gradient(180deg, #0f172a 0%, #0b1120 100%);
   border: 1.5px solid rgba(56, 189, 248, 0.45);
   border-radius: 12px;
@@ -6786,16 +6897,16 @@ tr.inv-short-pickable:hover {
   color: #fde047;
 }
 
-@media (max-width: 520px) {
-  .slm-slot-row {
+
+  html.ui-w-le-520 .slm-slot-row {
     flex-direction: column;
     align-items: stretch;
   }
 
-  .slm-slot-actions {
+  html.ui-w-le-520 .slm-slot-actions {
     justify-content: flex-end;
   }
-}
+
 
 /* ============================================================
    COMMAND BAR UPPER HUD & RIGHT-SIDE AUTO-HIDING MINIMAP
@@ -6868,7 +6979,7 @@ tr.inv-short-pickable:hover {
   top: calc(100% + 6px);
   left: 0;
   width: 272px;
-  max-width: calc(100vw - 24px);
+  max-width: calc(calc(100 * var(--ui-vw)) - 24px);
   background: #090d16;
   border: 1px solid #38bdf8;
   border-radius: 6px;
@@ -7233,7 +7344,7 @@ tr.inv-short-pickable:hover {
   right: 0;
   width: max-content;
   min-width: 100%;
-  max-width: calc(100vw - 24px);
+  max-width: calc(calc(100 * var(--ui-vw)) - 24px);
   background: #090d16;
   border: 1px solid #38bdf8;
   border-radius: 6px;
@@ -7316,10 +7427,10 @@ tr.inv-short-pickable:hover {
 .rem-leg-key b { color: #f8fafc; }
 .rem-leg-key b.ok { color: #22c55e; }
 .rem-leg-key b.pts { color: #facc15; }
-@media (max-width: 560px) {
-  .rem-leg-grid { grid-template-columns: 1fr; }
-  .rem-leg-key { flex-wrap: wrap; }
-}
+
+  html.ui-w-le-560 .rem-leg-grid { grid-template-columns: 1fr; }
+  html.ui-w-le-560 .rem-leg-key { flex-wrap: wrap; }
+
 
 /* Pallet Hitch status below Points */
 #hitch-status-card {
@@ -7353,7 +7464,7 @@ tr.inv-short-pickable:hover {
   position: fixed;
   top: 7px;
   left: 488px;
-  right: calc(292px + clamp(288px, 25vw, 368px) + 12px);
+  right: calc(292px + clamp(288px, calc(25 * var(--ui-vw)), 368px) + 12px);
   width: auto;
   min-width: 150px;
   z-index: 28;
@@ -7424,7 +7535,7 @@ tr.inv-short-pickable:hover {
 #hud-msg-drawer {
   display: none;
   flex-direction: column;
-  min-width: min(320px, calc(100vw - 24px));
+  min-width: min(320px, calc(calc(100 * var(--ui-vw)) - 24px));
   background: rgba(9, 13, 22, 0.97);
   border: 1px solid #38bdf8;
   border-top: none;
@@ -7576,7 +7687,7 @@ tr.inv-short-pickable:hover {
   position: fixed;
   top: 7px;
   right: 292px;
-  width: clamp(288px, 25vw, 368px);
+  width: clamp(288px, calc(25 * var(--ui-vw)), 368px);
   max-width: none;
   z-index: 28;
   background: transparent;
@@ -7797,7 +7908,7 @@ tr.inv-short-pickable:hover {
   top: calc(100% + 6px);
   right: 62px;
   width: 256px;
-  max-width: calc(100vw - 24px);
+  max-width: calc(calc(100 * var(--ui-vw)) - 24px);
   background: #090d16;
   border: 1px solid #38bdf8;
   border-radius: 6px;
@@ -7980,32 +8091,39 @@ tr.inv-short-pickable:hover {
   align-items: center;
   gap: 6px;
 }
-.dlp-key-dot {
-  width: 10px;
-  height: 10px;
-  border-radius: 50%;
+.dlp-key-door {
+  width: 15px;
+  height: 15px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   flex-shrink: 0;
 }
-.dlp-key-dot.is-ok { background: #22c55e; box-shadow: 0 0 6px rgba(34, 197, 94, 0.7); }
-.dlp-key-dot.is-warn { background: #facc15; box-shadow: 0 0 6px rgba(250, 204, 21, 0.7); }
-.dlp-key-dot.is-warn-flash {
-  background: #facc15;
-  box-shadow: 0 0 7px rgba(250, 204, 21, 0.85);
+.dlp-key-door .svg-ico {
+  width: 100%;
+  height: 100%;
+  margin-right: 0;
+}
+.dlp-key-door.is-ok { color: #22c55e; filter: drop-shadow(0 0 3px rgba(34, 197, 94, 0.7)); }
+.dlp-key-door.is-warn { color: #facc15; filter: drop-shadow(0 0 4px rgba(250, 204, 21, 0.8)); }
+.dlp-key-door.is-warn-flash {
+  color: #facc15;
+  filter: drop-shadow(0 0 4px rgba(250, 204, 21, 0.85));
   animation: dlpKeyFlashWarn 0.6s step-end infinite;
 }
-.dlp-key-dot.is-crit { background: #ef4444; box-shadow: 0 0 6px rgba(239, 68, 68, 0.75); }
-.dlp-key-dot.is-crit-flash {
-  background: #ef4444;
-  box-shadow: 0 0 7px rgba(239, 68, 68, 0.85);
+.dlp-key-door.is-crit { color: #ef4444; filter: drop-shadow(0 0 4px rgba(239, 68, 68, 0.85)); }
+.dlp-key-door.is-crit-flash {
+  color: #ef4444;
+  filter: drop-shadow(0 0 4px rgba(239, 68, 68, 0.9));
   animation: dlpKeyFlashCrit 0.6s step-end infinite;
 }
 @keyframes dlpKeyFlashWarn {
-  0%, 49% { background: #facc15; box-shadow: 0 0 7px rgba(250, 204, 21, 0.9); }
-  50%, 100% { background: #27272a; box-shadow: none; }
+  0%, 49% { color: #facc15; filter: drop-shadow(0 0 4px rgba(250, 204, 21, 0.9)); }
+  50%, 100% { color: #2c3442; filter: none; }
 }
 @keyframes dlpKeyFlashCrit {
-  0%, 49% { background: #ef4444; box-shadow: 0 0 7px rgba(239, 68, 68, 0.9); }
-  50%, 100% { background: #27272a; box-shadow: none; }
+  0%, 49% { color: #ef4444; filter: drop-shadow(0 0 4px rgba(239, 68, 68, 0.9)); }
+  50%, 100% { color: #2c3442; filter: none; }
 }
 .dlp-key-tag,
 .dlp-key-wh {
@@ -8052,9 +8170,9 @@ tr.inv-short-pickable:hover {
   width: 16px;
   height: 13px;
 }
-@media (max-width: 768px) {
-  #hud-door-lights-popup { right: 0; }
-}
+
+  html.ui-w-le-768 #hud-door-lights-popup { right: 0; }
+
 .dlp-lights-row {
   display: grid;
   grid-template-columns: repeat(5, 1fr);
@@ -8062,16 +8180,17 @@ tr.inv-short-pickable:hover {
   justify-items: center;
   width: 100%;
 }
-#door-lights-panel .dlp-item { gap: 3px; }
+#door-lights-panel .dlp-item { gap: 0; }
 #door-lights-panel .dlp-label { font-size: 10.5px; }
 #door-lights-panel .dlp-door-badge {
   position: relative;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 24px;
-  height: 23px;
-  color: #94a3b8;
+  width: 28px;
+  height: 27px;
+  color: #22c55e;
+  filter: drop-shadow(0 0 3px rgba(34, 197, 94, 0.55));
   flex-shrink: 0;
 }
 #door-lights-panel .dlp-door-badge .svg-ico {
@@ -8087,14 +8206,29 @@ tr.inv-short-pickable:hover {
   align-items: center;
   justify-content: center;
   font-family: 'Courier New', 'Lucida Console', monospace;
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 900;
   line-height: 1;
   color: #f8fafc;
   text-shadow: 0 1px 2px rgba(0, 0, 0, 0.95);
   pointer-events: none;
 }
-#door-lights-panel .dlp-light { width: 11px; height: 11px; border-radius: 50%; }
+#door-lights-panel .dlp-door-badge[data-beacon="green"] {
+  color: #22c55e;
+  filter: drop-shadow(0 0 3px rgba(34, 197, 94, 0.55));
+}
+#door-lights-panel .dlp-door-badge[data-beacon="amber"] {
+  color: #facc15;
+  filter: drop-shadow(0 0 5px rgba(250, 204, 21, 0.85));
+}
+#door-lights-panel .dlp-door-badge[data-beacon="red"] {
+  color: #ef4444;
+  filter: drop-shadow(0 0 5px rgba(239, 68, 68, 0.9));
+}
+#door-lights-panel .dlp-door-badge[data-beacon="off"] {
+  color: #2c3442;
+  filter: none;
+}
 .dlp-sd-queue-row {
   display: grid;
   grid-template-columns: repeat(5, 1fr);
@@ -8313,68 +8447,107 @@ tr.inv-short-pickable:hover {
   pointer-events: none;
 }
 
-@media (max-width: 1240px) {
-  #pending-deliveries-panel {
-    width: clamp(230px, calc(100vw - 792px), 368px);
+
+  html.ui-w-le-1380 #pending-deliveries-panel {
+    width: min(368px, max(172px, calc(calc(100 * var(--ui-vw)) - 788px)));
   }
-  #hud-msg-center {
+  html.ui-w-le-1380 #hud-msg-center {
     top: 104px;
     left: 12px;
     right: auto;
-    width: 300px;
-    min-width: 200px;
+    width: 320px;
+    min-width: 220px;
   }
-  #hitch-status-card {
+  html.ui-w-le-1380 #hitch-status-card {
     top: 104px;
-    left: 324px;
+    left: 344px;
   }
-}
 
-@media (max-width: 960px),
-(max-height: 560px) {
-  #command-ribbon-bg { height: 74px; }
-  #top-clock-cluster { top: 5px; left: 8px; height: 64px; gap: 6px; }
-  #retro-digital-clock { width: 132px; height: 64px; padding: 3px 5px; }
-  #retro-digital-clock .rdc-digits-wrap { font-size: 18.5px; letter-spacing: 1px; }
-  #retro-digital-clock .rdc-date-row { font-size: 8.5px; }
-  #hud-remaining-tracker { width: 228px; min-width: 228px; flex: 0 0 228px; height: 64px; }
-  .rem-hdr { padding: 2px 6px; }
-  .rem-title { font-size: 8px; letter-spacing: 0.4px; }
-  .rem-pts-pill,
-  .rem-total-pill { font-size: 8px; padding: 0 4px; }
-  #hud-shift-score { font-size: 8.5px; }
-  .rem-cell { padding: 0 4px; }
-  .rem-ico { width: 13px; height: 13px; }
-  .rem-ico svg { width: 13px; height: 13px; }
-  .rem-cat-wh .rem-ico { width: 16px; }
-  .rem-cat-wh .rem-ico svg { width: 16px; height: 13px; }
-  .rem-v { min-width: 15px; height: 13px; font-size: 9.5px; padding: 0 3px; }
-  #pending-deliveries-panel { top: 5px; right: 212px; width: 204px; }
-  #pending-deliveries-panel .pd-header { height: 64px; padding: 6px 8px; font-size: 9px; }
-  #pending-deliveries-panel .pd-bar-summary { font-size: 9px; gap: 5px; padding: 0 6px; line-height: 1.2; }
-  #pending-deliveries-panel .pd-bar-ico { width: 16px; height: 12px; }
-  #door-lights-panel { top: 5px; right: 66px; width: 140px; height: 64px; padding: 6px 8px; gap: 4px; }
-  #door-lights-panel .dlp-item { gap: 2px; }
-  #door-lights-panel .dlp-label { font-size: 9px; }
-  #door-lights-panel .dlp-door-badge { width: 20px; height: 20px; }
-  #door-lights-panel .dlp-door-code { font-size: 11px; }
-  #door-lights-panel .dlp-light { width: 9px; height: 9px; }
-  .dlp-sd-queue-row { font-size: 8.5px; }
-  .dlp-type-lights { gap: 2px; }
-  .dlp-sd-ico { width: 15px; height: 13px; }
-  .dlp-sd-ico svg { width: 15px; height: 13px; }
-  .dlp-sd-val { min-width: 17px; height: 14px; font-size: 9.5px; line-height: 12px; padding: 0 3px; }
-  .dlp-dash-tag,
-  .dlp-wh-tag { font-size: 8px; height: 14px; padding: 0 2px; letter-spacing: 0.15px; }
-  #pause-menu-btn { top: 5px; right: 8px; width: 52px; height: 61px; font-size: 9px; }
-  #hud-msg-center { top: 82px; left: 8px; right: auto; width: 224px; }
-  #hud-msg-bar { height: 64px; padding: 6px 8px; }
-  #hud-msg-preview { font-size: 9.5px; padding: 0 6px; line-height: 1.2; }
-  #hitch-status-card { top: 82px; left: 240px; width: auto; }
-  #minimap-container { top: 80px; right: 8px; width: 76px; height: 148px; padding: 5px; }
-  #mobile-btn-dock { bottom: 10px; right: 8px; gap: 6px; }
-  #mobile-btn-dock .touch-btn { min-width: 92px; height: 34px; padding: 0 11px; font-size: 11.5px; }
-}
+
+
+  html.ui-w-le-960 #command-ribbon-bg,
+html.ui-h-le-560 #command-ribbon-bg { height: 74px; }
+  html.ui-w-le-960 #top-clock-cluster,
+html.ui-h-le-560 #top-clock-cluster { top: 5px; left: 8px; height: 64px; gap: 6px; }
+  html.ui-w-le-960 #retro-digital-clock,
+html.ui-h-le-560 #retro-digital-clock { width: 132px; height: 64px; padding: 3px 5px; }
+  html.ui-w-le-960 #retro-digital-clock .rdc-digits-wrap,
+html.ui-h-le-560 #retro-digital-clock .rdc-digits-wrap { font-size: 18.5px; letter-spacing: 1px; }
+  html.ui-w-le-960 #retro-digital-clock .rdc-date-row,
+html.ui-h-le-560 #retro-digital-clock .rdc-date-row { font-size: 8.5px; }
+  html.ui-w-le-960 #hud-remaining-tracker,
+html.ui-h-le-560 #hud-remaining-tracker { width: 228px; min-width: 228px; flex: 0 0 228px; height: 64px; }
+  html.ui-w-le-960 .rem-hdr,
+html.ui-h-le-560 .rem-hdr { padding: 2px 6px; }
+  html.ui-w-le-960 .rem-title,
+html.ui-h-le-560 .rem-title { font-size: 8px; letter-spacing: 0.4px; }
+  html.ui-w-le-960 .rem-pts-pill,
+html.ui-w-le-960 .rem-total-pill,
+html.ui-h-le-560 .rem-pts-pill,
+html.ui-h-le-560 .rem-total-pill { font-size: 8px; padding: 0 4px; }
+  html.ui-w-le-960 #hud-shift-score,
+html.ui-h-le-560 #hud-shift-score { font-size: 8.5px; }
+  html.ui-w-le-960 .rem-cell,
+html.ui-h-le-560 .rem-cell { padding: 0 4px; }
+  html.ui-w-le-960 .rem-ico,
+html.ui-h-le-560 .rem-ico { width: 13px; height: 13px; }
+  html.ui-w-le-960 .rem-ico svg,
+html.ui-h-le-560 .rem-ico svg { width: 13px; height: 13px; }
+  html.ui-w-le-960 .rem-cat-wh .rem-ico,
+html.ui-h-le-560 .rem-cat-wh .rem-ico { width: 16px; }
+  html.ui-w-le-960 .rem-cat-wh .rem-ico svg,
+html.ui-h-le-560 .rem-cat-wh .rem-ico svg { width: 16px; height: 13px; }
+  html.ui-w-le-960 .rem-v,
+html.ui-h-le-560 .rem-v { min-width: 15px; height: 13px; font-size: 9.5px; padding: 0 3px; }
+  html.ui-w-le-960 #pending-deliveries-panel,
+html.ui-h-le-560 #pending-deliveries-panel { top: 5px; right: 212px; width: min(230px, max(152px, calc(calc(100 * var(--ui-vw)) - 594px))); }
+  html.ui-w-le-960 #pending-deliveries-panel .pd-header,
+html.ui-h-le-560 #pending-deliveries-panel .pd-header { height: 64px; padding: 6px 8px; font-size: 9px; }
+  html.ui-w-le-960 #pending-deliveries-panel .pd-bar-summary,
+html.ui-h-le-560 #pending-deliveries-panel .pd-bar-summary { font-size: 9px; gap: 5px; padding: 0 6px; line-height: 1.2; }
+  html.ui-w-le-960 #pending-deliveries-panel .pd-bar-ico,
+html.ui-h-le-560 #pending-deliveries-panel .pd-bar-ico { width: 16px; height: 12px; }
+  html.ui-w-le-960 #door-lights-panel,
+html.ui-h-le-560 #door-lights-panel { top: 5px; right: 66px; width: 140px; height: 64px; padding: 6px 8px; gap: 4px; }
+  html.ui-w-le-960 #door-lights-panel .dlp-item,
+html.ui-h-le-560 #door-lights-panel .dlp-item { gap: 0; }
+  html.ui-w-le-960 #door-lights-panel .dlp-label,
+html.ui-h-le-560 #door-lights-panel .dlp-label { font-size: 9px; }
+  html.ui-w-le-960 #door-lights-panel .dlp-door-badge,
+html.ui-h-le-560 #door-lights-panel .dlp-door-badge { width: 23px; height: 22px; }
+  html.ui-w-le-960 #door-lights-panel .dlp-door-code,
+html.ui-h-le-560 #door-lights-panel .dlp-door-code { font-size: 12px; }
+  html.ui-w-le-960 .dlp-sd-queue-row,
+html.ui-h-le-560 .dlp-sd-queue-row { font-size: 8.5px; }
+  html.ui-w-le-960 .dlp-type-lights,
+html.ui-h-le-560 .dlp-type-lights { gap: 2px; }
+  html.ui-w-le-960 .dlp-sd-ico,
+html.ui-h-le-560 .dlp-sd-ico { width: 15px; height: 13px; }
+  html.ui-w-le-960 .dlp-sd-ico svg,
+html.ui-h-le-560 .dlp-sd-ico svg { width: 15px; height: 13px; }
+  html.ui-w-le-960 .dlp-sd-val,
+html.ui-h-le-560 .dlp-sd-val { min-width: 17px; height: 14px; font-size: 9.5px; line-height: 12px; padding: 0 3px; }
+  html.ui-w-le-960 .dlp-dash-tag,
+html.ui-w-le-960 .dlp-wh-tag,
+html.ui-h-le-560 .dlp-dash-tag,
+html.ui-h-le-560 .dlp-wh-tag { font-size: 8px; height: 14px; padding: 0 2px; letter-spacing: 0.15px; }
+  html.ui-w-le-960 #pause-menu-btn,
+html.ui-h-le-560 #pause-menu-btn { top: 5px; right: 8px; width: 52px; height: 61px; font-size: 9px; }
+  html.ui-w-le-960 #hud-msg-center,
+html.ui-h-le-560 #hud-msg-center { top: 82px; left: 8px; right: auto; width: 236px; min-width: 180px; }
+  html.ui-w-le-960 #hud-msg-bar,
+html.ui-h-le-560 #hud-msg-bar { height: 64px; padding: 6px 8px; }
+  html.ui-w-le-960 #hud-msg-preview,
+html.ui-h-le-560 #hud-msg-preview { font-size: 9.5px; padding: 0 6px; line-height: 1.2; }
+  html.ui-w-le-960 #hitch-status-card,
+html.ui-h-le-560 #hitch-status-card { top: 82px; left: 252px; width: auto; }
+  html.ui-w-le-960 #minimap-container,
+html.ui-h-le-560 #minimap-container { top: 80px; right: 8px; width: 76px; height: 148px; padding: 5px; }
+  html.ui-w-le-960 #mobile-btn-dock,
+html.ui-h-le-560 #mobile-btn-dock { bottom: 10px; right: 8px; gap: 6px; }
+  html.ui-w-le-960 #mobile-btn-dock .touch-btn,
+html.ui-h-le-560 #mobile-btn-dock .touch-btn { min-width: 92px; height: 34px; padding: 0 11px; font-size: 11.5px; }
+
 
 /* ============================================================
    UNIFIED TABULATED INFOTIP HUD (#hud-infotip)
@@ -8407,17 +8580,17 @@ tr.inv-short-pickable:hover {
   right: auto;
   bottom: auto;
   transform: translateY(-50%);
-  max-width: min(376px, calc(50vw - 44px));
+  max-width: min(376px, calc(calc(50 * var(--ui-vw)) - 44px));
 }
-@media (max-width: 759px) {
-  .hud-infotip.docked-right {
+
+  html.ui-w-le-759 .hud-infotip.docked-right {
     left: auto;
     right: 10px;
     top: 84px;
     transform: none;
-    max-width: calc(100vw - 20px);
+    max-width: calc(calc(100 * var(--ui-vw)) - 20px);
   }
-}
+
 
 .hud-infotip.tone-info { border-left-color: #0284c7; }
 .hud-infotip.tone-ok { border-left-color: #16a34a; }
